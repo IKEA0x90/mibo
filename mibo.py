@@ -7,7 +7,7 @@ from telegram import Update
 from telegram.ext import Application, CallbackContext, CommandHandler, MessageHandler, ContextTypes, filters
 
 from events import event_bus, mibo_events
-from services import assistant, database, conductor
+from core import assistant, database, conductor
 
 class Mibo:
     def __init__(self, token: str, db_path: str = 'env'):
