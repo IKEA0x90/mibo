@@ -5,8 +5,8 @@ import random
 import asyncio
 import traceback
 
-from events import event_bus
-from core import database, window
+from events import event_bus, conductor_events, assistant_events, system_events
+from core import database, window, wrapper
 
 def initialize_assistants(db: database.Database, client: openai.OpenAI, bus: event_bus.EventBus, template: dict):
     '''
@@ -28,4 +28,29 @@ class Assistant:
         self.custom_instructions = custom_instructions
 
         self.messages = window.Window(chat_id)
-        self.messages.initialize()
+        
+        self.death_timer = -1
+        self.last_reply = -1
+
+        self._initialize()
+
+    def _register(self):
+        self.bus.register(conductor_events.AssistantRequest, self._process_request)
+
+    def _initialize(self):
+        self._register()
+
+    async def _process_request(self, event: conductor_events.AssistantRequest):
+        pass
+
+    async def _add_message(self, message: wrapper.MessageWrapper):
+        '''
+        Add a message to the assistant's window.
+        '''
+        await self.messages.add_message(message)
+    
+    async def initialize(self):
+        '''
+        Initialize the assistant with the messages.
+        '''
+        pass

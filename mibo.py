@@ -46,7 +46,6 @@ class Mibo:
         '''
         self.app = Application.builder().token(token).build()
         self._register_handlers()
-        self._wakeup()
 
     def _register_handlers(self):
         '''
@@ -98,7 +97,7 @@ class Mibo:
         
     async def _change_arg(self, update: Update, context: CallbackContext):
         '''
-        Changes 
+        Changes an argument.
         '''
         pass
 

@@ -67,13 +67,12 @@ class Conductor:
             message_wrapper = wrapper.MessageWrapper(chat_id, message_id, role, user, message_text, ping, reply_id)
 
             request = conductor_events.ImageDownloadRequest(message=message)
-            response = db_events.ImageResponse(image_path='')
+            response = db_events.ImageResponse(chat_id=chat_id, images=[])
             response = await self.bus.wait(request, response, 30)
 
             if response and response.response:
-                for image_path in response.response:
-                    content = wrapper.ImageWrapper(image_path)
-                    message_wrapper.add_content(content)
+                for image in response.images:
+                    message_wrapper.add_content(image)
             
             self.bus.emit(conductor_events.AssistantCall(message_wrapper))
 

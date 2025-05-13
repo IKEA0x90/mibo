@@ -1,21 +1,39 @@
 import tiktoken
 import uuid
+import os
+
 from typing import List
 
 class Wrapper():
     def __init__(self, id: str = None):
         self.content_id: str = id or str(uuid.uuid4())
 
+    async def tokens(self):
+        encoding = tiktoken.encoding_for_model('gpt-4o')
+        tokens = len(encoding.encode(str(self)))
+        return tokens
+
 class ImageWrapper(Wrapper):
-    def __init__(self, image_url: str):
+    def __init__(self, x: int, y: int, image_url: str):
         super().__init__()
+        self.x = x or 0
+        self.y = y or 0
         self.image_url: List[str] = image_url or ''
         self.image_description: str = ''
 
+    def tokens(self):
+        width = (self.x + 512 -1) // 512 # round up by adding 511
+        height = (self.y + 512 -1) // 512
+
+        return 85 + 170 * (height + width)
+
 class StickerWrapper(Wrapper):
-    def __init__(self, key_emoji: str, sticker_pack: str):
+    def __init__(self, key_emoji: str):
         super().__init__()
         self.key_emoji: str = key_emoji
+
+    async def tokens(self):
+        return 1
 
 class PollWrapper(Wrapper):
     def __init__(self, question: str, options: List[str], multiple_choice: bool):
@@ -24,20 +42,39 @@ class PollWrapper(Wrapper):
         self.options: List[str] = options or []
         self.multiple_choice: bool = multiple_choice or False
 
+    def __str__(self):
+        str = []
+        str.append(f'Poll {"(multiple choice)" if self.multiple_choice else ""}: {self.question}\n')
+        str.append('Options:\n')
+        for i, option in enumerate(self.options):
+            str.append(f"{i+1}. {option}")
+
 class MessageWrapper(Wrapper):
     def __init__(self, chat_id: str, message_id: str, role: str, user: str, message: str, ping: bool = True, reply_id: str = ''):
         super().__init__(message_id)
         self.chat_id: str = chat_id
         self.role: str = role or 'assistant'
-        self.user: str = user or 'itsmiibot'
+        self.user: str = user or os.environ['mibo_username']
 
         self.message: str = message or ''
         self.content_list: List[Wrapper] = []
 
         self.ping: bool = ping
-        self.reply_id: str = reply_id or ''
-        
-        self.tokens = len(tiktoken.encoding_for_model("gpt-4o").encode(message))
+        self.reply_id: str = reply_id or '' 
+
+    def __str__(self):
+        return f'{self.user}: {self.message}\n'
 
     def add_content(self, content: Wrapper):
         self.content_list.append(content)
+
+    async def tokens(self):
+        return await self._count_tokens()
+    
+    async def tokens(self, model='gpt-4o'):
+        encoding = tiktoken.encoding_for_model(model)
+            
+        tokens = len(encoding.encode(str(self)))
+        content_tokens = sum([c.tokens() for c in self.content_list])
+
+        return tokens + content_tokens

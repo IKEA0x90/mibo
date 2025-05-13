@@ -105,9 +105,9 @@ class Database:
             
             # Open and process the image
             with Image.open(BytesIO(img_bytes)) as img:
-                # Resize the image keeping aspect ratio, with max dimension of 1000px
+                # Resize the image keeping aspect ratio, with max dimension of 768px
                 width, height = img.size
-                max_size = 1000
+                max_size = 768 # this size maximizes cost efficiency and quality
                 
                 if width > height and width > max_size:
                     new_width = max_size
@@ -138,6 +138,8 @@ class Database:
                 base64s.append(img_base64)
         
         # Send the response event with the paths and base64 strings
+
+
         response = db_events.ImageResponse(chat_id=chat_id, image_paths=image_paths, base64s=base64s)
         await self.bus.emit(response)
 
@@ -157,9 +159,8 @@ class Database:
                 created_at        TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
                 temperature       REAL NOT NULL DEFAULT 1.0,
                 chance            INTEGER NOT NULL DEFAULT 5,
-                wakeup            BOOLEAN NOT NULL DEFAULT 0,
                 max_tokens        INTEGER NOT NULL DEFAULT 3000,
-                max_images        INTEGER NOT NULL DEFAULT 3
+                max_content_tokens        INTEGER NOT NULL DEFAULT 1000
             );
             """)
 
@@ -171,6 +172,8 @@ class Database:
                 role         TEXT NOT NULL,
                 username     TEXT NOT NULL,
                 text         TEXT NOT NULL,
+                positive_reactions INTEGER DEFAULT 0,
+                negative_reactions INTEGER DEFAULT 0,
                 token_count  INTEGER NOT NULL,
                 created_at   TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
                 FOREIGN KEY (chat_id) REFERENCES chats (chat_id) ON DELETE CASCADE
@@ -209,8 +212,6 @@ class Database:
         custom_instructions: str = "",
         temperature: float = 1.0,
         chance: int = 5,
-        wakeup: bool = False,
-        max_tokens: int = 3000,
         max_images: int = 3,
     ) -> str:
         """
@@ -229,8 +230,6 @@ class Database:
                 custom_instructions,
                 temperature,
                 chance,
-                int(wakeup),  # SQLite lacks native boolean
-                max_tokens,
                 max_images,
             ),
         )
@@ -274,10 +273,11 @@ class Database:
     # ---------- 3. add an image to a message ----------
     async def insert_image(
         self,
-        *,
         message_id: str,
+        image_id: str,
+        *,
         image_url: str,
-        image_id: str = None,
+        
     ) -> str:
         """
         Inserts an image row linked to an existing message. Returns image_id.
