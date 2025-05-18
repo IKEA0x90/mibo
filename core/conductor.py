@@ -1,10 +1,10 @@
 import os
-import asyncio
+import datetime as dt
 
 from typing import cast
-from telegram import Update, MessageEntity
+from telegram import Update, Message, MessageEntity
 
-from events import event_bus, conductor_events, db_events, system_events
+from events import event_bus, conductor_events, db_events, system_events, mibo_events, assistant_events
 from core import wrapper
 
 class Conductor:
@@ -15,14 +15,21 @@ class Conductor:
     def __init__(self, bus):
         self.bus: event_bus.EventBus = bus
         self.username: str = os.environ['mibo_username']
+        self._register()
 
-    async def _capture_message(self, update: Update):
+    def _register(self):
+        self.bus.register(mibo_events.MiboMessage, self._process_request)
+
+    async def _capture_message(self, event: mibo_events.MiboMessage):
         '''
         Listens to mibo events on the bus and processes them into MessageWrappers.
         '''
         try:
+            update: Update = event.update
+            start_datetime: dt.datetime = event.start_datetime
+
             chat = update.effective_chat
-            message = update.message
+            message: Message = update.message
             user = update.message.from_user
             
             if not chat or not message or not user:
@@ -63,18 +70,24 @@ class Conductor:
 
             reply_message = message.reply_to_message
             reply_id = reply_message.message_id if reply_message else None
+
+            datetime: dt.datetime = message.date
             
-            message_wrapper = wrapper.MessageWrapper(chat_id, message_id, role, user, message_text, ping, reply_id)
+            message_wrapper = wrapper.MessageWrapper(chat_id, message_id, role, user, message_text, ping, reply_id, datetime, start_datetime)
 
             request = conductor_events.ImageDownloadRequest(message=message)
-            response = db_events.ImageResponse(chat_id=chat_id, images=[])
-            response = await self.bus.wait(request, response, 30)
+            response = await self.bus.wait(request, db_events.ImageResponse, 30)
 
             if response and response.response:
                 for image in response.images:
                     message_wrapper.add_content(image)
             
-            self.bus.emit(conductor_events.AssistantCall(message_wrapper))
+            self.bus.emit()
+
+            request = conductor_events.MessagePush(message_wrapper)
+            self.bus.wait(request, assistant_events.AssistantReadyResponse, 60)
+
+            self.bus.emit(conductor_events.AssistantRequest(message_wrapper))
 
         except Exception as e:
             self.bus.emit(system_events.ChatErrorEvent(chat_id=chat_id, error='An unexpted error occurred.', e=e))

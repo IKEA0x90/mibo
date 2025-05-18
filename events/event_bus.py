@@ -1,44 +1,69 @@
 import asyncio
 from contextlib import suppress
+from typing import Type, TypeVar
 
 from events import event as ev
+
+ResponseType = TypeVar('ResponseType', bound=ev.Event)
     
 class EventBus:
     def __init__(self):
-        self.listeners = {}
+        self._listeners: dict[type[ev.Event], list] = {}
+        self._tasks: set[asyncio.Task] = set() # track auto‑spawned tasks
 
-    def register(self, event_class, handler):
-        self._listeners.setdefault(event_class, []).append(handler)
+    def _spawn(self, coroutine):
+        task = asyncio.create_task(coroutine)
+        self._tasks.add(task)
+        task.add_done_callback(self._tasks.discard)
+        return task
+    
+    async def close(self): 
+        # Cancel whatever is still running.
+        for task in list(self._tasks):
+            task.cancel()
+        await asyncio.gather(*self._tasks, return_exceptions=True)
+
+    def register(self, event_cls: type[ev.Event], handler) -> None:
+        self._listeners.setdefault(event_cls, []).append(handler)
 
     async def emit(self, event: ev.Event) -> ev.Event:
-        for handler in self.listeners.get(event.name, []):
+        for handler in self.listeners.get(type(event), []):
             if asyncio.iscoroutinefunction(handler):
                 asyncio.create_task(handler(event))
             else:
                 handler(event)
         return event
 
-    async def wait(self, event: ev.Event, response_template: ev.Event, timeout: float = 60) -> ev.Event:
+    async def wait(self, requested_event: ev.Event, response_class: Type[ResponseType], timeout: float | None = 60.0) -> ResponseType:
         '''
-        Emit an event, then wait for and return the response event. 
+        Emit *requested_event*, then block until a response of class *response_class*
+        with the same event_id arrives, or until *timeout*.
         '''
         loop = asyncio.get_running_loop()
-        future: asyncio.Future = loop.create_future()
+        future: asyncio.future[ResponseType] = loop.create_futureure()
 
-        # Once‑only resolver
-        def _resolver(response_event: ev.Event):
-            if response_event.event_id == event.event_id and not future.done():
-                future.set_result(response_event)
-                # unsubscribe itself
-                self._listeners[response_event.name].remove(_resolver)
+        # one‑shot resolver
+        def _resolver(resp_event: ResponseType) -> None:
+            if resp_event.event_id == requested_event.event_id and not future.done():
+                future.set_result(resp_event)
+                _remove_listener()
 
-        self.register(response_template.name, _resolver)
+        # helper so resolver can remove itself
+        def _remove_listener() -> None:
+            with suppress(ValueError):
+                self._listeners.get(response_class, []).remove(_resolver)
+            if not self._listeners.get(response_class):
+                self._listeners.pop(response_class, None)
 
-        await self.emit(event)
+        self.register(response_class, _resolver)
+        await self.emit(requested_event)
 
         try:
-            return await asyncio.wait_for(future, timeout) if timeout else await future
+            if timeout is None:
+                return await future # no timeout
+            return await asyncio.wait_for(future, timeout)
         finally:
-            # Clean up if the waiter is cancelled or times out
-            with suppress(ValueError):
-                self._listeners.get(response_template.name, []).remove(_resolver)
+            # ensure cleanup even on cancellation or TimeoutError
+            if not future.done():
+                future.cancel()
+            _remove_listener()

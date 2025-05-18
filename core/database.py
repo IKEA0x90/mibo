@@ -2,13 +2,18 @@ import os
 import uuid
 import asyncio
 import aiosqlite
+import sqlite3
 import base64
 from io import BytesIO
 from PIL import Image
 
 from telegram import Message, Update
+from telegram.ext import CallbackContext
+from typing import Tuple, List
+import datetime as dt
 
 from events import event_bus, db_events, conductor_events, system_events
+from core import wrapper
 
 class Database:
     def __init__(self, bus: event_bus.EventBus, db_path: str):
@@ -22,6 +27,28 @@ class Database:
         self.cursor = None
         self._init_done = False
         self._lock = asyncio.Lock()  # Add lock to prevent race conditions
+
+    def get_all_chats(self) -> List[Tuple[str, str]]:
+        '''
+        Returns all chat IDs and their custom instructions from the database.
+        Synchronous method for use during initialization.
+        '''
+        try:
+            # Use synchronous SQLite connection for initial data fetch
+
+            conn = sqlite3.connect(self.db_path)
+            conn.row_factory = sqlite3.Row
+            cursor = conn.cursor()
+
+            cursor.execute("SELECT chat_id, custom_instructions, chance, max_tokens, max_content_tokens FROM chats")
+            rows = cursor.fetchall()
+            
+            conn.close()
+            
+            return [(row["chat_id"], row["custom_instructions"], row["chance"], row["max_tokens"], row["max_content_tokens"]) for row in rows]
+        except Exception as e:
+            self.bus.emit(system_events.ErrorEvent('Failed to fetch chats.', e))
+            return []
 
     async def initialize(self):
         '''
@@ -51,37 +78,82 @@ class Database:
         '''
         self.bus.register(conductor_events.ImageDownloadRequest, self._image_to_bytes)
         self.bus.register(db_events.ImageSaveRequest, self._save_images)
-
-    async def _image_to_bytes(self, update: Update, context):
+        self.bus.register(conductor_events.MessagePush, self._add_message)    
+        
+    async def _add_message(self, event: conductor_events.MessagePush):
+        '''
+        Add a message to the database.
+        '''
+        try:
+            message = event.request
+            chat_id = message.chat_id
+            message_id = message.content_id
+            role = message.role
+            username = message.user
+            text = message.message
+            datetime = message.datetime
+            
+            token_count = await message.tokens()
+            
+            db_message_id = await self.insert_message(
+                chat_id=chat_id,
+                message_id=message_id,
+                role=role,
+                username=username,
+                text=text,
+                token_count=token_count,
+                datetime=datetime
+            )
+            
+            for content in message.content_list:
+                if isinstance(content, wrapper.ImageWrapper):
+                    await self.insert_image(
+                        message_id=db_message_id,
+                        image_id=content.content_id,
+                        image_url=content.image_url
+                    )
+            
+        except Exception as e:
+            pass
+             
+    async def _image_to_bytes(self, event: conductor_events.ImageDownloadRequest):
         '''
         Download all image files (photos or image documents) from a Telegram message 
         and respond with a list of byte arrays.
         '''
-        message: Message = update.effective_message
-        file_bytes = []
+        try:
+            update: Update = event.update
+            context: CallbackContext = event.context
 
-        # Handle photos
-        if message.photo:
-            for photo_size in message.photo:
-                file = await context.bot.get_file(photo_size.file_id)
-                photo_bytes = await file.download_as_bytearray()
-                file_bytes.append(photo_bytes)
+            message: Message = update.effective_message
+            file_bytes = []
 
-        # Handle single image document
-        elif message.document and message.document.mime_type.startswith('image/'):
-            file = await context.bot.get_file(message.document.file_id)
-            doc_bytes = await file.download_as_bytearray()
-            file_bytes.append(doc_bytes)
+            # Handle photos
+            if message.photo:
+                for photo_size in message.photo:
+                    file = await context.bot.get_file(photo_size.file_id)
+                    photo_bytes = await file.download_as_bytearray()
+                    file_bytes.append(photo_bytes)
 
-        # If needed: process via media_group (albums) from a handler
-        # PTB handles albums by grouping updates with the same media_group_id
-        # You need to manage album logic at a higher level in a handler
+            # Handle single image document
+            elif message.document and message.document.mime_type.startswith('image/'):
+                file = await context.bot.get_file(message.document.file_id)
+                doc_bytes = await file.download_as_bytearray()
+                file_bytes.append(doc_bytes)
 
-        if file_bytes:
-            request = db_events.ImageSaveRequest(chat_id=str(message.chat.id), file_bytes=file_bytes)
-            await self.bus.emit(request)
+            # If needed: process via media_group (albums) from a handler
+            # PTB handles albums by grouping updates with the same media_group_id
+            # You need to manage album logic at a higher level in a handler
 
-    async def _save_images(self, event):
+            if file_bytes:
+                request = db_events.ImageSaveRequest(chat_id=str(message.chat.id), file_bytes=file_bytes)
+                await self.bus.emit(request)
+        
+        except Exception as e:
+            self.bus.emit(system_events.ErrorEvent('Failed to download image.', e))
+            return 
+
+    async def _save_images(self, event: db_events.ImageSaveRequest):
         '''
         Compresses the image to jpg
         Resizes the bigger size to 1000px, keeping the other scaled with it, using bicubic interpolation.
@@ -89,59 +161,62 @@ class Database:
         Makes a uuid4.hex uid for each image, making that the item name. 
         Also makes a list of the same images in base64 strings.
         '''
-        chat_id = event.chat_id
-        file_bytes = event.file_bytes
-        
-        path = os.path.join(self.image_path, chat_id)
-        os.makedirs(path, exist_ok=True)
-        image_paths = []
-        base64s = []
-        
-        # Process each image in the file_bytes list
-        for img_bytes in file_bytes:
-            # Generate a unique filename
-            filename = f"{uuid.uuid4().hex}.jpg"
-            filepath = os.path.join(path, filename)
+        try:
+            chat_id = event.chat_id
+            file_bytes = event.file_bytes
             
-            # Open and process the image
-            with Image.open(BytesIO(img_bytes)) as img:
-                # Resize the image keeping aspect ratio, with max dimension of 768px
-                width, height = img.size
-                max_size = 768 # this size maximizes cost efficiency and quality
+            path = os.path.join(self.image_path, chat_id)
+            os.makedirs(path, exist_ok=True)
+            image_paths = []
+            base64s = []
+            
+            # Process each image in the file_bytes list
+            for img_bytes in file_bytes:
+                # Generate a unique filename
+                filename = f"{uuid.uuid4().hex}.jpg"
+                filepath = os.path.join(path, filename)
                 
-                if width > height and width > max_size:
-                    new_width = max_size
-                    new_height = int(height * (max_size / width))
-                elif height > max_size:
-                    new_height = max_size
-                    new_width = int(width * (max_size / height))
-                else:
-                    new_width, new_height = width, height
+                # Open and process the image
+                with Image.open(BytesIO(img_bytes)) as img:
+                    # Resize the image keeping aspect ratio, with max dimension of 768px
+                    width, height = img.size
+                    max_size = 768 # this size maximizes cost efficiency and quality
                     
-                # Resize using bicubic interpolation
-                if new_width != width or new_height != height:
-                    img = img.resize((new_width, new_height), Image.BICUBIC)
-                
-                # Save the image
-                if img.mode not in ("RGB", "L"):
-                     img = img.convert("RGB")
+                    if width > height and width > max_size:
+                        new_width = max_size
+                        new_height = int(height * (max_size / width))
+                    elif height > max_size:
+                        new_height = max_size
+                        new_width = int(width * (max_size / height))
+                    else:
+                        new_width, new_height = width, height
+                        
+                    # Resize using bicubic interpolation
+                    if new_width != width or new_height != height:
+                        img = img.resize((new_width, new_height), Image.BICUBIC)
+                    
+                    # Save the image
+                    if img.mode not in ("RGB", "L"):
+                        img = img.convert("RGB")
 
-                img.save(filepath, format='JPEG', quality=85)
-                
-                # Generate base64 representation
-                buffered = BytesIO()
-                img.save(buffered, format="JPEG")
-                img_base64 = base64.b64encode(buffered.getvalue()).decode('utf-8')
-                
-                # Store paths and base64
-                image_paths.append(filepath)
-                base64s.append(img_base64)
-        
-        # Send the response event with the paths and base64 strings
+                    img.save(filepath, format='JPEG', quality=85)
+                    
+                    # Generate base64 representation
+                    buffered = BytesIO()
+                    img.save(buffered, format="JPEG")
+                    img_base64 = base64.b64encode(buffered.getvalue()).decode('utf-8')
+                    
+                    # Store paths and base64
+                    image_paths.append(filepath)
+                    base64s.append(img_base64)
+            
+            # Send the response event with the paths and base64 strings
+            response = db_events.ImageResponse(chat_id=chat_id, image_paths=image_paths, base64s=base64s)
+            await self.bus.emit(response)
 
-
-        response = db_events.ImageResponse(chat_id=chat_id, image_paths=image_paths, base64s=base64s)
-        await self.bus.emit(response)
+        except Exception as e:
+            self.bus.emit(system_events.ErrorEvent('Failed to save image.', e))
+            return
 
     async def create_tables(self) -> None:
         """
@@ -156,11 +231,10 @@ class Database:
             CREATE TABLE IF NOT EXISTS chats (
                 chat_id           TEXT PRIMARY KEY,
                 custom_instructions TEXT NOT NULL DEFAULT '',
-                created_at        TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-                temperature       REAL NOT NULL DEFAULT 1.0,
                 chance            INTEGER NOT NULL DEFAULT 5,
                 max_tokens        INTEGER NOT NULL DEFAULT 3000,
-                max_content_tokens        INTEGER NOT NULL DEFAULT 1000
+                max_content_tokens        INTEGER NOT NULL DEFAULT 1000,
+                timestamp        TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
             );
             """)
 
@@ -175,7 +249,7 @@ class Database:
                 positive_reactions INTEGER DEFAULT 0,
                 negative_reactions INTEGER DEFAULT 0,
                 token_count  INTEGER NOT NULL,
-                created_at   TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                timestamp   TIMESTAMP DEFAULT,
                 FOREIGN KEY (chat_id) REFERENCES chats (chat_id) ON DELETE CASCADE
             );
             """)
@@ -186,6 +260,7 @@ class Database:
                 image_id    TEXT PRIMARY KEY,
                 message_id  TEXT NOT NULL,
                 image_url   TEXT NOT NULL,
+                content_tokens INTEGER NOT NULL,
                 FOREIGN KEY (message_id) REFERENCES messages (message_id) ON DELETE CASCADE
             );
             """)
@@ -210,9 +285,9 @@ class Database:
         chat_id: str,
         *,
         custom_instructions: str = "",
-        temperature: float = 1.0,
         chance: int = 5,
-        max_images: int = 3,
+        max_tokens: int = 3000,
+        max_content_tokens: int = 1500,
     ) -> str:
         """
         Inserts a new chat and returns the chat_id.
@@ -222,15 +297,15 @@ class Database:
         await self.cursor.execute(
             """
             INSERT INTO chats
-            (chat_id, custom_instructions, temperature, chance, wakeup, max_tokens, max_images)
-            VALUES (?, ?, ?, ?, ?, ?, ?)
+            (chat_id, custom_instructions, chance, max_tokens, max_content_tokens)
+            VALUES (?, ?, ?, ?, ?)
             """,
             (
                 chat_id,
                 custom_instructions,
-                temperature,
                 chance,
-                max_images,
+                max_tokens,
+                max_content_tokens,
             ),
         )
         await self.conn.commit()
@@ -245,17 +320,19 @@ class Database:
         role: str,
         username: str,
         text: str,
-        token_count: int) -> str:
+        token_count: int,
+        timestamp: dt.datetime) -> str:
         """
         Inserts a message linked to an existing chat. Returns message_id.
         """
         message_id = message_id or str(uuid.uuid4())
+        timestamp = timestamp.timestamp()
 
         await self.cursor.execute(
             """
             INSERT INTO messages
-            (message_id, chat_id, role, username, text, token_count)
-            VALUES (?, ?, ?, ?, ?, ?)
+            (message_id, chat_id, role, username, text, token_count, timestamp)
+            VALUES (?, ?, ?, ?, ?, ?, ?)
             """,
             (
                 message_id,
@@ -264,6 +341,7 @@ class Database:
                 username,
                 text,
                 token_count,
+                timestamp
             ),
         )
         await self.conn.commit()
@@ -275,10 +353,9 @@ class Database:
         self,
         message_id: str,
         image_id: str,
+        content_tokens: int,
         *,
-        image_url: str,
-        
-    ) -> str:
+        image_url: str) -> str:
         """
         Inserts an image row linked to an existing message. Returns image_id.
         """
@@ -287,13 +364,14 @@ class Database:
         await self.cursor.execute(
             """
             INSERT INTO images
-            (image_id, message_id, image_url)
-            VALUES (?, ?, ?)
+            (image_id, message_id, image_url, content_tokens)
+            VALUES (?, ?, ?, ?)
             """,
             (
                 image_id,
                 message_id,
                 image_url,
+                content_tokens
             ),
         )
         await self.conn.commit()

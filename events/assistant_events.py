@@ -12,3 +12,7 @@ class AssistantToolCall(event.Event):
 class AssistantToolResponse(event.Event):
     def __init__(self, response: wrapper.MessageWrapper, **kwargs):
         super().__init__('assistant_tool_response', response=response, **kwargs)
+
+class AssistantReadyResponse(event.Event):
+    def __init__(self, **kwargs):
+        super().__init__('assistant_ready_response', **kwargs)

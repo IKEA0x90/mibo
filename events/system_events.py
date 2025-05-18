@@ -1,8 +1,8 @@
 from events import event
 
-class ShutdownRequested(event.Event):
+class ShutdownEvent(event.Event):
     def __init__(self, **kwargs):
-        super().__init__('shutdown_requested', **kwargs)
+        super().__init__('shutdown_event', **kwargs)
 
 class ChatErrorEvent(event.Event):
     def __init__(self, chat_id: str, error: str, traceback: Exception, **kwargs):

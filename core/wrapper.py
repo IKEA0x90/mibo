@@ -2,6 +2,8 @@ import tiktoken
 import uuid
 import os
 
+import datetime as dt
+
 from typing import List
 
 class Wrapper():
@@ -21,7 +23,7 @@ class ImageWrapper(Wrapper):
         self.image_url: List[str] = image_url or ''
         self.image_description: str = ''
 
-    def tokens(self):
+    async def tokens(self):
         width = (self.x + 512 -1) // 512 # round up by adding 511
         height = (self.y + 512 -1) // 512
 
@@ -50,7 +52,7 @@ class PollWrapper(Wrapper):
             str.append(f"{i+1}. {option}")
 
 class MessageWrapper(Wrapper):
-    def __init__(self, chat_id: str, message_id: str, role: str, user: str, message: str, ping: bool = True, reply_id: str = ''):
+    def __init__(self, chat_id: str, message_id: str, role: str, user: str, message: str, ping: bool = True, reply_id: str = '', datetime: dt.datetime = None):
         super().__init__(message_id)
         self.chat_id: str = chat_id
         self.role: str = role or 'assistant'
@@ -62,14 +64,13 @@ class MessageWrapper(Wrapper):
         self.ping: bool = ping
         self.reply_id: str = reply_id or '' 
 
+        self.datetime: dt.datetime = datetime or dt.now()
+
     def __str__(self):
         return f'{self.user}: {self.message}\n'
 
     def add_content(self, content: Wrapper):
         self.content_list.append(content)
-
-    async def tokens(self):
-        return await self._count_tokens()
     
     async def tokens(self, model='gpt-4o'):
         encoding = tiktoken.encoding_for_model(model)

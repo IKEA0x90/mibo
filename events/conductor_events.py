@@ -4,7 +4,7 @@ from typing import List
 from events import event
 from core import wrapper
 
-class MessageRequest(event.Event):
+class MessagePush(event.Event):
     def __init__(self, message: wrapper.MessageWrapper, **kwargs):
         super().__init__('message_request', request=message, **kwargs)
 
