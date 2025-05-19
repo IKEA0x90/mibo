@@ -2,18 +2,18 @@ import datetime as dt
 
 from typing import List, Dict, Deque
 from collections import deque
+from copy import deepcopy
 
 from core import wrapper
 
 class Window():
-    def __init__(self, chat_id: str, start_datetime: dt.datetime, kwargs: Dict = {}):
+    def __init__(self, chat_id: str, start_datetime: dt.datetime, template: dict, max_context_tokens: int, max_content_tokens: int):
         self.chat_id: str = chat_id
         self.tokens: int = 0
         self.start_datetime: dt.datetime = start_datetime
 
-        self.max_tokens = kwargs.get('max_tokens', 3000)
-        self.max_images = kwargs.get('max_image_tokens', 1000)
-        self.max_memory = kwargs.get('max_content_tokens', 1500)
+        self.max_context_tokens: int = max_context_tokens
+        self.max_content_tokens: int = max_content_tokens
         
         self.messages: Deque[wrapper.MessageWrapper] = deque()
         self.ready: bool = False
@@ -86,7 +86,7 @@ class Window():
         await self._trim_excess_tokens()
 
     async def _trim_excess_tokens(self) -> None:
-        while self.total_tokens > self.max_tokens and self.messages:
+        while self.total_tokens > self.max_context_tokens and self.messages:
             oldest_msg = self.messages.popleft()
             oldest_tokens = await oldest_msg.tokens()
             self.total_tokens -= oldest_tokens
@@ -95,5 +95,24 @@ class Window():
         '''
         Transforms the context messages into a json compatible with openai.
         '''
+        messages = []
+        
         for message in self.messages:
-            pass
+            content = []
+            
+            # Process text
+            text = str(message)
+            content.append({'type': 'input_text', 'text': text})
+
+            # Check for custom content
+            if message.content_list:
+                for c in message.content_list:
+                    
+                    # Images
+                    if isinstance(c, wrapper.ImageWrapper):
+                        content.append({'type': 'input_image', 'image_url': f'data:image/jpeg;base64,{c.image_base64}'})
+
+            m = {'role': message.role, 'input': deepcopy(content)}
+            messages.append(m)
+
+        return messages

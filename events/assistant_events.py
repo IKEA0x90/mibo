@@ -16,3 +16,7 @@ class AssistantToolResponse(event.Event):
 class AssistantReadyResponse(event.Event):
     def __init__(self, **kwargs):
         super().__init__('assistant_ready_response', **kwargs)
+
+class AssistantDirectRequest(event.Event):
+    def __init__(self, message: wrapper.MessageWrapper, **kwargs):
+        super().__init__('assistant_direct_request', message=message, **kwargs)

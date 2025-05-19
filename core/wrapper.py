@@ -16,11 +16,12 @@ class Wrapper():
         return tokens
 
 class ImageWrapper(Wrapper):
-    def __init__(self, x: int, y: int, image_url: str):
+    def __init__(self, x: int, y: int, image_url: str, image_base64: str = None):
         super().__init__()
         self.x = x or 0
         self.y = y or 0
-        self.image_url: List[str] = image_url or ''
+        self.image_url: str = image_url or ''
+        self.image_base64: str = ''
         self.image_description: str = ''
 
     async def tokens(self):
@@ -67,7 +68,7 @@ class MessageWrapper(Wrapper):
         self.datetime: dt.datetime = datetime or dt.now()
 
     def __str__(self):
-        return f'{self.user}: {self.message}\n'
+        return f'{self.user}: {self.message}'
 
     def add_content(self, content: Wrapper):
         self.content_list.append(content)
@@ -79,3 +80,14 @@ class MessageWrapper(Wrapper):
         content_tokens = sum([c.tokens() for c in self.content_list])
 
         return tokens + content_tokens
+    
+class ChatWrapper():
+    def __init__(self, chat_id: str, custom_instructions: str, chance: int, max_context_tokens: int, max_content_tokens: int, max_response_tokens: int, frequency_penalty: float, presence_penalty: float):
+        self.chat_id: str = chat_id
+        self.custom_instructions: str = custom_instructions or ''
+        self.chance: int = chance or 5
+        self.max_context_tokens: int = max_context_tokens or 3000
+        self.max_content_tokens: int = max_content_tokens or 1500
+        self.max_response_tokens: int = max_response_tokens or 500
+        self.frequency_penalty: float = frequency_penalty or 0.1
+        self.presence_penalty: float = presence_penalty or 0.1

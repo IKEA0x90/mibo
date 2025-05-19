@@ -28,7 +28,7 @@ class Database:
         self._init_done = False
         self._lock = asyncio.Lock()  # Add lock to prevent race conditions
 
-    def get_all_chats(self) -> List[Tuple[str, str]]:
+    def get_all_chats(self) -> List[Tuple[str, str, int, int, int, int]]:
         '''
         Returns all chat IDs and their custom instructions from the database.
         Synchronous method for use during initialization.
@@ -40,12 +40,18 @@ class Database:
             conn.row_factory = sqlite3.Row
             cursor = conn.cursor()
 
-            cursor.execute("SELECT chat_id, custom_instructions, chance, max_tokens, max_content_tokens FROM chats")
+            cursor.execute("SELECT chat_id, custom_instructions, chance, max_context_tokens, max_content_tokens, max_response_tokens, frequency_penalty, presence_penalty FROM chats")
             rows = cursor.fetchall()
             
             conn.close()
             
-            return [(row["chat_id"], row["custom_instructions"], row["chance"], row["max_tokens"], row["max_content_tokens"]) for row in rows]
+            return [wrapper.ChatWrapper(row['chat_id'], 
+                                        row['custom_instructions'], 
+                                        row['chance'], row['max_context_tokens'], 
+                                        row['max_content_tokens'], row['max_response_tokens'], 
+                                        row['frequency_penalty'], row['presence_penalty']) 
+                                        for row in rows]
+        
         except Exception as e:
             self.bus.emit(system_events.ErrorEvent('Failed to fetch chats.', e))
             return []
@@ -167,8 +173,7 @@ class Database:
             
             path = os.path.join(self.image_path, chat_id)
             os.makedirs(path, exist_ok=True)
-            image_paths = []
-            base64s = []
+            images: List[wrapper.ImageWrapper] = []
             
             # Process each image in the file_bytes list
             for img_bytes in file_bytes:
@@ -205,19 +210,17 @@ class Database:
                     buffered = BytesIO()
                     img.save(buffered, format="JPEG")
                     img_base64 = base64.b64encode(buffered.getvalue()).decode('utf-8')
-                    
-                    # Store paths and base64
-                    image_paths.append(filepath)
-                    base64s.append(img_base64)
+
+                    wrap = wrapper.ImageWrapper(new_width, new_height, filepath, img_base64)
             
             # Send the response event with the paths and base64 strings
-            response = db_events.ImageResponse(chat_id=chat_id, image_paths=image_paths, base64s=base64s)
+            response = db_events.ImageResponse(chat_id=chat_id, images=images)
             await self.bus.emit(response)
 
         except Exception as e:
             self.bus.emit(system_events.ErrorEvent('Failed to save image.', e))
             return
-
+    
     async def create_tables(self) -> None:
         """
         Create the schema for chats, messages and images.
@@ -234,6 +237,9 @@ class Database:
                 chance            INTEGER NOT NULL DEFAULT 5,
                 max_tokens        INTEGER NOT NULL DEFAULT 3000,
                 max_content_tokens        INTEGER NOT NULL DEFAULT 1000,
+                max_response_tokens        INTEGER NOT NULL DEFAULT 500,
+                frequency_penalty FLOAT NOT NULL DEFAULT 0.1,
+                presence_penalty  FLOAT NOT NULL DEFAULT 0.1,
                 timestamp        TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
             );
             """)
@@ -286,8 +292,9 @@ class Database:
         *,
         custom_instructions: str = "",
         chance: int = 5,
-        max_tokens: int = 3000,
+        max_context_tokens: int = 3000,
         max_content_tokens: int = 1500,
+        max_response_tokens: int = 500
     ) -> str:
         """
         Inserts a new chat and returns the chat_id.
@@ -297,15 +304,16 @@ class Database:
         await self.cursor.execute(
             """
             INSERT INTO chats
-            (chat_id, custom_instructions, chance, max_tokens, max_content_tokens)
+            (chat_id, custom_instructions, chance, max_context_tokens, max_content_tokens, max_response_tokens)
             VALUES (?, ?, ?, ?, ?)
             """,
             (
                 chat_id,
                 custom_instructions,
                 chance,
-                max_tokens,
+                max_context_tokens,
                 max_content_tokens,
+                max_response_tokens,
             ),
         )
         await self.conn.commit()
@@ -321,7 +329,7 @@ class Database:
         username: str,
         text: str,
         token_count: int,
-        timestamp: dt.datetime) -> str:
+        datetime: dt.datetime) -> str:
         """
         Inserts a message linked to an existing chat. Returns message_id.
         """
@@ -331,7 +339,7 @@ class Database:
         await self.cursor.execute(
             """
             INSERT INTO messages
-            (message_id, chat_id, role, username, text, token_count, timestamp)
+            (message_id, chat_id, role, username, text, token_count, datetime)
             VALUES (?, ?, ?, ?, ?, ?, ?)
             """,
             (
@@ -341,7 +349,7 @@ class Database:
                 username,
                 text,
                 token_count,
-                timestamp
+                datetime
             ),
         )
         await self.conn.commit()
