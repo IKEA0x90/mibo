@@ -43,7 +43,6 @@ class Mibo:
         cat_assistant = temporary_client.beta.assistants.retrieve(tools.Tool.CAT_ASSISTANT_ID)
         image_assistant = temporary_client.beta.assistants.retrieve(tools.Tool.IMAGE_ASSISTANT_ID)
         poll_assistant = temporary_client.beta.assistants.retrieve(tools.Tool.POLL_ASSISTANT_ID)
-        sticker_assistant = temporary_client.beta.assistants.retrieve(tools.Tool.STICKER_ASSISTANT_ID)
         property_assistant = temporary_client.beta.assistants.retrieve(tools.Tool.PROPERTY_ASSISTANT_ID)
         memory_assistant = temporary_client.beta.assistants.retrieve(tools.Tool.MEMORY_ASSISTANT_ID)
 
@@ -51,7 +50,6 @@ class Mibo:
                     'cat_template': cat_assistant, 
                     'image_template': image_assistant, 
                     'poll_template': poll_assistant, 
-                    'sticker_template': sticker_assistant, 
                     'property_template': property_assistant, 
                     'memory_template': memory_assistant}
 
@@ -59,10 +57,9 @@ class Mibo:
         
         # Register event listeners
         self.bus.register(assistant_events.AssistantResponse, self._parse_message)
-        self.bus.register(mibo_events.MiboMessageResponse, self._handle_message_response)
-        self.bus.register(mibo_events.MiboStickerResponse, self._handle_sticker_response)
-        self.bus.register(mibo_events.MiboPollResponse, self._handle_poll_response)
-        
+        self.bus.register(mibo_events.MiboMessageResponse, self._send_message)
+        self.bus.register(mibo_events.MiboPollResponse, self._create_poll)
+
         self._register_handlers()
         self.app = Application.builder().token(self.token).build()
 

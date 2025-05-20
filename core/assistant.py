@@ -44,13 +44,11 @@ class Assistant:
         if assistant_type == tools.Tool.CAT_ASSISTANT:
             image_template = templates.get('image_template', {})
             poll_template = templates.get('poll_template', {})
-            sticker_template = templates.get('sticker_template', {})
             property_template = templates.get('property_template', {})
             memory_template = templates.get('memory_template', {})
 
             self.image_assistant: CatAssistant = CatAssistant(chat_id, client, bus, {'template': image_template}, start_datetime, chat, tools.Tool.IMAGE_ASSISTANT)
             self.poll_assistant: CatAssistant = CatAssistant(chat_id, client, bus, {'template': poll_template}, start_datetime, chat, tools.Tool.POLL_ASSISTANT)
-            self.sticker_assistant: CatAssistant = CatAssistant(chat_id, client, bus, {'template': sticker_template}, start_datetime, chat, tools.Tool.STICKER_ASSISTANT)
             self.property_assistant: CatAssistant = CatAssistant(chat_id, client, bus, {'template': property_template}, start_datetime, chat, tools.Tool.PROPERTY_ASSISTANT)
             self.memory_assistant: CatAssistant = CatAssistant(chat_id, client, bus, {'template': memory_template}, start_datetime, chat, tools.Tool.MEMORY_ASSISTANT)
 

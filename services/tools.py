@@ -1,6 +1,8 @@
 import os
-
+from dotenv import load_dotenv
 from events import tool_events
+
+load_dotenv(dotenv_path="env/.env", override=False)
 
 class Tool:
     '''
@@ -16,7 +18,6 @@ class Tool:
     CAT_ASSISTANT_ID = os.environ['CAT_ASSISTANT_ID']
     IMAGE_ASSISTANT_ID = os.environ['IMAGE_ASSISTANT_ID']
     POLL_ASSISTANT_ID = os.environ['POLL_ASSISTANT_ID']
-    STICKER_ASSISTANT_ID = os.environ['STICKER_ASSISTANT_ID']
     PROPERTY_ASSISTANT_ID = os.environ['PROPERTY_ASSISTANT_ID']
     MEMORY_ASSISTANT_ID = os.environ['MEMORY_ASSISTANT_ID']
 
@@ -24,13 +25,11 @@ class Tool:
     CAT_ASSISTANT = 'cat_assistant'
     IMAGE_ASSISTANT = 'image_assistant'
     POLL_ASSISTANT = 'poll_assistant'
-    STICKER_ASSISTANT = 'sticker_assistant'
     PROPERTY_ASSISTANT = 'property_assistant'
     MEMORY_ASSISTANT = 'memory_assistant'
 
     IMAGE_ASSISTANT_EVENT = tool_events.ToolImageRequest
     POLL_ASSISTANT_EVENT = tool_events.ToolPollRequest
-    STICKER_ASSISTANT_EVENT = tool_events.ToolStickerRequest
     PROPERTY_ASSISTANT_EVENT = tool_events.ToolPropertyChangeRequest
     MEMORY_ASSISTANT_EVENT = tool_events.ToolMemorizeKeyInformationRequest
 
@@ -40,8 +39,6 @@ class Tool:
             return Tool.IMAGE_ASSISTANT_EVENT
         elif assistant_type == Tool.POLL_ASSISTANT:
             return Tool.POLL_ASSISTANT_EVENT
-        elif assistant_type == Tool.STICKER_ASSISTANT:
-            return Tool.STICKER_ASSISTANT_EVENT
         elif assistant_type == Tool.PROPERTY_ASSISTANT:
             return Tool.PROPERTY_ASSISTANT_EVENT
         elif assistant_type == Tool.MEMORY_ASSISTANT:
