@@ -39,11 +39,16 @@ class StickerWrapper(Wrapper):
         return 1
 
 class PollWrapper(Wrapper):
-    def __init__(self, question: str, options: List[str], multiple_choice: bool):
+    def __init__(self, question: str, options: List[str], multiple_choice: bool, correct_option_idx: int = 0, explanation: str = ''):
         super().__init__()
         self.question: str = question or ''
         self.options: List[str] = options or []
         self.multiple_choice: bool = multiple_choice or False
+        self.correct_option_idx: int = correct_option_idx or -1
+        self.explanation: str = explanation or ''
+
+        if correct_option_idx != -1:
+            self.multiple_choice = False
 
     def __str__(self):
         str = []
@@ -53,7 +58,7 @@ class PollWrapper(Wrapper):
             str.append(f"{i+1}. {option}")
 
 class MessageWrapper(Wrapper):
-    def __init__(self, chat_id: str, message_id: str, role: str, user: str, message: str, ping: bool = True, reply_id: str = '', datetime: dt.datetime = None):
+    def __init__(self, chat_id: str, message_id: str = None, role: str = 'assistant', user: str = None, message: str = '', ping: bool = True, reply_id: str = '', datetime: dt.datetime = None):
         super().__init__(message_id)
         self.chat_id: str = chat_id
         self.role: str = role or 'assistant'
@@ -72,6 +77,17 @@ class MessageWrapper(Wrapper):
 
     def add_content(self, content: Wrapper):
         self.content_list.append(content)
+
+    def get_images(self) -> List[ImageWrapper]:
+        return [c for c in self.content_list if isinstance(c, ImageWrapper)]
+    
+    def get_sticker(self) -> StickerWrapper:
+        stickers = [c for c in self.content_list if isinstance(c, StickerWrapper)]
+        return stickers[0] if stickers else None
+    
+    def get_poll(self) -> PollWrapper:
+        polls = [c for c in self.content_list if isinstance(c, PollWrapper)]
+        return polls[0] if polls else None
     
     async def tokens(self, model='gpt-4o'):
         encoding = tiktoken.encoding_for_model(model)

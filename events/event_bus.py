@@ -26,13 +26,34 @@ class EventBus:
     def register(self, event_cls: type[ev.Event], handler) -> None:
         self._listeners.setdefault(event_cls, []).append(handler)
 
+    def unregister(self, event_cls: type[ev.Event], handler) -> None:
+        if event_cls in self._listeners:
+            try:
+                self._listeners[event_cls].remove(handler)
+            except ValueError:
+                pass
+            if not self._listeners[event_cls]:
+                del self._listeners[event_cls]
+
     async def emit(self, event: ev.Event) -> ev.Event:
-        for handler in self.listeners.get(type(event), []):
+        for handler in self._listeners.get(type(event), []):
             if asyncio.iscoroutinefunction(handler):
                 asyncio.create_task(handler(event))
             else:
                 handler(event)
         return event
+    
+    def emit_sync(self, event: ev.Event) -> None:
+        '''
+        Synchronous version of emit that can be called from synchronous contexts.
+        It schedules the async emit to run in the event loop.
+        '''
+        try:
+            loop = asyncio.get_running_loop()
+            self._spawn(self.emit(event))
+        except RuntimeError:
+            # No running event loop
+            asyncio.run_coroutine_threadsafe(self.emit(event), asyncio.get_event_loop())
 
     async def wait(self, requested_event: ev.Event, response_class: Type[ResponseType], timeout: float | None = 60.0) -> ResponseType:
         '''
@@ -41,11 +62,13 @@ class EventBus:
         '''
         loop = asyncio.get_running_loop()
         future: asyncio.future[ResponseType] = loop.create_futureure()
+        original = requested_event.event_id
 
         # one‑shot resolver
-        def _resolver(resp_event: ResponseType) -> None:
-            if resp_event.event_id == requested_event.event_id and not future.done():
-                future.set_result(resp_event)
+        def _resolver(response_event: ResponseType) -> None:
+            # Use original_event_id if available, otherwise check event_id
+            if (response_event.event_id == original) and not future.done():
+                future.set_result(response_event)
                 _remove_listener()
 
         # helper so resolver can remove itself

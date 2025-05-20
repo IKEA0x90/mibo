@@ -1,14 +1,16 @@
 import openai
 import datetime as dt
 import random
+import os
 
 from copy import copy
 from typing import List, Dict
 
-from events import event_bus, conductor_events, assistant_events, system_events
+from events import event_bus, conductor_events, assistant_events, system_events, tool_events
 from core import database, window, wrapper
+from services import tools
 
-def initialize_assistants(db: database.Database, client: openai.OpenAI, bus: event_bus.EventBus, template: dict, start_datetime: dt.datetime):
+def initialize_assistants(db: database.Database, client: openai.OpenAI, bus: event_bus.EventBus, templates: Dict[str, Dict[str, str]], start_datetime: dt.datetime):
     '''
     Creates a dictionary of assistants for each chat in the database.
     '''
@@ -18,25 +20,46 @@ def initialize_assistants(db: database.Database, client: openai.OpenAI, bus: eve
     chat: wrapper.ChatWrapper
     for chat in chats:
         chat_id = chat.chat_id
-        assistants[chat_id] = Assistant(chat_id, client, bus, template, start_datetime, chat)
+        assistants[chat_id] = Assistant(chat_id, client, bus, templates, start_datetime, chat, tools.Tool.MIBO)
 
     return assistants
 
 class Assistant:
-    def __init__(self, chat_id, client, bus, template, start_datetime, chat):
+    def __init__(self, chat_id: str, client: openai.OpenAI, bus: event_bus.EventBus, templates: Dict[str, Dict[str, str]], 
+                 start_datetime: dt.datetime, chat: wrapper.ChatWrapper, assistant_type: str = tools.Tool.MIBO):
+        
         self.chat_id: str = chat_id
         self.client: openai.OpenAI = client
         self.bus: event_bus.EventBus = bus
         self.system_message: str = ''
-        self.template: dict = template
+        self.template: dict = templates.get('template', {})
         self.chat: wrapper.ChatWrapper = chat
-        
+        self.assistant_type: str = assistant_type
+
+        # mibo only has the cat assistant
+        if assistant_type == tools.Tool.MIBO:
+            self.cat_assistant: CatAssistant = CatAssistant(chat_id, client, bus, templates, start_datetime, chat, tools.Tool.CAT_ASSISTANT)
+
+        # cat assistant has the other assistants
+        if assistant_type == tools.Tool.CAT_ASSISTANT:
+            image_template = templates.get('image_template', {})
+            poll_template = templates.get('poll_template', {})
+            sticker_template = templates.get('sticker_template', {})
+            property_template = templates.get('property_template', {})
+            memory_template = templates.get('memory_template', {})
+
+            self.image_assistant: CatAssistant = CatAssistant(chat_id, client, bus, {'template': image_template}, start_datetime, chat, tools.Tool.IMAGE_ASSISTANT)
+            self.poll_assistant: CatAssistant = CatAssistant(chat_id, client, bus, {'template': poll_template}, start_datetime, chat, tools.Tool.POLL_ASSISTANT)
+            self.sticker_assistant: CatAssistant = CatAssistant(chat_id, client, bus, {'template': sticker_template}, start_datetime, chat, tools.Tool.STICKER_ASSISTANT)
+            self.property_assistant: CatAssistant = CatAssistant(chat_id, client, bus, {'template': property_template}, start_datetime, chat, tools.Tool.PROPERTY_ASSISTANT)
+            self.memory_assistant: CatAssistant = CatAssistant(chat_id, client, bus, {'template': memory_template}, start_datetime, chat, tools.Tool.MEMORY_ASSISTANT)
+
         self.death_timer = -1
         self.last_reply = -1
 
         self._load()
 
-        self.messages = window.Window(chat_id, start_datetime, template, self.max_context_tokens, self.max_content_tokens)
+        self.messages = window.Window(chat_id, start_datetime, self.template, self.max_context_tokens, self.max_content_tokens)
 
         self._register()
 
@@ -100,22 +123,27 @@ class Assistant:
         if event.chat_id != self.chat_id:
             return
         
-        self.messages.add_message(event.message)
+        await self.messages.add_message(event.event_id, event.message, self.bus)
         run = await self._check_conditions(event.message)
         if run:
             # self.death_timer = death_timer
             # self.last_reply = event.message.timestamp
 
-            ev = assistant_events.AssistantDirectRequest(message=event.message,)
-            self.bus.emit(assistant_events.AssistantDirectRequest(ev))
+            ev = assistant_events.AssistantDirectRequest(message=event.message, event_id=event.event_id)
+            await self.bus.emit(assistant_events.AssistantDirectRequest(ev))
 
-    async def _trigger_completion(self, event: conductor_events.AssistantRequest):
+    async def _not_implemented(self, event_id: str, message: str):
+        issue = system_events.ChatErrorEvent(self.chat_id, 'Whoops! An error occurred.', event_id=event_id)
+        await self.bus.emit(issue)
+
+    async def _trigger_completion(self, event: assistant_events.AssistantDirectRequest):
         '''
         Makes a json request from self.window.transform_messages()
         Checks if messages requires a reply.
         If so, make a copy of self.assistant_object and add the message to it.
         Then, call self.client.chat.completions.create() with the json request.
-        If the reply 
+        If the response contains tool calls, create a ToolRequest and emit it.
+        Otherwise, create a message wrapper from the response and emit an assistant response.
         '''
         message = event.message
         if message.chat_id != self.chat_id:
@@ -136,8 +164,144 @@ class Assistant:
         request['messages'] = messages
 
         try:
-            response  = await self.client.chat.completions.create(**request)
-            pass
+            response = await self.client.chat.completions.create(**request)
+            
+            # Process the response
+            response_message = response.choices[0].message
+            
+            # Check if there are tool calls
+            if response_message.tool_calls:
+
+                await self.not_implemented(event.event_id, 'Tools are not implemented yet.') 
+
+                for tool_call in response_message.tool_calls:
+                    if tool_call.type != "function_call":
+                        continue
+
+                    tool_name = tool_call.function.name
+                    tool_args = tool_call.function.arguments
+
+                    tool_event = assistant_events.AssistantToolRequest(
+                        chat_id=self.chat_id,
+                        tool_name=tool_name,
+                        tool_args=tool_args,
+                        event_id=event.event_id
+                    )
+                    response: wrapper.MessageWrapper = await self.bus.wait(tool_event, assistant_events.AssistantToolResponse)
+
+                    # only some events require notification
+                    if tool_name == tools.Tool.CREATE_IMAGE:
+                        event = assistant_events.AssistantDirectRequest(response)
+                        await self.bus.emit(event)
+
+            else:
+                message=response_message.content
+                if not message.strip():
+                    return
+
+                # Create a message wrapper from the response
+                assistant_message = wrapper.MessageWrapper(
+                    chat_id=self.chat_id,
+                    message_id=str(response.id),
+                    role='assistant',
+                    user='Assistant',
+                    message=message,
+                    ping=False,
+                    datetime=dt.datetime.now()
+                )
+                
+                # Emit the assistant response
+                response_event = assistant_events.AssistantResponse(response=assistant_message, event_id=event.event_id)
+                await self.bus.emit(response_event)
 
         except Exception as e:
-            pass
+            issue = system_events.ChatErrorEvent(self.chat_id, 'Whoops! An error occurred.', str(e), event_id=event.event_id)
+            await self.bus.emit(issue)
+
+class CatAssistant(Assistant):
+    def __init__(self, chat_id, client, bus, templates, start_datetime, chat, assistant_type):
+        super().__init__(f'system_{chat_id}', client, bus, templates, start_datetime, chat, assistant_type=assistant_type)
+
+        self.outer_id = chat_id
+
+        self._configure_events()
+
+    def _configure_events(self):
+
+        self.bus.unregister(conductor_events.AssistantRequest, self._add_message)
+        self.bus.unregister(conductor_events.MessagePush, self._prepare)
+        self.bus.unregister(assistant_events.AssistantDirectRequest, self._trigger_completion)
+        
+        if self.assistant_type == tools.Tool.CAT_ASSISTANT:
+            self.bus.register(assistant_events.AssistantToolRequest, self._tool_response)
+
+        elif self.assistant_type in [tools.Tool.IMAGE_ASSISTANT, tools.Tool.POLL_ASSISTANT, tools.Tool.STICKER_ASSISTANT, tools.Tool.PROPERTY_ASSISTANT, tools.Tool.MEMORY_ASSISTANT]:
+            self.bus.register(tools.Tool.get_event(self.assistant_type), self._tool_response)
+
+    async def _tool_response(self, event: assistant_events.AssistantToolRequest):
+        '''
+        Listens for a tool request. 
+        Asks the Cat Assistant to use a tool.
+        Returns a short notification.
+        '''
+        if (event.chat_id != self.outer_id):
+            return
+        
+        tool_name = event.tool_name
+        tool_args = event.tool_args
+
+        if tool_name != tools.Tool.CAT_ASSISTANT:
+            return
+        
+        interaction_type = tool_args.get('interaction_type', None)
+        interaction_context = tool_args.get('interaction_context', None)
+
+        if not interaction_type or not interaction_context:
+            return
+        
+        if interaction_type == tools.Tool.CREATE_IMAGE:
+            ev = tool_events.ToolImageRequest(context=interaction_context, event_id=event.event_id)
+            self.bus.emit(ev)
+
+        elif interaction_type == tools.Tool.CREATE_POLL:
+            ev = tool_events.ToolPollRequest(context=interaction_context, event_id=event.event_id)
+            self.bus.emit(ev)
+
+        elif interaction_type == tools.Tool.SEND_STICKER:
+            ev = tool_events.ToolStickerRequest(context=interaction_context, event_id=event.event_id)
+            self.bus.emit(ev)
+
+        elif interaction_type == tools.Tool.CHANGE_PROPERTY:
+            ev = tool_events.ToolPropertyChangeRequest(context=interaction_context, event_id=event.event_id)
+            self.bus.emit(ev)
+
+        elif interaction_type == tools.Tool.MEMORIZE_KEY_INFORMATION:
+            ev = tool_events.ToolMemorizeKeyInformationRequest(context=interaction_context, event_id=event.event_id)
+            self.bus.emit(ev)
+        
+        message = wrapper.MessageWrapper(
+            chat_id=self.chat_id,
+            role='assistant',
+            user='CatAssistant',
+            message=tool_args.get('message', ''),
+            ping=True,
+            datetime=dt.datetime.now()
+        )
+
+        await self.messages.override(message)
+        event = assistant_events.AssistantDirectRequest(message=message, event_id=event.event_id)
+        await self.bus.emit(event)
+
+    async def _use_tool(self, event: tool_events.ToolRequest):
+        '''
+        Processes a tool request.
+        '''
+        if event.chat_id != self.outer_id:
+            return
+        
+        if event.tool_name == tools.Tool.CAT_ASSISTANT:
+            return
+        
+        if event.tool_name == tools.Tool.CREATE_IMAGE:
+            prompt = ''
+            image = await tools.Tool.create_image(prompt)

@@ -53,7 +53,7 @@ class Database:
                                         for row in rows]
         
         except Exception as e:
-            self.bus.emit(system_events.ErrorEvent('Failed to fetch chats.', e))
+            self.bus.emit_sync(system_events.ErrorEvent("Hmm.. Can't read your group chats from the database.", e))
             return []
 
     async def initialize(self):
@@ -69,7 +69,7 @@ class Database:
             self._register()
 
         except Exception as e:
-            self.bus.emit(system_events.ErrorEvent('Database cannot be initialized.', e))
+            await self.bus.emit(system_events.ErrorEvent("The database somehow failed to initialize.", e))
 
         async with self._lock:
             if not self._init_done:
@@ -131,6 +131,9 @@ class Database:
             update: Update = event.update
             context: CallbackContext = event.context
 
+            chat = update.effective_chat
+            chat_id = chat.id
+
             message: Message = update.effective_message
             file_bytes = []
 
@@ -152,11 +155,11 @@ class Database:
             # You need to manage album logic at a higher level in a handler
 
             if file_bytes:
-                request = db_events.ImageSaveRequest(chat_id=str(message.chat.id), file_bytes=file_bytes)
+                request = db_events.ImageSaveRequest(chat_id=str(message.chat.id), file_bytes=file_bytes, event_id=event.event_id)
                 await self.bus.emit(request)
         
         except Exception as e:
-            self.bus.emit(system_events.ErrorEvent('Failed to download image.', e))
+            await self.bus.emit(system_events.ChatErrorEvent(chat_id, 'Failed to download image.', e, event_id=event.event_id))
             return 
 
     async def _save_images(self, event: db_events.ImageSaveRequest):
@@ -214,11 +217,11 @@ class Database:
                     wrap = wrapper.ImageWrapper(new_width, new_height, filepath, img_base64)
             
             # Send the response event with the paths and base64 strings
-            response = db_events.ImageResponse(chat_id=chat_id, images=images)
+            response = db_events.ImageResponse(chat_id=chat_id, images=images, event_id=event.event_id)
             await self.bus.emit(response)
 
         except Exception as e:
-            self.bus.emit(system_events.ErrorEvent('Failed to save image.', e))
+            await self.bus.emit(system_events.ChatErrorEvent("Couldn't save one of the images to disk.", e, event_id=event.event_id))
             return
     
     async def create_tables(self) -> None:

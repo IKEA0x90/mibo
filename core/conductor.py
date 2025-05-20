@@ -42,7 +42,7 @@ class Conductor:
                 return
         
         except Exception as e:
-            raise system_events.ErrorEvent('Message cannot be parsed..', e)
+            raise system_events.ErrorEvent("Woah! Somehow, this telegram message can't be parsed.", e)
 
         try:
             user = user.username or user.first_name
@@ -81,13 +81,11 @@ class Conductor:
             if response and response.response:
                 for image in response.images:
                     message_wrapper.add_content(image)
-            
-            self.bus.emit()
 
             request = conductor_events.MessagePush(message_wrapper)
             self.bus.wait(request, assistant_events.AssistantReadyResponse, 60)
 
-            self.bus.emit(conductor_events.AssistantRequest(message_wrapper))
+            await self.bus.emit(conductor_events.AssistantRequest(message_wrapper, event_id=event.event_id))
 
         except Exception as e:
-            self.bus.emit(system_events.ChatErrorEvent(chat_id=chat_id, error='An unexpted error occurred.', e=e))
+            await self.bus.emit(system_events.ChatErrorEvent(chat_id=chat_id, error="Something's wrong with passing the messages from telegram to you.", e=e, event_id=event.event_id))

@@ -1,16 +1,21 @@
 import datetime as dt
+import asyncio
 
 from typing import List, Dict, Deque
 from collections import deque
 from copy import deepcopy
 
 from core import wrapper
+from events import assistant_events, event_bus
 
 class Window():
     def __init__(self, chat_id: str, start_datetime: dt.datetime, template: dict, max_context_tokens: int, max_content_tokens: int):
         self.chat_id: str = chat_id
         self.tokens: int = 0
         self.start_datetime: dt.datetime = start_datetime
+
+        self._lock = asyncio.Lock()
+        self._stale_buffer: Deque[wrapper.MessageWrapper] = deque()
 
         self.max_context_tokens: int = max_context_tokens
         self.max_content_tokens: int = max_content_tokens
@@ -27,7 +32,18 @@ class Window():
     def __delitem__(self, idx):
         del self.messages[idx]
 
-    async def add_message(self, message: wrapper.MessageWrapper) -> bool:
+    async def override(self, message: wrapper.MessageWrapper) -> None:
+        '''
+        Clears the windows and adds the message.
+        '''
+        async with self._lock:
+            self.messages.clear()
+            self.tokens = 0
+            self.ready = True
+
+            await self._insert_live_message(message)
+
+    async def add_message(self, event_id: str, message: wrapper.MessageWrapper, bus: event_bus.EventBus) -> bool:
         '''
         Adds a message to the window. 
         returns True if the window now contains the latest context.
@@ -42,6 +58,9 @@ class Window():
                 else:
                     await self._finalize_stale_collection()
                     self.ready = True
+
+                    response = assistant_events.AssistantReadyPush(event_id=event_id)
+                    await bus.emit(response)
 
             await self._insert_live_message(message)
             return True
@@ -62,7 +81,7 @@ class Window():
             self.messages.append(msg)
             token_sum += msg_tokens
 
-        self.total_tokens = token_sum
+        self.tokens = token_sum
         self._stale_buffer.clear()
 
     async def _insert_live_message(self, message: wrapper.MessageWrapper) -> None:
@@ -82,14 +101,14 @@ class Window():
             if not inserted:
                 self.messages.appendleft(message)
 
-        self.total_tokens += message_tokens
+        self.tokens += message_tokens
         await self._trim_excess_tokens()
 
     async def _trim_excess_tokens(self) -> None:
-        while self.total_tokens > self.max_context_tokens and self.messages:
+        while self.tokens > self.max_context_tokens and self.messages:
             oldest_msg = self.messages.popleft()
             oldest_tokens = await oldest_msg.tokens()
-            self.total_tokens -= oldest_tokens
+            self.tokens -= oldest_tokens
 
     async def transform_messages(self) -> List[Dict[str, str]]:
         '''
