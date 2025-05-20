@@ -160,133 +160,32 @@ class Mibo:
         message_poll: wrapper.PollWrapper = message.get_poll()
 
         if message_text or message_images:
-            # send the text and images from the response message
-            # text and/or images may be empty - in that case, only the non-empty item is sent
-            # if both are empty, nothing is sent
-
             response = mibo_events.MiboMessageResponse(chat_id, message_text, message_images)
             self.bus.emit(response)
 
         if message_sticker:
-            response = mibo_events.MiboStickerResponse(chat_id, message_sticker)
+            response = system_events.ChatErrorEvent(chat_id, 'Stickers are not supported yet.')
             self.bus.emit(response)
 
         if message_poll:
             response = mibo_events.MiboPollResponse(chat_id, message_poll)
-            self.bus.emit(response)    async def _handle_message_response(self, event: mibo_events.MiboMessageResponse):
-        '''
-        Handles text and image message responses from the assistant.
-        Sends text and images to the chat via Telegram API.
-        '''
-        chat_id: str = event.chat_id
-        text: str = event.text
-        images: List[wrapper.ImageWrapper] = event.images
+            self.bus.emit(response)    
         
-        # Send the text message if it exists
-        if text and text.strip():
-            try:
-                await self.app.bot.send_message(
-                    chat_id=chat_id,
-                    text=text,
-                    parse_mode='Markdown'
-                )
-            except Exception as e:
-                # If Markdown parsing fails, try sending as plain text
-                print(f"Failed to send message with Markdown formatting: {e}")
-                await self.app.bot.send_message(
-                    chat_id=chat_id,
-                    text=text
-                )
-        
-        # Send each image if they exist
-        if images and len(images) > 0:
-            for image in images:
-                try:
-                    if image.image_url:
-                        await self.app.bot.send_photo(
-                            chat_id=chat_id,
-                            photo=image.image_url,
-                            caption=image.image_description if image.image_description else None
-                        )
-                    elif image.image_base64:
-                        # For base64 images, we need to convert them to bytes
-                        import base64
-                        from io import BytesIO
-                        
-                        image_bytes = BytesIO(base64.b64decode(image.image_base64))
-                        await self.app.bot.send_photo(
-                            chat_id=chat_id,
-                            photo=image_bytes,
-                            caption=image.image_description if image.image_description else None
-                        )
-                except Exception as e:
-                    print(f"Failed to send image: {e}")
-                    # Notify the user that an image couldn't be sent
-                    await self.app.bot.send_message(
-                        chat_id=chat_id,
-                        text="Sorry, I couldn't send an image."
-                    )
+    async def _send_message(self, event: mibo_events.MiboMessageResponse):
+        '''
+        send the text and images from the response message
+        text and/or images may be empty - in that case, only the non-empty item is sent
+        if both are empty, nothing is sent
+        if images are sent, they are combined into an album and the message is sent appended to the first image (like users do)
+        '''
+        pass
 
-    async def _handle_sticker_response(self, event: mibo_events.MiboStickerResponse):
+    async def _create_poll(self, event: mibo_events.MiboPollResponse):
         '''
-        Handles sticker responses from the assistant.
-        Sends stickers to the chat via Telegram API.
+        Make a poll.
+        Property verification is done elsewhere - it is assumed that the poll is valid here. 
         '''
-        chat_id: str = event.chat_id
-        sticker: wrapper.StickerWrapper = event.sticker
-        
-        if sticker and sticker.key_emoji:
-            try:
-                # In the latest python-telegram-bot, we need to use a different approach
-                # for sending stickers based on emoji
-                
-                # For a production bot, you might want to:
-                # 1. Maintain a mapping of emojis to sticker file_ids
-                # 2. Use a sticker search API if available
-                # 3. Create custom stickers for common emojis
-                
-                # As a fallback, we'll send the emoji as text
-                await self.app.bot.send_message(
-                    chat_id=chat_id,
-                    text=sticker.key_emoji
-                )
-            except Exception as e:
-                print(f"Failed to send sticker: {e}")
-                # Fallback to sending as text
-                await self.app.bot.send_message(
-                    chat_id=chat_id,
-                    text=sticker.key_emoji
-                )
-
-    async def _handle_poll_response(self, event: mibo_events.MiboPollResponse):
-        '''
-        Handles poll responses from the assistant.
-        Creates and sends polls to the chat via Telegram API.
-        '''
-        chat_id: str = event.chat_id
-        poll: wrapper.PollWrapper = event.poll
-        
-        if poll and poll.question and poll.options:
-            if poll.correct_option_idx >= 0:
-                # This is a quiz poll (with a correct answer)
-                await self.app.bot.send_poll(
-                    chat_id=chat_id,
-                    question=poll.question,
-                    options=poll.options,
-                    type='quiz',
-                    correct_option_id=poll.correct_option_idx,
-                    explanation=poll.explanation if poll.explanation else None,
-                    is_anonymous=False
-                )
-            else:
-                # This is a regular poll
-                await self.app.bot.send_poll(
-                    chat_id=chat_id,
-                    question=poll.question,
-                    options=poll.options,
-                    is_anonymous=False,
-                    allows_multiple_answers=poll.multiple_choice
-                )
+        pass
 
     async def _debug(self, update: Update, context: CallbackContext):
         '''

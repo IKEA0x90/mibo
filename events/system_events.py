@@ -5,7 +5,7 @@ class ShutdownEvent(event.Event):
         super().__init__('shutdown_event', **kwargs)
 
 class ChatErrorEvent(event.Event):
-    def __init__(self, chat_id: str, error: str, traceback: Exception, **kwargs):
+    def __init__(self, chat_id: str, error: str, traceback: Exception = None, **kwargs):
         super().__init__('error', chat_id=chat_id, error=error, e=traceback, **kwargs)
 
 class ErrorEvent(event.Event):
