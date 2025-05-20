@@ -171,21 +171,58 @@ class Mibo:
             response = mibo_events.MiboPollResponse(chat_id, message_poll)
             self.bus.emit(response)    
         
-    async def _send_message(self, event: mibo_events.MiboMessageResponse):
+    async def _send_message(self, event: mibo_events.MiboMessageResponse) -> None:
         '''
-        send the text and images from the response message
-        text and/or images may be empty - in that case, only the non-empty item is sent
-        if both are empty, nothing is sent
-        if images are sent, they are combined into an album and the message is sent appended to the first image (like users do)
+        Send the text and images from the response message.
+        Text and/or images may be empty - in that case, only the non-empty item is sent.
+        If both are empty, nothing is sent.
+        If images are sent, they are combined into an album and the message is sent appended to the first image (like users do).
         '''
-        pass
+        chat_id: str = event.chat_id
+        text: str = event.text
+        images: List[wrapper.ImageWrapper] = event.images
 
-    async def _create_poll(self, event: mibo_events.MiboPollResponse):
+        if not text and not images:
+            return
+
+        # If only text
+        if text and not images:
+            await self.app.bot.send_message(chat_id=chat_id, text=text)
+            return
+
+        # If only images
+        if images and not text:
+            media_group = [
+                self.app.bot._wrap_input_media_photo(image.image_url) for image in images
+            ]
+            await self.app.bot.send_media_group(chat_id=chat_id, media=media_group)
+            return
+
+        # If both text and images: send as album, text as caption to first image
+        if images and text:
+            from telegram import InputMediaPhoto
+            media_group = []
+            for idx, image in enumerate(images):
+                caption = text if idx == 0 else None
+                media_group.append(InputMediaPhoto(media=image.image_url, caption=caption))
+            await self.app.bot.send_media_group(chat_id=chat_id, media=media_group)
+
+    async def _create_poll(self, event: mibo_events.MiboPollResponse) -> None:
         '''
         Make a poll.
-        Property verification is done elsewhere - it is assumed that the poll is valid here. 
+        Property verification is done elsewhere - it is assumed that the poll is valid here.
         '''
-        pass
+        chat_id: str = event.chat_id
+        poll: wrapper.PollWrapper = event.poll
+
+        await self.app.bot.send_poll(
+            chat_id=chat_id,
+            question=poll.question,
+            options=poll.options,
+            allows_multiple_answers=poll.multiple_choice,
+            correct_option_id=poll.correct_option_idx if poll.correct_option_idx != -1 else None,
+            explanation=poll.explanation if poll.explanation else None
+        )
 
     async def _debug(self, update: Update, context: CallbackContext):
         '''
