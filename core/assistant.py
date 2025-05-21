@@ -163,7 +163,7 @@ class Assistant:
         if run:
             typing = event.typing
             typing()
-            
+
             ev = assistant_events.AssistantDirectRequest(message=event.message, event_id=event.event_id)
             await self.bus.emit(ev)
 
@@ -189,7 +189,8 @@ class Assistant:
         
         template = copy(self.assistant_object)
 
-        messages: List[Dict] = await self.messages.transform_messages()
+        user_messages: List[Dict] = await self.messages.transform_messages()
+        messages: List[Dict] = []
 
         if self.custom_instructions:
             messages.append({
@@ -204,6 +205,9 @@ class Assistant:
             })
         
         request = {'model': template['model']}
+        for msg in user_messages:
+            messages.append(msg)
+
         request['messages'] = messages
 
         try:
