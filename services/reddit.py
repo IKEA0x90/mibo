@@ -1,1 +1,1 @@
-# A class for reading a reddit post and a the top comments.
+# A class for reading a reddit post and the top comments.

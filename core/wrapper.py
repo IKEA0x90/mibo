@@ -52,11 +52,12 @@ class PollWrapper(Wrapper):
             self.multiple_choice = False
 
     def __str__(self):
-        str = []
-        str.append(f'Poll {"(multiple choice)" if self.multiple_choice else ""}: {self.question}\n')
-        str.append('Options:\n')
+        rstr = []
+        rstr.append(f'Poll {"(multiple choice)" if self.multiple_choice else ""}: {self.question}\n')
+        rstr.append('Options:\n')
         for i, option in enumerate(self.options):
-            str.append(f"{i+1}. {option}")
+            rstr.append(f"{i+1}. {option}")
+        return rstr
 
 class MessageWrapper(Wrapper):
     def __init__(self, chat_id: str, message_id: str = None, role: str = 'assistant', user: str = None, message: str = '', ping: bool = True, reply_id: str = '', datetime: dt.datetime = None):
@@ -71,7 +72,10 @@ class MessageWrapper(Wrapper):
         self.ping: bool = ping
         self.reply_id: str = reply_id or '' 
 
-        self.datetime: dt.datetime = datetime.astimezone(dt.timezone.utc) or dt.datetime.now(tz=dt.timezone.utc)
+        try:
+            self.datetime: dt.datetime = datetime.astimezone(dt.timezone.utc)
+        except Exception:
+            self.datetime = dt.datetime.now(tz=dt.timezone.utc)
 
     def __str__(self):
         return f'{self.user}: {self.message}'

@@ -161,6 +161,9 @@ class Assistant:
         await self.messages.add_message(event.event_id, event.message, self.bus)
         run = await self._check_conditions(event.message)
         if run:
+            typing = event.typing
+            typing()
+            
             ev = assistant_events.AssistantDirectRequest(message=event.message, event_id=event.event_id)
             await self.bus.emit(ev)
 

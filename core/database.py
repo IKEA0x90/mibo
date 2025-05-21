@@ -140,7 +140,21 @@ class Database:
                     frequency_penalty=0.1,
                     presence_penalty=0.1
                 )
-                await self.bus.emit(db_events.NewChatAck(chat=chat, event_id=event.event_id))
+            else:
+                await self.cursor.execute("SELECT * FROM chats WHERE chat_id = ?", (chat_id,))
+                row = await self.cursor.fetchone()
+                chat = wrapper.ChatWrapper(
+                    chat_id=row['chat_id'],
+                    custom_instructions=row['custom_instructions'],
+                    chance=row['chance'],
+                    max_context_tokens=row['max_context_tokens'],
+                    max_content_tokens=row['max_content_tokens'],
+                    max_response_tokens=row['max_response_tokens'],
+                    frequency_penalty=row['frequency_penalty'],
+                    presence_penalty=row['presence_penalty']
+                )
+
+            await self.bus.emit(db_events.NewChatAck(chat=chat, event_id=event.event_id))
 
             db_message_id = await self.insert_message(
                 chat_id=chat_id,

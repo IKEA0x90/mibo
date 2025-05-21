@@ -3,11 +3,13 @@ import sys
 import signal
 import openai
 import logging
+import random
 
 import datetime as dt
 from typing import List, Dict
 from telegram import Update, Chat, ChatMember, InputFile, InputMediaPhoto
 from telegram.ext import Application, CallbackContext, CommandHandler, MessageHandler, ChatMemberHandler, filters
+from telegram.constants import ChatAction
 
 from events import event_bus, mibo_events, system_events, assistant_events, conductor_events
 from core import assistant, database, conductor, wrapper
@@ -27,6 +29,8 @@ class Mibo:
         self.client = None
         self.assistants = {} 
         self.app = None
+
+        self.typing_tasks: Dict[int, asyncio.Task] = {}
 
         self._prepare(token)
 
@@ -163,7 +167,21 @@ class Mibo:
         if update.effective_message.from_user.id == self.app.bot.id:
             return
         
-        event = await self.bus.emit(mibo_events.MiboMessage(update, context, start_datetime=self.start_datetime))
+        chat_id = str(update.effective_chat.id)
+
+        old_task = self.typing_tasks.pop(chat_id, None)
+        if old_task and not old_task.done():
+            old_task.cancel()
+            try:
+                await old_task
+            except asyncio.CancelledError:
+                pass
+        
+        def typing():
+            if chat_id not in self.typing_tasks or self.typing_tasks[chat_id].done():
+                self.typing_tasks[chat_id] = asyncio.create_task(self._simulate_typing(chat_id))
+        
+        event = await self.bus.emit(mibo_events.MiboMessage(update, context, start_datetime=self.start_datetime, typing=typing))
 
     async def _system_message(self, chat_id, system_message):
         '''
@@ -175,8 +193,16 @@ class Mibo:
         '''
         Parses a message and calls the correct responder.
         '''
-        chat_id = event.message.chat_id
+        chat_id = str(event.message.chat_id)
         message: wrapper.MessageWrapper = event.message
+
+        task = self.typing_tasks.pop(chat_id, None)
+        if task and not task.done():
+            task.cancel()
+            try:
+                await task
+            except asyncio.CancelledError:
+                pass
 
         message_text: str = message.message
         message_images: List[wrapper.ImageWrapper] = message.get_images()
@@ -196,7 +222,7 @@ class Mibo:
             await self.bus.emit(response)    
         
     @staticmethod
-    def parse_text(text: str) -> str:
+    def parse_text(text: str) -> List[str]:
         '''
         Parse the text for custom delimiters.
         '''
@@ -221,6 +247,8 @@ class Mibo:
         if not text and not images:
             return
         
+        text_list = []
+
         if text:
             text_list = self.parse_text(text)
 
@@ -228,7 +256,8 @@ class Mibo:
         if text_list and not images:
             for t in text_list:
                 await self.app.bot.send_message(chat_id=chat_id, text=t)
-                return
+                await asyncio.sleep(random.uniform(0.5, 3))
+            return
 
         # If only images
         if images and not text:
@@ -248,6 +277,7 @@ class Mibo:
 
             for t in text_list[1:]:
                 await self.app.bot.send_message(chat_id=chat_id, text=t)
+                await asyncio.sleep(random.uniform(0.5, 3))
 
     async def _create_poll(self, event: mibo_events.MiboPollResponse) -> None:
         '''
@@ -294,11 +324,18 @@ class Mibo:
                 # Could log this event or perform cleanup if needed
                 pass
 
+    async def _simulate_typing(self, chat_id: int):
+        try:
+            while True:
+                await self.app.bot.send_chat_action(chat_id=chat_id, action=ChatAction.TYPING)
+                await asyncio.sleep(4)
+        except asyncio.CancelledError:
+            pass
+
 logging.basicConfig(
     format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
-    level=logging.CRITICAL  # Changed from logging.INFO to logging.DEBUG
+    level=logging.CRITICAL
 )
-# For more detailed python-telegram-bot logs:
 logging.getLogger("telegram.ext").setLevel(logging.CRITICAL)
 
 async def main() -> None:

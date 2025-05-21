@@ -94,7 +94,7 @@ class Conductor:
             push_request = conductor_events.NewChatPush(chat, event_id=event.event_id)
             await self.bus.wait(push_request, mibo_events.AssistantCreated)
 
-            await self.bus.emit(conductor_events.AssistantRequest(chat_id=chat_id, message=message_wrapper, event_id=event.event_id))
+            await self.bus.emit(conductor_events.AssistantRequest(chat_id=chat_id, message=message_wrapper, event_id=event.event_id, typing=event.typing))
 
         except Exception as e:
             await self.bus.emit(system_events.ChatErrorEvent(chat_id=chat_id, error="Something's wrong with passing the messages from telegram to you.", e=e, event_id=event.event_id))
