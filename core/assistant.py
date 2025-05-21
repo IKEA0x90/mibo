@@ -2,6 +2,7 @@ import openai
 import datetime as dt
 import random
 import os
+import asyncio
 
 from copy import copy
 from typing import List, Dict
@@ -81,8 +82,6 @@ class Assistant:
             'model': self.model,
             'temperature': self.temperature,
             'max_output_tokens': self.max_response_tokens,
-            'frequency_penalty': self.frequency_penalty,
-            'presence_penalty': self.presence_penalty,
             'tools': self.tools,
             'instructions': self.system_message,
             'store': False,
@@ -90,10 +89,23 @@ class Assistant:
             'truncation': 'auto',
         }
 
+        self.extra_body = {
+            'frequency_penalty': self.frequency_penalty,
+            'presence_penalty': self.presence_penalty,
+        }
+
     def _register(self):
         self.bus.register(conductor_events.AssistantRequest, self._add_message)
         self.bus.register(assistant_events.AssistantDirectRequest, self._trigger_completion)
         
+    @staticmethod
+    async def call_openai(sync_func, *args, **kwargs):
+        '''
+        Runs a synchronous OpenAI call in a thread pool, returns the result asynchronously.
+        '''
+        loop = asyncio.get_running_loop()
+        return await loop.run_in_executor(None, lambda: sync_func(*args, **kwargs))
+
     async def _check_conditions(self, message: wrapper.MessageWrapper) -> bool:
         '''
         First, checks if the window is ready.
@@ -127,7 +139,7 @@ class Assistant:
             # self.last_reply = event.message.timestamp
 
             ev = assistant_events.AssistantDirectRequest(message=event.message, event_id=event.event_id)
-            await self.bus.emit(assistant_events.AssistantDirectRequest(ev))
+            await self.bus.emit(ev)
 
     async def _not_implemented(self, event_id: str, message: str):
         issue = system_events.ChatErrorEvent(self.chat_id, 'Whoops! An error occurred.', event_id=event_id)
@@ -138,7 +150,7 @@ class Assistant:
         Makes a json request from self.window.transform_messages()
         Checks if messages requires a reply.
         If so, make a copy of self.assistant_object and add the message to it.
-        Then, call self.client.chat.completions.create() with the json request.
+        Then, call openai with the json request.
         If the response contains tool calls, create a ToolRequest and emit it.
         Otherwise, create a message wrapper from the response and emit an assistant response.
         '''
@@ -149,7 +161,7 @@ class Assistant:
         if not self.messages.ready:
             return
         
-        messages: List[Dict] = self.messages.transform_messages()
+        messages: List[Dict] = await self.messages.transform_messages()
 
         if self.custom_instructions:
             messages.append({
@@ -157,11 +169,13 @@ class Assistant:
                 'content': self.custom_instructions    
             })
 
-        request = copy(self.assistant_object)
-        request['messages'] = messages
+        template = copy(self.assistant_object)
+        
+        request = {'model': template['model']}
+        request['input'] = messages
 
         try:
-            response = await self.client.chat.completions.create(**request)
+            response = await self.call_openai(self.client.responses.create, **request, extra_body=self.extra_body)
             
             # Process the response
             response_message = response.choices[0].message
@@ -226,13 +240,12 @@ class CatAssistant(Assistant):
     def _configure_events(self):
 
         self.bus.unregister(conductor_events.AssistantRequest, self._add_message)
-        self.bus.unregister(conductor_events.MessagePush, self._prepare)
         self.bus.unregister(assistant_events.AssistantDirectRequest, self._trigger_completion)
         
         if self.assistant_type == tools.Tool.CAT_ASSISTANT:
             self.bus.register(assistant_events.AssistantToolRequest, self._tool_response)
 
-        elif self.assistant_type in [tools.Tool.IMAGE_ASSISTANT, tools.Tool.POLL_ASSISTANT, tools.Tool.STICKER_ASSISTANT, tools.Tool.PROPERTY_ASSISTANT, tools.Tool.MEMORY_ASSISTANT]:
+        elif self.assistant_type in [tools.Tool.IMAGE_ASSISTANT, tools.Tool.POLL_ASSISTANT, tools.Tool.PROPERTY_ASSISTANT, tools.Tool.MEMORY_ASSISTANT]:
             self.bus.register(tools.Tool.get_event(self.assistant_type), self._tool_response)
 
     async def _tool_response(self, event: assistant_events.AssistantToolRequest):

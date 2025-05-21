@@ -110,28 +110,24 @@ class Window():
             oldest_tokens = await oldest_msg.tokens()
             self.tokens -= oldest_tokens
 
-    async def transform_messages(self) -> List[Dict[str, str]]:
+    async def transform_messages(self) -> List[Dict[str, object]]:
         '''
-        Transforms the context messages into a json compatible with openai.
+        Transforms the context messages into a json compatible with OpenAI chat completions API.
+        Preserves both text and images as content blocks.
         '''
         messages = []
-        
         for message in self.messages:
             content = []
-            
-            # Process text
+            # Add text as a content block if present
             text = str(message)
-            content.append({'type': 'input_text', 'text': text})
-
-            # Check for custom content
+            if text:
+                content.append({"type": "text", "text": text})
+            # Add images as content blocks
             if message.content_list:
                 for c in message.content_list:
-                    
-                    # Images
                     if isinstance(c, wrapper.ImageWrapper):
-                        content.append({'type': 'input_image', 'image_url': f'data:image/jpeg;base64,{c.image_base64}'})
-
-            m = {'role': message.role, 'input': deepcopy(content)}
+                        content.append({"type": "image_url", "image_url": f"data:image/jpeg;base64,{c.image_base64}"})
+            # For OpenAI chat completions, each message is a dict with 'role' and 'content' (list of blocks)
+            m = {"role": message.role, "content": content}
             messages.append(m)
-
         return messages

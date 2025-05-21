@@ -16,7 +16,7 @@ from services import tools
 class Mibo:
     def __init__(self, token: str, db_path: str = 'env'):
         self.token = token
-        self.start_datetime = dt.datetime.now(dt.timezone.utc).timestamp()
+        self.start_datetime = dt.datetime.now(dt.timezone.utc)
 
         self.bus = event_bus.EventBus()
         self.db = database.Database(self.bus, db_path)
@@ -36,15 +36,14 @@ class Mibo:
         '''
         self.db.initialize_sync()
 
-        self.client = openai.AsyncOpenAI(api_key=self.key)
-        temporary_client = openai.OpenAI(api_key=self.key)
+        self.client = openai.OpenAI(api_key=self.key)
 
-        template_assistant = temporary_client.beta.assistants.retrieve(tools.Tool.MIBO_ID)
-        cat_assistant = temporary_client.beta.assistants.retrieve(tools.Tool.CAT_ASSISTANT_ID)
-        image_assistant = temporary_client.beta.assistants.retrieve(tools.Tool.IMAGE_ASSISTANT_ID)
-        poll_assistant = temporary_client.beta.assistants.retrieve(tools.Tool.POLL_ASSISTANT_ID)
-        property_assistant = temporary_client.beta.assistants.retrieve(tools.Tool.PROPERTY_ASSISTANT_ID)
-        memory_assistant = temporary_client.beta.assistants.retrieve(tools.Tool.MEMORY_ASSISTANT_ID)
+        template_assistant = self.client.beta.assistants.retrieve(tools.Tool.MIBO_ID).to_dict()
+        cat_assistant = self.client.beta.assistants.retrieve(tools.Tool.CAT_ASSISTANT_ID).to_dict()
+        image_assistant = self.client.beta.assistants.retrieve(tools.Tool.IMAGE_ASSISTANT_ID).to_dict()
+        poll_assistant = self.client.beta.assistants.retrieve(tools.Tool.POLL_ASSISTANT_ID).to_dict()
+        property_assistant = self.client.beta.assistants.retrieve(tools.Tool.PROPERTY_ASSISTANT_ID).to_dict()
+        memory_assistant = self.client.beta.assistants.retrieve(tools.Tool.MEMORY_ASSISTANT_ID).to_dict()
 
         self.templates = {'template': template_assistant,
                     'cat_template': cat_assistant, 
@@ -72,6 +71,9 @@ class Mibo:
         '''
         Start the bot
         '''
+        # re-initialize for async cursor
+        await self.db.initialize()
+        
         await self.app.initialize()
         await self.app.start()
         await self.app.updater.start_polling()
@@ -131,7 +133,7 @@ class Mibo:
         if update.effective_message.from_user.id == self.app.bot.id:
             return
         
-        event = await self.bus.emit(mibo_events.MiboMessage(update, start_datetime=self.start_datetime))
+        event = await self.bus.emit(mibo_events.MiboMessage(update, context, start_datetime=self.start_datetime))
 
     async def _system_message(self, chat_id, system_message):
         '''

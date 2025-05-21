@@ -1,4 +1,5 @@
 from telegram import Update
+from telegram.ext import CallbackContext
 from typing import List
 from datetime import datetime
 
@@ -7,8 +8,8 @@ from core import wrapper
 
 # Mibo events
 class MiboMessage(event.Event):
-    def __init__(self, update: Update, start_datetime: datetime, **kwargs):
-        super().__init__('mibo_message', update=update, start_datetime=start_datetime, **kwargs)
+    def __init__(self, update: Update, context: CallbackContext, start_datetime: datetime, **kwargs):
+        super().__init__('mibo_message', update=update, context=context, start_datetime=start_datetime, **kwargs)
 
 class MiboSystemMessage(event.Event):
     def __init__(self, update: Update, start_datetime: datetime, **kwargs):

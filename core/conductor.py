@@ -1,10 +1,10 @@
-import os
 import datetime as dt
 
 from typing import cast
 from telegram import Update, Message, MessageEntity
+from telegram.ext import CallbackContext
 
-from events import event_bus, conductor_events, db_events, system_events, mibo_events, assistant_events
+from events import event_bus, conductor_events, db_events, system_events, mibo_events
 from core import wrapper
 from services import tools
 
@@ -28,6 +28,7 @@ class Conductor:
         try:
             update: Update = event.update
             start_datetime: dt.datetime = event.start_datetime
+            context: CallbackContext = event.context
 
             chat = update.effective_chat
             message: Message = update.message
@@ -57,6 +58,9 @@ class Conductor:
 
             ping = False
 
+            if chat.type == chat.PRIVATE:
+                ping = True 
+
             if entities:
                 for entity, value in entities:
                     entity = cast(MessageEntity, entity) # for type hinting
@@ -76,7 +80,7 @@ class Conductor:
             
             message_wrapper = wrapper.MessageWrapper(chat_id, message_id, role, user, message_text, ping, reply_id, datetime)
 
-            request = conductor_events.ImageDownloadRequest(update=update)
+            request = conductor_events.ImageDownloadRequest(update=update, context=context)
             response = await self.bus.wait(request, db_events.ImageResponse, 30)
 
             if response and response.images:
@@ -86,7 +90,7 @@ class Conductor:
             push_request = conductor_events.MessagePush(message_wrapper, event_id=event.event_id)
             await self.bus.emit(push_request)
 
-            await self.bus.emit(conductor_events.AssistantRequest(message_wrapper, event_id=event.event_id))
+            await self.bus.emit(conductor_events.AssistantRequest(chat_id=chat_id, message=message_wrapper, event_id=event.event_id))
 
         except Exception as e:
             await self.bus.emit(system_events.ChatErrorEvent(chat_id=chat_id, error="Something's wrong with passing the messages from telegram to you.", e=e, event_id=event.event_id))

@@ -5,6 +5,8 @@ class Event:
         self.event_id = str(uuid.uuid4().hex)
         self.name = name
         for key, value in kwargs.items():
+            if key == 'event_id' or key == 'chat_id':
+                value = str(value)
             setattr(self, key, value)
 
     def __eq__(self, value):

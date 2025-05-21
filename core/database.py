@@ -117,6 +117,12 @@ class Database:
             text = message.message
             datetime_val = message.datetime if message.datetime else dt.datetime.now()
             token_count = await message.tokens()
+
+            await self.cursor.execute("SELECT 1 FROM chats WHERE chat_id = ?", (chat_id,))
+            chat_exists = await self.cursor.fetchone()
+            if not chat_exists:
+                await self.insert_chat(chat_id)
+
             db_message_id = await self.insert_message(
                 chat_id=chat_id,
                 message_id=message_id,
@@ -126,6 +132,8 @@ class Database:
                 token_count=token_count,
                 datetime=datetime_val
             )
+
+
             for content in message.content_list:
                 if isinstance(content, wrapper.ImageWrapper):
                     await self.insert_image(
@@ -187,6 +195,9 @@ class Database:
 
             if file_bytes:
                 request = db_events.ImageSaveRequest(chat_id=str(message.chat.id), file_bytes=file_bytes, event_id=event.event_id)
+                await self.bus.emit(request)
+            else:
+                request = db_events.ImageSaveRequest(chat_id=str(message.chat.id), file_bytes=[], event_id=event.event_id)
                 await self.bus.emit(request)
         
         except Exception as e:
