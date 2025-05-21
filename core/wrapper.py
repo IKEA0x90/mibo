@@ -11,7 +11,7 @@ class Wrapper():
     def __init__(self, id: str = None):
         self.content_id: str = id or str(uuid.uuid4())
 
-    async def tokens(self):
+    def tokens(self):
         encoding = tiktoken.encoding_for_model('gpt-4o')
         tokens = len(encoding.encode(str(self)))
         return tokens
