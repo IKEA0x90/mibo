@@ -6,6 +6,7 @@ from telegram import Update, Message, MessageEntity
 
 from events import event_bus, conductor_events, db_events, system_events, mibo_events, assistant_events
 from core import wrapper
+from services import tools
 
 class Conductor:
     '''
@@ -14,11 +15,11 @@ class Conductor:
     '''
     def __init__(self, bus):
         self.bus: event_bus.EventBus = bus
-        self.username: str = os.environ['mibo_username']
+        self.username: str = tools.Tool.MIBO
         self._register()
 
     def _register(self):
-        self.bus.register(mibo_events.MiboMessage, self._process_request)
+        self.bus.register(mibo_events.MiboMessage, self._capture_message)
 
     async def _capture_message(self, event: mibo_events.MiboMessage):
         '''

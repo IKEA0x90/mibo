@@ -3,8 +3,9 @@ import uuid
 import os
 
 import datetime as dt
-
 from typing import List
+
+from services import tools
 
 class Wrapper():
     def __init__(self, id: str = None):
@@ -62,7 +63,7 @@ class MessageWrapper(Wrapper):
         super().__init__(message_id)
         self.chat_id: str = chat_id
         self.role: str = role or 'assistant'
-        self.user: str = user or os.environ['mibo_username']
+        self.user: str = user or tools.Tool.MIBO
 
         self.message: str = message or ''
         self.content_list: List[Wrapper] = []

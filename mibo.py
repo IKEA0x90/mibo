@@ -1,5 +1,5 @@
 import asyncio
-import os
+import sys
 import signal
 import openai
 
@@ -17,12 +17,11 @@ class Mibo:
         self.token = token
         self.start_datetime = dt.datetime.now(dt.timezone.utc).timestamp()
 
-        self.db = database.Database(db_path)
         self.bus = event_bus.EventBus()
+        self.db = database.Database(self.bus, db_path)
         self.conductor = conductor.Conductor(self.bus)
 
-        self.system_chat: str = os.environ['SYSTEM_CHAT']
-        self.key = os.environ['OPENAI_API_KEY']
+        self.key = tools.Tool.OPENAI_KEY
         
         self.client = None
         self.assistants = {} 
@@ -34,7 +33,7 @@ class Mibo:
         '''
         Prepare the bot by loading the database, getting the openai client, and setting up signal handlers.
         '''
-        self.db.initialize()
+        self.db.initialize_sync()
         
         self.client = openai.AsyncOpenAI(api_key=self.key)
         temporary_client = openai.OpenAI(api_key=self.key)
@@ -60,15 +59,15 @@ class Mibo:
         self.bus.register(mibo_events.MiboMessageResponse, self._send_message)
         self.bus.register(mibo_events.MiboPollResponse, self._create_poll)
 
-        self._register_handlers()
         self.app = Application.builder().token(self.token).build()
 
         # Create stop event for graceful shutdown
         self.stop_event = asyncio.Event()
 
+        self._register_handlers()
         self._system_signals()
 
-    async def run(self, token: str):
+    async def run(self):
         '''
         Start the bot
         '''
@@ -93,17 +92,17 @@ class Mibo:
         '''
         Register system signals to stop the bot gracefully.
         '''
-        loop = asyncio.get_running_loop()
-
-        def _on_signal(sig: signal.Signals) -> None:
-            # Flip the in‑memory flag so `await self.stop_event.wait()` in the main task unblocks.
+        def _on_signal(sig: signal.Signals, *_):
             self.stop_event.set()
-
-            # inform the rest of the application through the EventBus using the sync method
             self.bus.emit_sync(system_events.ShutdownEvent(sig=sig))
 
-        for sig in (signal.SIGINT, signal.SIGTERM):
-            loop.add_signal_handler(sig, _on_signal, sig)
+        if sys.platform == "win32":
+            for sig in (signal.SIGINT, signal.SIGTERM):
+                signal.signal(sig, _on_signal)
+        else:
+            loop = asyncio.get_running_loop()
+            for sig in (signal.SIGINT, signal.SIGTERM):
+                loop.add_signal_handler(sig, _on_signal, sig)
         
     async def _shutdown(self, polling_task: asyncio.Task):
         print('Shutting down...')
@@ -250,8 +249,10 @@ class Mibo:
                 pass
 
 async def main() -> None:
-    token = os.environ['mibo']
-    bot = Mibo(token)
+    token = tools.Tool.TELEGRAM_KEY
+    db_path = tools.Tool.DB_PATH
+
+    bot = Mibo(token, db_path)
     await bot.run()
 
 if __name__ == '__main__':

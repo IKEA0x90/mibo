@@ -76,8 +76,23 @@ class Database:
                 if not self.conn:
                     await self.connect()
                 await self.create_tables()
-                self._init_done = True    
+                self._init_done = True
                 
+    def initialize_sync(self):
+        '''
+        Synchronous version of initialize for use outside async contexts.
+        Connects to the database and creates tables if they don't exist.
+        '''
+        try:
+            self.conn = sqlite3.connect(self.db_path)
+            self.conn.row_factory = sqlite3.Row
+            self.cursor = self.conn.cursor()
+            # No event registration in sync mode
+            self.create_tables_sync()
+            self._init_done = True
+        except Exception as e:
+            self.bus.emit_sync(system_events.ErrorEvent("The database somehow failed to initialize (sync).", e))
+
     async def _register(self):
         '''
         Register bus event listeners
@@ -97,10 +112,8 @@ class Database:
             role = message.role
             username = message.user
             text = message.message
-            datetime = message.datetime
-            
+            datetime_val = message.datetime if message.datetime else dt.datetime.now()
             token_count = await message.tokens()
-            
             db_message_id = await self.insert_message(
                 chat_id=chat_id,
                 message_id=message_id,
@@ -108,17 +121,32 @@ class Database:
                 username=username,
                 text=text,
                 token_count=token_count,
-                datetime=datetime
+                datetime=datetime_val
             )
-            
             for content in message.content_list:
                 if isinstance(content, wrapper.ImageWrapper):
                     await self.insert_image(
                         message_id=db_message_id,
                         image_id=content.content_id,
+                        content_tokens=await content.tokens(),
                         image_url=content.image_url
                     )
-            
+                elif isinstance(content, wrapper.StickerWrapper):
+                    await self.insert_sticker(
+                        message_id=db_message_id,
+                        sticker_id=content.content_id,
+                        key_emoji=content.key_emoji
+                    )
+                elif isinstance(content, wrapper.PollWrapper):
+                    await self.insert_poll(
+                        message_id=db_message_id,
+                        poll_id=content.content_id,
+                        question=content.question,
+                        options=content.options,
+                        multiple_choice=content.multiple_choice,
+                        correct_option_idx=content.correct_option_idx,
+                        explanation=content.explanation
+                    )
         except Exception as e:
             pass
              
@@ -226,10 +254,7 @@ class Database:
     
     async def create_tables(self) -> None:
         """
-        Create the schema for chats, messages and images.
-
-        Assumes `self.cursor` is an async cursor (e.g. from aiosqlite)
-        and `self.conn` is the corresponding connection object.
+        Create the schema for chats, messages, images, stickers, and polls.
         """
         try:
             # ------------------ chats ------------------
@@ -238,12 +263,12 @@ class Database:
                 chat_id           TEXT PRIMARY KEY,
                 custom_instructions TEXT NOT NULL DEFAULT '',
                 chance            INTEGER NOT NULL DEFAULT 5,
-                max_tokens        INTEGER NOT NULL DEFAULT 3000,
-                max_content_tokens        INTEGER NOT NULL DEFAULT 1000,
-                max_response_tokens        INTEGER NOT NULL DEFAULT 500,
+                max_context_tokens INTEGER NOT NULL DEFAULT 3000,
+                max_content_tokens INTEGER NOT NULL DEFAULT 1500,
+                max_response_tokens INTEGER NOT NULL DEFAULT 500,
                 frequency_penalty FLOAT NOT NULL DEFAULT 0.1,
                 presence_penalty  FLOAT NOT NULL DEFAULT 0.1,
-                timestamp        TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                timestamp        TIMESTAMP DEFAULT CURRENT_TIMESTAMP
             );
             """)
 
@@ -258,7 +283,7 @@ class Database:
                 positive_reactions INTEGER DEFAULT 0,
                 negative_reactions INTEGER DEFAULT 0,
                 token_count  INTEGER NOT NULL,
-                timestamp   TIMESTAMP DEFAULT,
+                datetime     TIMESTAMP NOT NULL,
                 FOREIGN KEY (chat_id) REFERENCES chats (chat_id) ON DELETE CASCADE
             );
             """)
@@ -274,6 +299,30 @@ class Database:
             );
             """)
 
+            # ------------------ stickers ------------------
+            await self.cursor.execute("""
+            CREATE TABLE IF NOT EXISTS stickers (
+                sticker_id  TEXT PRIMARY KEY,
+                message_id  TEXT NOT NULL,
+                key_emoji   TEXT NOT NULL,
+                FOREIGN KEY (message_id) REFERENCES messages (message_id) ON DELETE CASCADE
+            );
+            """)
+
+            # ------------------ polls ------------------
+            await self.cursor.execute("""
+            CREATE TABLE IF NOT EXISTS polls (
+                poll_id     TEXT PRIMARY KEY,
+                message_id  TEXT NOT NULL,
+                question    TEXT NOT NULL,
+                options     TEXT NOT NULL,
+                multiple_choice INTEGER NOT NULL,
+                correct_option_idx INTEGER,
+                explanation TEXT,
+                FOREIGN KEY (message_id) REFERENCES messages (message_id) ON DELETE CASCADE
+            );
+            """)
+
             # ----------- helpful indexes -----------
             await self.cursor.execute(
                 "CREATE INDEX IF NOT EXISTS idx_messages_chat_id ON messages (chat_id)"
@@ -281,14 +330,83 @@ class Database:
             await self.cursor.execute(
                 "CREATE INDEX IF NOT EXISTS idx_images_message_id ON images (message_id)"
             )
-
             await self.conn.commit()
-
         except Exception as e:
             await self.conn.rollback()
             print(f"Error creating tables: {e}")
-            
-            
+
+    def create_tables_sync(self):
+        '''
+        Synchronous version of create_tables for use with sqlite3.
+        '''
+        try:
+            self.cursor.execute("""
+            CREATE TABLE IF NOT EXISTS chats (
+                chat_id           TEXT PRIMARY KEY,
+                custom_instructions TEXT NOT NULL DEFAULT '',
+                chance            INTEGER NOT NULL DEFAULT 5,
+                max_context_tokens INTEGER NOT NULL DEFAULT 3000,
+                max_content_tokens INTEGER NOT NULL DEFAULT 1500,
+                max_response_tokens INTEGER NOT NULL DEFAULT 500,
+                frequency_penalty FLOAT NOT NULL DEFAULT 0.1,
+                presence_penalty  FLOAT NOT NULL DEFAULT 0.1,
+                timestamp        TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+            );
+            """)
+            self.cursor.execute("""
+            CREATE TABLE IF NOT EXISTS messages (
+                message_id   TEXT PRIMARY KEY,
+                chat_id      TEXT NOT NULL,
+                role         TEXT NOT NULL,
+                username     TEXT NOT NULL,
+                text         TEXT NOT NULL,
+                positive_reactions INTEGER DEFAULT 0,
+                negative_reactions INTEGER DEFAULT 0,
+                token_count  INTEGER NOT NULL,
+                datetime     TIMESTAMP NOT NULL,
+                FOREIGN KEY (chat_id) REFERENCES chats (chat_id) ON DELETE CASCADE
+            );
+            """)
+            self.cursor.execute("""
+            CREATE TABLE IF NOT EXISTS images (
+                image_id    TEXT PRIMARY KEY,
+                message_id  TEXT NOT NULL,
+                image_url   TEXT NOT NULL,
+                content_tokens INTEGER NOT NULL,
+                FOREIGN KEY (message_id) REFERENCES messages (message_id) ON DELETE CASCADE
+            );
+            """)
+            self.cursor.execute("""
+            CREATE TABLE IF NOT EXISTS stickers (
+                sticker_id  TEXT PRIMARY KEY,
+                message_id  TEXT NOT NULL,
+                key_emoji   TEXT NOT NULL,
+                FOREIGN KEY (message_id) REFERENCES messages (message_id) ON DELETE CASCADE
+            );
+            """)
+            self.cursor.execute("""
+            CREATE TABLE IF NOT EXISTS polls (
+                poll_id     TEXT PRIMARY KEY,
+                message_id  TEXT NOT NULL,
+                question    TEXT NOT NULL,
+                options     TEXT NOT NULL,
+                multiple_choice INTEGER NOT NULL,
+                correct_option_idx INTEGER,
+                explanation TEXT,
+                FOREIGN KEY (message_id) REFERENCES messages (message_id) ON DELETE CASCADE
+            );
+            """)
+            self.cursor.execute(
+                "CREATE INDEX IF NOT EXISTS idx_messages_chat_id ON messages (chat_id)"
+            )
+            self.cursor.execute(
+                "CREATE INDEX IF NOT EXISTS idx_images_message_id ON images (message_id)"
+            )
+            self.conn.commit()
+        except Exception as e:
+            self.conn.rollback()
+            print(f"Error creating tables (sync): {e}")
+
     async def insert_chat(
         self,
         chat_id: str,
@@ -297,18 +415,19 @@ class Database:
         chance: int = 5,
         max_context_tokens: int = 3000,
         max_content_tokens: int = 1500,
-        max_response_tokens: int = 500
+        max_response_tokens: int = 500,
+        frequency_penalty: float = 0.1,
+        presence_penalty: float = 0.1
     ) -> str:
         """
         Inserts a new chat and returns the chat_id.
         """
         chat_id = chat_id or str(uuid.uuid4())
-
         await self.cursor.execute(
             """
             INSERT INTO chats
-            (chat_id, custom_instructions, chance, max_context_tokens, max_content_tokens, max_response_tokens)
-            VALUES (?, ?, ?, ?, ?)
+            (chat_id, custom_instructions, chance, max_context_tokens, max_content_tokens, max_response_tokens, frequency_penalty, presence_penalty)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?)
             """,
             (
                 chat_id,
@@ -317,12 +436,13 @@ class Database:
                 max_context_tokens,
                 max_content_tokens,
                 max_response_tokens,
+                frequency_penalty,
+                presence_penalty
             ),
         )
         await self.conn.commit()
         return chat_id
 
-    # ---------- 2. create a message ----------
     async def insert_message(
         self,
         chat_id: str,
@@ -332,13 +452,15 @@ class Database:
         username: str,
         text: str,
         token_count: int,
-        datetime: dt.datetime) -> str:
+        datetime: dt.datetime = None
+    ) -> str:
         """
         Inserts a message linked to an existing chat. Returns message_id.
+        Uses the provided datetime, or current time if not provided.
         """
         message_id = message_id or str(uuid.uuid4())
-        timestamp = timestamp.timestamp()
-
+        if datetime is None:
+            datetime = dt.datetime.now()
         await self.cursor.execute(
             """
             INSERT INTO messages
@@ -358,8 +480,6 @@ class Database:
         await self.conn.commit()
         return message_id
 
-
-    # ---------- 3. add an image to a message ----------
     async def insert_image(
         self,
         message_id: str,
@@ -371,7 +491,6 @@ class Database:
         Inserts an image row linked to an existing message. Returns image_id.
         """
         image_id = image_id or str(uuid.uuid4())
-
         await self.cursor.execute(
             """
             INSERT INTO images
@@ -387,3 +506,73 @@ class Database:
         )
         await self.conn.commit()
         return image_id
+
+    async def insert_sticker(
+        self,
+        message_id: str,
+        sticker_id: str,
+        *,
+        key_emoji: str
+    ) -> str:
+        """
+        Inserts a sticker row linked to an existing message. Returns sticker_id.
+        """
+        sticker_id = sticker_id or str(uuid.uuid4())
+        await self.cursor.execute(
+            """
+            INSERT INTO stickers
+            (sticker_id, message_id, key_emoji)
+            VALUES (?, ?, ?)
+            """,
+            (
+                sticker_id,
+                message_id,
+                key_emoji
+            ),
+        )
+        await self.conn.commit()
+        return sticker_id
+
+    async def insert_poll(
+        self,
+        message_id: str,
+        poll_id: str,
+        *,
+        question: str,
+        options: list,
+        multiple_choice: bool,
+        correct_option_idx: int = None,
+        explanation: str = ''
+    ) -> str:
+        """
+        Inserts a poll row linked to an existing message. Returns poll_id.
+        """
+        poll_id = poll_id or str(uuid.uuid4())
+        options_str = '\n'.join(options)
+        await self.cursor.execute(
+            """
+            INSERT INTO polls
+            (poll_id, message_id, question, options, multiple_choice, correct_option_idx, explanation)
+            VALUES (?, ?, ?, ?, ?, ?, ?)
+            """,
+            (
+                poll_id,
+                message_id,
+                question,
+                options_str,
+                int(multiple_choice),
+                correct_option_idx,
+                explanation
+            ),
+        )
+        await self.conn.commit()
+        return poll_id
+
+    async def close(self):
+        '''
+        Closes the async database connection if it exists.
+        '''
+        if self.conn:
+            await self.conn.close()
+            self.conn = None
+            self.cursor = None

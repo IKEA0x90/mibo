@@ -1,6 +1,5 @@
 from typing import List
 from events import event
-from core import wrapper
 
 class ToolRequest(event.Event):
     def __init__(self, description: str, **kwargs):
@@ -27,15 +26,15 @@ class ToolMemorizeKeyInformationRequest(ToolRequest):
         super().__init__('tool_memorize_key_information_request', key=key, information=information, **kwargs)
 
 class ToolImageResponse(event.Event):
-    def __init__(self, image: wrapper.ImageWrapper, **kwargs):
+    def __init__(self, image, **kwargs):
         super().__init__('tool_image_response', image=image, **kwargs)
 
 class ToolPollResponse(event.Event):
-    def __init__(self, poll: wrapper.PollWrapper, **kwargs):
+    def __init__(self, poll, **kwargs):
         super().__init__('tool_poll_response', poll=poll, **kwargs)
 
 class ToolStickerResponse(event.Event):
-    def __init__(self, sticker: wrapper.StickerWrapper, **kwargs):
+    def __init__(self, sticker, **kwargs):
         super().__init__('tool_sticker_response', sticker=sticker, **kwargs)
 
 class ToolPropertyChangeResponse(event.Event):

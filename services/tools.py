@@ -2,12 +2,13 @@ import os
 from dotenv import load_dotenv
 from events import tool_events
 
-load_dotenv(dotenv_path="env/.env", override=False)
-
 class Tool:
     '''
     Handles all tool requests
     '''
+    #load_dotenv(dotenv_path="home/not_root/mibo/env/.env", override=False)
+    load_dotenv(dotenv_path="d:/Coding/py/mibo/.env/.env", override=False)
+
     CREATE_IMAGE = 'create_image'
     CREATE_POLL = 'create_poll'
     SEND_STICKER = 'send_sticker'
@@ -20,6 +21,11 @@ class Tool:
     POLL_ASSISTANT_ID = os.environ['POLL_ASSISTANT_ID']
     PROPERTY_ASSISTANT_ID = os.environ['PROPERTY_ASSISTANT_ID']
     MEMORY_ASSISTANT_ID = os.environ['MEMORY_ASSISTANT_ID']
+
+    TELEGRAM_KEY = os.environ['TELEGRAM_KEY']
+    OPENAI_KEY = os.environ['OPENAI_KEY']
+
+    DB_PATH = os.environ['DB_PATH']
 
     MIBO = 'mibo'
     CAT_ASSISTANT = 'cat_assistant'

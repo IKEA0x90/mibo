@@ -36,11 +36,16 @@ class EventBus:
                 del self._listeners[event_cls]
 
     async def emit(self, event: ev.Event) -> ev.Event:
+        handlers_to_await = []
         for handler in self._listeners.get(type(event), []):
             if asyncio.iscoroutinefunction(handler):
-                asyncio.create_task(handler(event))
+                handlers_to_await.append(handler(event))
             else:
                 handler(event)
+        
+        if handlers_to_await:
+            await asyncio.gather(*handlers_to_await)
+            
         return event
     
     def emit_sync(self, event: ev.Event) -> None:
