@@ -227,11 +227,11 @@ class Mibo:
         Parse the text for custom delimiters.
         '''
         # cut 'itsmiibot: ' which every message start with 
-        if text.startswith(tools.Tool.MIBO_MESSAGE):
+        if text.lower().startswith(tools.Tool.MIBO_MESSAGE):
             text = text[len(tools.Tool.MIBO_MESSAGE):]
-        if text.startswith(tools.Tool.MIBO_MESSAGE_EXTENDED):
+        if text.lower().startswith(tools.Tool.MIBO_MESSAGE_EXTENDED):
             text = text[len(tools.Tool.MIBO_MESSAGE_EXTENDED):]
-        if text.startswith(tools.Tool.MIBO_MESSAGE_ALTERNATIVE):
+        if text.lower().startswith(tools.Tool.MIBO_MESSAGE_ALTERNATIVE):
             text = text[len(tools.Tool.MIBO_MESSAGE_ALTERNATIVE):]
         else:
             pass
