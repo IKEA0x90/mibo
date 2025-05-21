@@ -74,17 +74,17 @@ class Conductor:
 
             datetime: dt.datetime = message.date
             
-            message_wrapper = wrapper.MessageWrapper(chat_id, message_id, role, user, message_text, ping, reply_id, datetime, start_datetime)
+            message_wrapper = wrapper.MessageWrapper(chat_id, message_id, role, user, message_text, ping, reply_id, datetime)
 
-            request = conductor_events.ImageDownloadRequest(message=message)
+            request = conductor_events.ImageDownloadRequest(update=update)
             response = await self.bus.wait(request, db_events.ImageResponse, 30)
 
-            if response and response.response:
+            if response and response.images:
                 for image in response.images:
                     message_wrapper.add_content(image)
 
-            request = conductor_events.MessagePush(message_wrapper)
-            self.bus.wait(request, assistant_events.AssistantReadyResponse, 60)
+            push_request = conductor_events.MessagePush(message_wrapper, event_id=event.event_id)
+            await self.bus.emit(push_request)
 
             await self.bus.emit(conductor_events.AssistantRequest(message_wrapper, event_id=event.event_id))
 

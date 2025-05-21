@@ -66,7 +66,7 @@ class EventBus:
         with the same event_id arrives, or until *timeout*.
         '''
         loop = asyncio.get_running_loop()
-        future: asyncio.future[ResponseType] = loop.create_futureure()
+        future: asyncio.future[ResponseType] = loop.create_future()
         original = requested_event.event_id
 
         # one‑shot resolver

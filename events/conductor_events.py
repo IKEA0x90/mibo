@@ -13,5 +13,5 @@ class AssistantRequest(event.Event):
         super().__init__('assistant_call', request=request, **kwargs)
 
 class ImageDownloadRequest(event.Event):
-    def __init__(self, message: Message, **kwargs):
-        super().__init__('image_download_request', message=message, **kwargs)
+    def __init__(self, update, **kwargs):
+        super().__init__('image_download_request', update=update, **kwargs)

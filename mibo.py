@@ -2,6 +2,7 @@ import asyncio
 import sys
 import signal
 import openai
+import logging
 
 import datetime as dt
 from typing import List, Optional
@@ -72,13 +73,14 @@ class Mibo:
         Start the bot
         '''
         await self.app.initialize()
-        polling_task = asyncio.create_task(self.app.start())
+        await self.app.start()
+        await self.app.updater.start_polling()
 
-        # block until _system_signals() flips the flag
-        await self.stop_event.wait()
-
-        # kill Mibo (oh no!)
-        await self._shutdown(polling_task)
+        try:
+            await self.stop_event.wait()
+        finally:
+            # kill Mibo (oh no!)
+            await self._shutdown(None)
 
     def _register_handlers(self):
         '''
@@ -107,17 +109,11 @@ class Mibo:
     async def _shutdown(self, polling_task: asyncio.Task):
         print('Shutting down...')
 
-        # stop Telegram
+        await self.app.updater.stop() 
         await self.app.stop()
         await self.app.shutdown()
-
-        # close services
         await self.bus.close()
         await self.db.close()
-
-        # polling task cancellation
-        polling_task.cancel()
-        await asyncio.gather(polling_task, return_exceptions=True)
 
         print('Shutdown complete.')
 
@@ -236,7 +232,7 @@ class Mibo:
 
         if chat.type in [Chat.GROUP, Chat.SUPERGROUP]:
             # Bot was added to a group or supergroup
-            if old_status in [ChatMember.LEFT, ChatMember.KICKED] and new_status in [ChatMember.MEMBER, ChatMember.ADMINISTRATOR]:
+            if old_status in [ChatMember.LEFT, ChatMember.BANNED] and new_status in [ChatMember.MEMBER, ChatMember.ADMINISTRATOR]:
                 welcome_message = (
                     f"Hello! I'm Mibo, your AI assistant. You can mention me (@{context.bot.username}) "
                     f"in your messages or reply to my messages to interact with me."
@@ -244,9 +240,18 @@ class Mibo:
                 await context.bot.send_message(chat_id=chat.id, text=welcome_message)
             
             # Bot was removed from a group
-            elif old_status in [ChatMember.MEMBER, ChatMember.ADMINISTRATOR] and new_status in [ChatMember.LEFT, ChatMember.KICKED]:
+            elif old_status in [ChatMember.MEMBER, ChatMember.ADMINISTRATOR] and new_status in [ChatMember.LEFT, ChatMember.BANNED]:
                 # Could log this event or perform cleanup if needed
                 pass
+
+logging.basicConfig(
+    format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
+    level=logging.ERROR  # Changed from logging.INFO to logging.DEBUG
+)
+# For more detailed python-telegram-bot logs:
+logging.getLogger("telegram.ext").setLevel(logging.DEBUG)
+logging.getLogger("httpx").setLevel(logging.WARNING)
+logging.getLogger("telegram").setLevel(logging.DEBUG)
 
 async def main() -> None:
     token = tools.Tool.TELEGRAM_KEY
@@ -256,4 +261,4 @@ async def main() -> None:
     await bot.run()
 
 if __name__ == '__main__':
-    asyncio.run(main())
+    asyncio.run(main(), debug=True) # Added debug=True
