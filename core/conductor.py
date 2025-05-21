@@ -76,7 +76,7 @@ class Conductor:
             reply_message = message.reply_to_message
             reply_id = reply_message.message_id if reply_message else None
 
-            datetime: dt.datetime = message.date
+            datetime: dt.datetime = message.date.astimezone(dt.timezone.utc)
             
             message_wrapper = wrapper.MessageWrapper(chat_id, message_id, role, user, message_text, ping, reply_id, datetime)
 

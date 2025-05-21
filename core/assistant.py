@@ -7,7 +7,7 @@ import asyncio
 from copy import copy
 from typing import List, Dict
 
-from events import event_bus, conductor_events, assistant_events, system_events, tool_events
+from events import event_bus, conductor_events, assistant_events, system_events, tool_events, db_events
 from core import database, window, wrapper
 from services import tools
 
@@ -55,6 +55,7 @@ class Assistant:
 
         self.death_timer = -1
         self.last_reply = -1
+        self.ready = False
 
         self._load()
 
@@ -97,7 +98,32 @@ class Assistant:
     def _register(self):
         self.bus.register(conductor_events.AssistantRequest, self._add_message)
         self.bus.register(assistant_events.AssistantDirectRequest, self._trigger_completion)
+        self.bus.register(conductor_events.MessagePush, self._prepare)
+
+    async def _prepare(self, event: conductor_events.MessagePush):
+        '''
+        Fill the window with old messages from the database, but do not trigger completions.
+        '''
+        msg = event.request
+        if msg.chat_id != self.chat_id:
+            return
+        if self.ready:
+            return
         
+        mem_req = db_events.MemoryRequest(chat_id=self.chat_id)
+        mem_resp = await self.bus.wait(mem_req, db_events.MemoryResponse)
+        prev_msgs = sorted(mem_resp.messages, key=lambda m: m.datetime)
+
+        tokens = 0
+        for m in prev_msgs:
+            mtoks = await m.tokens()
+            if tokens + mtoks > self.max_context_tokens:
+                break
+            # Add directly to window, do not use add_message (which can trigger completions)
+            await self.messages._insert_live_message(m)
+            tokens += mtoks
+        self.ready = True
+
     @staticmethod
     async def call_openai(sync_func, *args, **kwargs):
         '''
@@ -135,14 +161,11 @@ class Assistant:
         await self.messages.add_message(event.event_id, event.message, self.bus)
         run = await self._check_conditions(event.message)
         if run:
-            # self.death_timer = death_timer
-            # self.last_reply = event.message.timestamp
-
             ev = assistant_events.AssistantDirectRequest(message=event.message, event_id=event.event_id)
             await self.bus.emit(ev)
 
     async def _not_implemented(self, event_id: str, message: str):
-        issue = system_events.ChatErrorEvent(self.chat_id, 'Whoops! An error occurred.', event_id=event_id)
+        issue = system_events.ChatErrorEvent(self.chat_id, 'Whoops! An error occurred: {}', event_id=event_id)
         await self.bus.emit(issue)
 
     async def _trigger_completion(self, event: assistant_events.AssistantDirectRequest):
@@ -218,6 +241,7 @@ class Assistant:
                     images = []
                 if not message_text.strip() and not images:
                     return
+                
                 assistant_message = wrapper.MessageWrapper(
                     chat_id=self.chat_id,
                     message_id=str(response.id),
@@ -225,17 +249,25 @@ class Assistant:
                     user='Assistant',
                     message=message_text,
                     ping=False,
-                    datetime=dt.datetime.now()
+                    datetime=dt.datetime.now(tz=dt.timezone.utc)
                 )
+
                 # Add images to content_list
                 for img in images:
-                    # Only add if image_url is present
                     if 'image_url' in img:
-                        # No size info, so use 0,0
                         assistant_message.add_content(wrapper.ImageWrapper(0, 0, '', img['image_url'].split(',')[-1]))
+
+                # Add to window immediately (do not trigger completions)
+                await self.messages.add_message(event.event_id, assistant_message, self.bus)
+
                 # Emit the assistant response
                 response_event = assistant_events.AssistantResponse(message=assistant_message, event_id=event.event_id)
                 await self.bus.emit(response_event)
+
+                # Emit MessagePush for bot message so it is added to db (but not completion)
+                push_event = conductor_events.MessagePush(assistant_message, event_id=event.event_id)
+                await self.bus.emit(push_event)
+
         except Exception as e:
             issue = system_events.ChatErrorEvent(self.chat_id, 'Whoops! An error occurred.', str(e), event_id=event.event_id)
             await self.bus.emit(issue)
@@ -306,7 +338,7 @@ class CatAssistant(Assistant):
             user='CatAssistant',
             message=tool_args.get('message', ''),
             ping=True,
-            datetime=dt.datetime.now()
+            datetime=dt.datetime.now(tz=dt.timezone.utc)
         )
 
         await self.messages.override(message)

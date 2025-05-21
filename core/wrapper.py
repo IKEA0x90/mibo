@@ -71,7 +71,7 @@ class MessageWrapper(Wrapper):
         self.ping: bool = ping
         self.reply_id: str = reply_id or '' 
 
-        self.datetime: dt.datetime = datetime or dt.now()
+        self.datetime: dt.datetime = datetime.astimezone(dt.timezone.utc) or dt.datetime.now(tz=dt.timezone.utc)
 
     def __str__(self):
         return f'{self.user}: {self.message}'

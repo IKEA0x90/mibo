@@ -74,7 +74,12 @@ class Database:
         async with self._lock:
             if not self._init_done:
                 if not self.conn:
-                    await self.connect()
+
+                    self.conn = await aiosqlite.connect(self.db_path)
+                    await self.conn.execute('PRAGMA foreign_keys = ON') # used for intra-table relations
+                    self.conn.row_factory = aiosqlite.Row # convert rows to dict-like objects
+                    self.cursor = await self.conn.cursor() # get the object that executes SQL commands
+
                 await self.create_tables()
                 self._init_done = True
                 
@@ -103,7 +108,8 @@ class Database:
         self.bus.register(conductor_events.ImageDownloadRequest, self._image_to_bytes)
         self.bus.register(db_events.ImageSaveRequest, self._save_images)
         self.bus.register(conductor_events.MessagePush, self._add_message)    
-        
+        self.bus.register(db_events.MemoryRequest, self._handle_memory_request)
+
     async def _add_message(self, event: conductor_events.MessagePush):
         '''
         Add a message to the database.
@@ -115,7 +121,7 @@ class Database:
             role = message.role
             username = message.user
             text = message.message
-            datetime_val = message.datetime if message.datetime else dt.datetime.now()
+            datetime_val = message.datetime if message.datetime else dt.datetime.now(tz=dt.timezone.utc)
             token_count = await message.tokens()
 
             await self.cursor.execute("SELECT 1 FROM chats WHERE chat_id = ?", (chat_id,))
@@ -437,25 +443,25 @@ class Database:
         Inserts a new chat and returns the chat_id.
         """
         chat_id = chat_id or str(uuid.uuid4())
-        await self.cursor.execute(
-            """
-            INSERT INTO chats
-            (chat_id, custom_instructions, chance, max_context_tokens, max_content_tokens, max_response_tokens, frequency_penalty, presence_penalty)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-            """,
-            (
-                chat_id,
-                custom_instructions,
-                chance,
-                max_context_tokens,
-                max_content_tokens,
-                max_response_tokens,
-                frequency_penalty,
-                presence_penalty
-            ),
-        )
-        await self.conn.commit()
-        return chat_id
+        async with self._lock:
+            await self.cursor.execute(
+                """
+                INSERT INTO chats
+                (chat_id, custom_instructions, chance, max_context_tokens, max_content_tokens, max_response_tokens, frequency_penalty, presence_penalty)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+                """,
+                (
+                    str(chat_id),
+                    custom_instructions,
+                    chance,
+                    max_context_tokens,
+                    max_content_tokens,
+                    max_response_tokens,
+                    frequency_penalty,
+                    presence_penalty
+                ),
+            )
+            await self.conn.commit()
 
     async def insert_message(
         self,
@@ -472,27 +478,27 @@ class Database:
         Inserts a message linked to an existing chat. Returns message_id.
         Uses the provided datetime, or current time if not provided.
         """
-        message_id = message_id or str(uuid.uuid4())
+        message_id = str(message_id) or str(uuid.uuid4())
         if datetime is None:
-            datetime = dt.datetime.now()
-        await self.cursor.execute(
-            """
-            INSERT INTO messages
-            (message_id, chat_id, role, username, text, token_count, datetime)
-            VALUES (?, ?, ?, ?, ?, ?, ?)
-            """,
-            (
-                message_id,
-                chat_id,
-                role,
-                username,
-                text,
-                token_count,
-                datetime
-            ),
-        )
-        await self.conn.commit()
-        return message_id
+            datetime = dt.datetime.now(tz=dt.timezone.utc)
+        async with self._lock:
+            await self.cursor.execute(
+                """
+                INSERT INTO messages
+                (message_id, chat_id, role, username, text, token_count, datetime)
+                VALUES (?, ?, ?, ?, ?, ?, ?)
+                """,
+                (
+                    message_id,
+                    str(chat_id),
+                    role,
+                    username,
+                    text,
+                    token_count,
+                    datetime
+                ),
+            )
+            await self.conn.commit()
 
     async def insert_image(
         self,
@@ -505,21 +511,21 @@ class Database:
         Inserts an image row linked to an existing message. Returns image_id.
         """
         image_id = image_id or str(uuid.uuid4())
-        await self.cursor.execute(
-            """
-            INSERT INTO images
-            (image_id, message_id, image_url, content_tokens)
-            VALUES (?, ?, ?, ?)
-            """,
-            (
-                image_id,
-                message_id,
-                image_url,
-                content_tokens
-            ),
-        )
-        await self.conn.commit()
-        return image_id
+        async with self._lock:
+            await self.cursor.execute(
+                """
+                INSERT INTO images
+                (image_id, message_id, image_url, content_tokens)
+                VALUES (?, ?, ?, ?)
+                """,
+                (
+                    image_id,
+                    str(message_id),
+                    image_url,
+                    content_tokens
+                ),
+            )
+            await self.conn.commit()
 
     async def insert_sticker(
         self,
@@ -532,20 +538,20 @@ class Database:
         Inserts a sticker row linked to an existing message. Returns sticker_id.
         """
         sticker_id = sticker_id or str(uuid.uuid4())
-        await self.cursor.execute(
-            """
-            INSERT INTO stickers
-            (sticker_id, message_id, key_emoji)
-            VALUES (?, ?, ?)
-            """,
-            (
-                sticker_id,
-                message_id,
-                key_emoji
-            ),
-        )
-        await self.conn.commit()
-        return sticker_id
+        async with self._lock:
+            await self.cursor.execute(
+                """
+                INSERT INTO stickers
+                (sticker_id, message_id, key_emoji)
+                VALUES (?, ?, ?)
+                """,
+                (
+                    sticker_id,
+                    str(message_id),
+                    key_emoji
+                ),
+            )
+            await self.conn.commit()
 
     async def insert_poll(
         self,
@@ -563,24 +569,24 @@ class Database:
         """
         poll_id = poll_id or str(uuid.uuid4())
         options_str = '\n'.join(options)
-        await self.cursor.execute(
-            """
-            INSERT INTO polls
-            (poll_id, message_id, question, options, multiple_choice, correct_option_idx, explanation)
-            VALUES (?, ?, ?, ?, ?, ?, ?)
-            """,
-            (
-                poll_id,
-                message_id,
-                question,
-                options_str,
-                int(multiple_choice),
-                correct_option_idx,
-                explanation
-            ),
-        )
-        await self.conn.commit()
-        return poll_id
+        async with self._lock:
+            await self.cursor.execute(
+                """
+                INSERT INTO polls
+                (poll_id, message_id, question, options, multiple_choice, correct_option_idx, explanation)
+                VALUES (?, ?, ?, ?, ?, ?, ?)
+                """,
+                (
+                    poll_id,
+                    message_id,
+                    question,
+                    options_str,
+                    int(multiple_choice),
+                    correct_option_idx,
+                    explanation
+                ),
+            )
+            await self.conn.commit()
 
     async def close(self):
         '''
@@ -590,3 +596,45 @@ class Database:
             await self.conn.close()
             self.conn = None
             self.cursor = None
+
+    async def _handle_memory_request(self, event: db_events.MemoryRequest):
+        '''
+        Responds to MemoryRequest with a MemoryResponse containing all messages for the chat_id, ordered by datetime ascending.
+        '''
+        chat_id = event.chat_id
+        messages = []
+
+        try:
+            cursor = await self.cursor.execute("SELECT * FROM messages WHERE chat_id = ? ORDER BY datetime ASC", (chat_id,))
+            rows = await cursor.fetchall()
+            for row in rows:
+                # Reconstruct MessageWrapper
+                msg = wrapper.MessageWrapper(
+                    chat_id=row['chat_id'],
+                    message_id=row['message_id'],
+                    role=row['role'],
+                    user=row['username'],
+                    message=row['text'],
+                    ping=False,
+                    reply_id='',
+                    datetime=row['datetime']
+                )
+
+                try:
+                    dt_obj = dt.datetime.fromisoformat(row['datetime'])
+                    if dt_obj.tzinfo is None:
+                        dt_obj = dt_obj.replace(tzinfo=dt.timezone.utc)
+                    else:
+                        dt_obj = dt_obj.astimezone(dt.timezone.utc)
+                    msg.datetime = dt_obj
+                except ValueError:
+                    msg.datetime = dt.datetime.now(dt.timezone.utc)
+
+                messages.append(msg)
+
+        except Exception as e:
+            await self.bus.emit(system_events.ChatErrorEvent(chat_id, f"Failed to load memory for chat {chat_id}", e, event_id=event.event_id))
+            messages = []
+
+        response = db_events.MemoryResponse(chat_id=chat_id, messages=messages, event_id=event.event_id)
+        await self.bus.emit(response)
