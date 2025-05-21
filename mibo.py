@@ -5,7 +5,7 @@ import openai
 import logging
 
 import datetime as dt
-from typing import List, Optional
+from typing import List, Dict
 from telegram import Update, Chat, ChatMember, InputFile
 from telegram.ext import Application, CallbackContext, CommandHandler, MessageHandler, ChatMemberHandler, filters
 
@@ -35,7 +35,7 @@ class Mibo:
         Prepare the bot by loading the database, getting the openai client, and setting up signal handlers.
         '''
         self.db.initialize_sync()
-        
+
         self.client = openai.AsyncOpenAI(api_key=self.key)
         temporary_client = openai.OpenAI(api_key=self.key)
 
@@ -246,12 +246,10 @@ class Mibo:
 
 logging.basicConfig(
     format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
-    level=logging.ERROR  # Changed from logging.INFO to logging.DEBUG
+    level=logging.CRITICAL  # Changed from logging.INFO to logging.DEBUG
 )
 # For more detailed python-telegram-bot logs:
-logging.getLogger("telegram.ext").setLevel(logging.DEBUG)
-logging.getLogger("httpx").setLevel(logging.WARNING)
-logging.getLogger("telegram").setLevel(logging.DEBUG)
+logging.getLogger("telegram.ext").setLevel(logging.CRITICAL)
 
 async def main() -> None:
     token = tools.Tool.TELEGRAM_KEY
@@ -261,4 +259,4 @@ async def main() -> None:
     await bot.run()
 
 if __name__ == '__main__':
-    asyncio.run(main(), debug=True) # Added debug=True
+    asyncio.run(main())

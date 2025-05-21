@@ -90,10 +90,13 @@ class Database:
             # No event registration in sync mode
             self.create_tables_sync()
             self._init_done = True
+        
+            self._register()
+        
         except Exception as e:
             self.bus.emit_sync(system_events.ErrorEvent("The database somehow failed to initialize (sync).", e))
 
-    async def _register(self):
+    def _register(self):
         '''
         Register bus event listeners
         '''

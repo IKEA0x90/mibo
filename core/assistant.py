@@ -92,7 +92,6 @@ class Assistant:
 
     def _register(self):
         self.bus.register(conductor_events.AssistantRequest, self._add_message)
-        self.bus.register(conductor_events.MessagePush, self._prepare)
         self.bus.register(assistant_events.AssistantDirectRequest, self._trigger_completion)
         
     async def _check_conditions(self, message: wrapper.MessageWrapper) -> bool:
