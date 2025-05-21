@@ -2,8 +2,8 @@ from events import event
 from core import wrapper
 
 class AssistantResponse(event.Event):
-    def __init__(self, response: wrapper.MessageWrapper, **kwargs):
-        super().__init__('assistant_response', response=response, **kwargs)
+    def __init__(self, message: wrapper.MessageWrapper, **kwargs):
+        super().__init__('assistant_response', message=message, **kwargs)
 
 class AssistantToolRequest(event.Event):
     def __init__(self, chat_id: str, tool_name: str, tool_args: str, **kwargs):

@@ -6,7 +6,7 @@ import logging
 
 import datetime as dt
 from typing import List, Dict
-from telegram import Update, Chat, ChatMember, InputFile
+from telegram import Update, Chat, ChatMember, InputFile, InputMediaPhoto
 from telegram.ext import Application, CallbackContext, CommandHandler, MessageHandler, ChatMemberHandler, filters
 
 from events import event_bus, mibo_events, system_events, assistant_events
@@ -145,7 +145,7 @@ class Mibo:
         '''
         Parses a message and calls the correct responder.
         '''
-        chat_id = event.chat_id
+        chat_id = event.message.chat_id
         message: wrapper.MessageWrapper = event.message
 
         message_text: str = message.message
@@ -155,16 +155,28 @@ class Mibo:
 
         if message_text or message_images:
             response = mibo_events.MiboMessageResponse(chat_id, message_text, message_images)
-            self.bus.emit(response)
+            await self.bus.emit(response)
 
         if message_sticker:
             response = system_events.ChatErrorEvent(chat_id, 'Stickers are not supported yet.')
-            self.bus.emit(response)
+            await self.bus.emit(response)
 
         if message_poll:
             response = mibo_events.MiboPollResponse(chat_id, message_poll)
-            self.bus.emit(response)    
+            await self.bus.emit(response)    
         
+    @staticmethod
+    def parse_text(text: str) -> str:
+        '''
+        Parse the text for custom delimiters.
+        '''
+        # cut 'itsmiibot: ' which every message start with 
+        text = text[len(tools.Tool.MIBO_MESSAGE):] if text.startswith(tools.Tool.MIBO_MESSAGE) else text
+
+        text_list = text.split('\n')
+
+        return text_list
+
     async def _send_message(self, event: mibo_events.MiboMessageResponse) -> None:
         '''
         Send the text and images from the response message.
@@ -178,11 +190,15 @@ class Mibo:
 
         if not text and not images:
             return
+        
+        if text:
+            text_list = self.parse_text(text)
 
         # If only text
-        if text and not images:
-            await self.app.bot.send_message(chat_id=chat_id, text=text)
-            return
+        if text_list and not images:
+            for t in text_list:
+                await self.app.bot.send_message(chat_id=chat_id, text=t)
+                return
 
         # If only images
         if images and not text:
@@ -193,13 +209,15 @@ class Mibo:
             return
 
         # If both text and images: send as album, text as caption to first image
-        if images and text:
-            from telegram import InputMediaPhoto
+        if images and text_list:
             media_group = []
             for idx, image in enumerate(images):
-                caption = text if idx == 0 else None
+                caption = text_list[0] if idx == 0 else None
                 media_group.append(InputMediaPhoto(media=image.image_url, caption=caption))
             await self.app.bot.send_media_group(chat_id=chat_id, media=media_group)
+
+            for t in text_list[1:]:
+                await self.app.bot.send_message(chat_id=chat_id, text=t)
 
     async def _create_poll(self, event: mibo_events.MiboPollResponse) -> None:
         '''

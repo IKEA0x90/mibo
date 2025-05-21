@@ -161,37 +161,39 @@ class Assistant:
         if not self.messages.ready:
             return
         
+        template = copy(self.assistant_object)
+
         messages: List[Dict] = await self.messages.transform_messages()
 
         if self.custom_instructions:
             messages.append({
                 'role': 'developer',
-                'content': self.custom_instructions    
+                'content': [{'type': 'text', 'text': self.custom_instructions}]
             })
 
-        template = copy(self.assistant_object)
+        if (instr := template.get('instructions')):
+            messages.append({
+                'role': 'developer',
+                'content': [{'type': 'text', 'text': instr}]
+            })
         
         request = {'model': template['model']}
-        request['input'] = messages
+        request['messages'] = messages
 
         try:
-            response = await self.call_openai(self.client.responses.create, **request, extra_body=self.extra_body)
+            response = await self.call_openai(self.client.chat.completions.create, **request, extra_body=self.extra_body)
             
             # Process the response
             response_message = response.choices[0].message
             
             # Check if there are tool calls
-            if response_message.tool_calls:
-
-                await self.not_implemented(event.event_id, 'Tools are not implemented yet.') 
-
+            if hasattr(response_message, 'tool_calls') and response_message.tool_calls:
+                await self._not_implemented(event.event_id, 'Tools are not implemented yet.') 
                 for tool_call in response_message.tool_calls:
                     if tool_call.type != "function_call":
                         continue
-
                     tool_name = tool_call.function.name
                     tool_args = tool_call.function.arguments
-
                     tool_event = assistant_events.AssistantToolRequest(
                         chat_id=self.chat_id,
                         tool_name=tool_name,
@@ -199,32 +201,41 @@ class Assistant:
                         event_id=event.event_id
                     )
                     response: wrapper.MessageWrapper = await self.bus.wait(tool_event, assistant_events.AssistantToolResponse)
-
                     # only some events require notification
                     if tool_name == tools.Tool.CREATE_IMAGE:
                         event = assistant_events.AssistantDirectRequest(response)
                         await self.bus.emit(event)
 
             else:
-                message=response_message.content
-                if not message.strip():
+                # For chat completions, content may be a list of blocks or a string
+                content = response_message.content
+                if isinstance(content, list):
+                    # Concatenate all text blocks for message text, collect images for content_list
+                    message_text = "".join([block.get('text', '') for block in content if block.get('type') == 'text'])
+                    images = [block for block in content if block.get('type') == 'image_url']
+                else:
+                    message_text = content or ''
+                    images = []
+                if not message_text.strip() and not images:
                     return
-
-                # Create a message wrapper from the response
                 assistant_message = wrapper.MessageWrapper(
                     chat_id=self.chat_id,
                     message_id=str(response.id),
                     role='assistant',
                     user='Assistant',
-                    message=message,
+                    message=message_text,
                     ping=False,
                     datetime=dt.datetime.now()
                 )
-                
+                # Add images to content_list
+                for img in images:
+                    # Only add if image_url is present
+                    if 'image_url' in img:
+                        # No size info, so use 0,0
+                        assistant_message.add_content(wrapper.ImageWrapper(0, 0, '', img['image_url'].split(',')[-1]))
                 # Emit the assistant response
-                response_event = assistant_events.AssistantResponse(response=assistant_message, event_id=event.event_id)
+                response_event = assistant_events.AssistantResponse(message=assistant_message, event_id=event.event_id)
                 await self.bus.emit(response_event)
-
         except Exception as e:
             issue = system_events.ChatErrorEvent(self.chat_id, 'Whoops! An error occurred.', str(e), event_id=event.event_id)
             await self.bus.emit(issue)
