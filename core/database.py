@@ -120,14 +120,27 @@ class Database:
             message_id = message.content_id
             role = message.role
             username = message.user
-            text = message.message
+            text = message.message            
             datetime_val = message.datetime if message.datetime else dt.datetime.now(tz=dt.timezone.utc)
             token_count = await message.tokens()
-
+            
             await self.cursor.execute("SELECT 1 FROM chats WHERE chat_id = ?", (chat_id,))
             chat_exists = await self.cursor.fetchone()
+
             if not chat_exists:
                 await self.insert_chat(chat_id)
+                # Create and emit the new chat event
+                chat = wrapper.ChatWrapper(
+                    chat_id=chat_id,
+                    custom_instructions="",
+                    chance=5,
+                    max_context_tokens=3000,
+                    max_content_tokens=1500,
+                    max_response_tokens=500,
+                    frequency_penalty=0.1,
+                    presence_penalty=0.1
+                )
+                await self.bus.emit(db_events.NewChatAck(chat=chat, event_id=event.event_id))
 
             db_message_id = await self.insert_message(
                 chat_id=chat_id,
@@ -138,7 +151,6 @@ class Database:
                 token_count=token_count,
                 datetime=datetime_val
             )
-
 
             for content in message.content_list:
                 if isinstance(content, wrapper.ImageWrapper):
@@ -446,7 +458,7 @@ class Database:
         async with self._lock:
             await self.cursor.execute(
                 """
-                INSERT INTO chats
+                INSERT OR IGNORE INTO chats
                 (chat_id, custom_instructions, chance, max_context_tokens, max_content_tokens, max_response_tokens, frequency_penalty, presence_penalty)
                 VALUES (?, ?, ?, ?, ?, ?, ?, ?)
                 """,
@@ -484,7 +496,7 @@ class Database:
         async with self._lock:
             await self.cursor.execute(
                 """
-                INSERT INTO messages
+                INSERT OR IGNORE INTO messages
                 (message_id, chat_id, role, username, text, token_count, datetime)
                 VALUES (?, ?, ?, ?, ?, ?, ?)
                 """,
@@ -514,7 +526,7 @@ class Database:
         async with self._lock:
             await self.cursor.execute(
                 """
-                INSERT INTO images
+                INSERT OR IGNORE INTO images
                 (image_id, message_id, image_url, content_tokens)
                 VALUES (?, ?, ?, ?)
                 """,
@@ -541,7 +553,7 @@ class Database:
         async with self._lock:
             await self.cursor.execute(
                 """
-                INSERT INTO stickers
+                INSERT OR IGNORE INTO stickers
                 (sticker_id, message_id, key_emoji)
                 VALUES (?, ?, ?)
                 """,
@@ -572,7 +584,7 @@ class Database:
         async with self._lock:
             await self.cursor.execute(
                 """
-                INSERT INTO polls
+                INSERT OR IGNORE INTO polls
                 (poll_id, message_id, question, options, multiple_choice, correct_option_idx, explanation)
                 VALUES (?, ?, ?, ?, ?, ?, ?)
                 """,

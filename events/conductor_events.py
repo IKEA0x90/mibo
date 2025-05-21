@@ -15,3 +15,7 @@ class AssistantRequest(event.Event):
 class ImageDownloadRequest(event.Event):
     def __init__(self, update, context, **kwargs):
         super().__init__('image_download_request', update=update, context=context, **kwargs)
+
+class NewChatPush(event.Event):
+    def __init__(self, chat: wrapper.ChatWrapper, **kwargs):
+        super().__init__('new_chat_created', chat=chat, **kwargs)

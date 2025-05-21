@@ -30,3 +30,7 @@ class MiboStickerResponse(event.Event):
 class MiboPollResponse(event.Event):
     def __init__(self, chat_id: str, poll: wrapper.PollWrapper, **kwargs):
         super().__init__('mibo_poll_response', chat_id=chat_id, poll=poll, **kwargs)
+
+class AssistantCreated(event.Event):
+    def __init__(self, chat_id: str, **kwargs):
+        super().__init__('assistant_created', chat_id=chat_id, **kwargs)

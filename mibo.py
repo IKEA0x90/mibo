@@ -9,7 +9,7 @@ from typing import List, Dict
 from telegram import Update, Chat, ChatMember, InputFile, InputMediaPhoto
 from telegram.ext import Application, CallbackContext, CommandHandler, MessageHandler, ChatMemberHandler, filters
 
-from events import event_bus, mibo_events, system_events, assistant_events
+from events import event_bus, mibo_events, system_events, assistant_events, conductor_events
 from core import assistant, database, conductor, wrapper
 from services import tools
 
@@ -55,9 +55,7 @@ class Mibo:
         self.assistants = assistant.initialize_assistants(self.db, self.client, self.bus, self.templates, self.start_datetime)
         
         # Register event listeners
-        self.bus.register(assistant_events.AssistantResponse, self._parse_message)
-        self.bus.register(mibo_events.MiboMessageResponse, self._send_message)
-        self.bus.register(mibo_events.MiboPollResponse, self._create_poll)
+        self._register()
 
         self.app = Application.builder().token(self.token).build()
 
@@ -66,6 +64,12 @@ class Mibo:
 
         self._register_handlers()
         self._system_signals()
+
+    def _register(self):
+        self.bus.register(assistant_events.AssistantResponse, self._parse_message)
+        self.bus.register(mibo_events.MiboMessageResponse, self._send_message)
+        self.bus.register(mibo_events.MiboPollResponse, self._create_poll)
+        self.bus.register(conductor_events.NewChatPush, self._create_assistant)
 
     async def run(self):
         '''
@@ -118,6 +122,32 @@ class Mibo:
         await self.db.close()
 
         print('Shutdown complete.')
+
+    async def _create_assistant(self, event: conductor_events.NewChatPush):
+        try:
+            chat = event.chat
+            chat_id = chat.chat_id
+
+            if chat_id in self.assistants:
+                await self.bus.emit(mibo_events.AssistantCreated(chat_id=chat_id, event_id=event.event_id))
+                return
+
+            new_assistant = assistant.Assistant(
+                chat_id, 
+                self.client, 
+                self.bus, 
+                self.templates, 
+                self.start_datetime,
+                chat=chat,
+                assistant_type=tools.Tool.MIBO
+            )
+                
+            self.assistants[chat_id] = new_assistant
+            
+            await self.bus.emit(mibo_events.AssistantCreated(chat_id=chat_id, event_id=event.event_id))
+    
+        except Exception as e:
+            await self.bus.emit(system_events.ChatErrorEvent(f"Couldn't create an instance of you for the new friend.", e))
 
     async def _handle_message(self, update: Update, context: CallbackContext):
         '''

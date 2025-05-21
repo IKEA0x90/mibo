@@ -76,7 +76,7 @@ class Window():
         token_sum = 0
         for msg in sorted_buffer:
             msg_tokens = await msg.tokens()
-            if token_sum + msg_tokens > self.max_tokens:
+            if token_sum + msg_tokens > self.max_context_tokens:
                 continue
             self.messages.append(msg)
             token_sum += msg_tokens

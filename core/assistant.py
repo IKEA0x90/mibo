@@ -246,7 +246,7 @@ class Assistant:
                     chat_id=self.chat_id,
                     message_id=str(response.id),
                     role='assistant',
-                    user='Assistant',
+                    user=tools.Tool.MIBO,
                     message=message_text,
                     ping=False,
                     datetime=dt.datetime.now(tz=dt.timezone.utc)
@@ -335,7 +335,7 @@ class CatAssistant(Assistant):
         message = wrapper.MessageWrapper(
             chat_id=self.chat_id,
             role='assistant',
-            user='CatAssistant',
+            user=tools.Tool.CAT_ASSISTANT,
             message=tool_args.get('message', ''),
             ping=True,
             datetime=dt.datetime.now(tz=dt.timezone.utc)

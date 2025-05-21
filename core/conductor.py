@@ -88,7 +88,11 @@ class Conductor:
                     message_wrapper.add_content(image)
 
             push_request = conductor_events.MessagePush(message_wrapper, event_id=event.event_id)
-            await self.bus.emit(push_request)
+            chat_response = await self.bus.wait(push_request, db_events.NewChatAck)
+            chat = chat_response.chat
+
+            push_request = conductor_events.NewChatPush(chat, event_id=event.event_id)
+            await self.bus.wait(push_request, mibo_events.AssistantCreated)
 
             await self.bus.emit(conductor_events.AssistantRequest(chat_id=chat_id, message=message_wrapper, event_id=event.event_id))
 
