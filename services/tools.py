@@ -27,8 +27,6 @@ class Tool:
 
     DB_PATH = os.environ['DB_PATH']
     MIBO_MESSAGE = os.environ['MIBO_MESSAGE']
-    MIBO_MESSAGE_EXTENDED = os.environ['MIBO_MESSAGE_EXTENDED']
-    MIBO_MESSAGE_ALTERNATIVE = os.environ['MIBO_MESSAGE_ALTERNATIVE']
 
     MIBO = 'mibo'
     CAT_ASSISTANT = 'cat_assistant'

@@ -4,6 +4,7 @@ import signal
 import openai
 import logging
 import random
+import re
 
 import datetime as dt
 from typing import List, Dict
@@ -226,17 +227,13 @@ class Mibo:
         '''
         Parse the text for custom delimiters.
         '''
-        # cut 'itsmiibot: ' which every message start with 
-        if text.lower().startswith(tools.Tool.MIBO_MESSAGE):
-            text = text[len(tools.Tool.MIBO_MESSAGE):]
-        if text.lower().startswith(tools.Tool.MIBO_MESSAGE_EXTENDED):
-            text = text[len(tools.Tool.MIBO_MESSAGE_EXTENDED):]
-        if text.lower().startswith(tools.Tool.MIBO_MESSAGE_ALTERNATIVE):
-            text = text[len(tools.Tool.MIBO_MESSAGE_ALTERNATIVE):]
-        else:
-            pass
+        prefix = tools.Tool.MIBO_MESSAGE  # 'mibo:'
+        pattern = rf'^(?:{prefix.rstrip()}\s+)+'
 
-        text_list = text.split('\n')
+        if re.match(pattern, text, flags=re.IGNORECASE):
+            text2 = re.sub(pattern, '', text, flags=re.IGNORECASE)
+
+        text_list = text2.split('\n')
 
         return text_list
 
