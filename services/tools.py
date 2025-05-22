@@ -6,8 +6,8 @@ class Tool:
     '''
     Handles all tool requests
     '''
-    #load_dotenv(dotenv_path="home/not_root/mibo/env/.env", override=False)
-    load_dotenv(dotenv_path="d:/Coding/py/mibo/.env/.env", override=True)
+    env_path = os.path.join(os.path.dirname(os.path.dirname(__file__)), ".env", ".env")
+    load_dotenv(dotenv_path=env_path, override=True)
 
     CREATE_IMAGE = 'create_image'
     CREATE_POLL = 'create_poll'
