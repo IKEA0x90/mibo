@@ -276,8 +276,9 @@ class Assistant:
                 await self.bus.emit(push_event)
 
         except Exception as e:
-            issue = system_events.ChatErrorEvent(self.chat_id, 'Whoops! An error occurred.', str(e), event_id=event.event_id)
-            await self.bus.emit(issue)
+            raise e
+            #issue = system_events.ChatErrorEvent(self.chat_id, 'Whoops! An error occurred.', str(e), event_id=event.event_id)
+            #await self.bus.emit(issue)
 
 class CatAssistant(Assistant):
     def __init__(self, chat_id, client, bus, templates, start_datetime, chat, assistant_type):

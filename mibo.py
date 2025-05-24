@@ -152,7 +152,8 @@ class Mibo:
             await self.bus.emit(mibo_events.AssistantCreated(chat_id=chat_id, event_id=event.event_id))
     
         except Exception as e:
-            await self.bus.emit(system_events.ChatErrorEvent(f"Couldn't create an instance of you for the new friend.", e))
+            raise e
+            #await self.bus.emit(system_events.ChatErrorEvent(f"Couldn't create an instance of you for the new friend.", e))
 
     async def _handle_message(self, update: Update, context: CallbackContext):
         '''

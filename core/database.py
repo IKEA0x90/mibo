@@ -53,8 +53,9 @@ class Database:
                                         for row in rows]
         
         except Exception as e:
-            self.bus.emit_sync(system_events.ErrorEvent("Hmm.. Can't read your group chats from the database.", e))
-            return []
+            raise e
+            #self.bus.emit_sync(system_events.ErrorEvent("Hmm.. Can't read your group chats from the database.", e))
+            #return []
 
     async def initialize(self):
         '''
@@ -69,7 +70,8 @@ class Database:
             self._register()
 
         except Exception as e:
-            await self.bus.emit(system_events.ErrorEvent("The database somehow failed to initialize.", e))
+            raise e
+            #await self.bus.emit(system_events.ErrorEvent("The database somehow failed to initialize.", e))
 
         async with self._lock:
             if not self._init_done:
@@ -99,7 +101,8 @@ class Database:
             self._register()
         
         except Exception as e:
-            self.bus.emit_sync(system_events.ErrorEvent("The database somehow failed to initialize (sync).", e))
+            raise e
+            #self.bus.emit_sync(system_events.ErrorEvent("The database somehow failed to initialize (sync).", e))
 
     def _register(self):
         '''
@@ -191,7 +194,8 @@ class Database:
                         explanation=content.explanation
                     )
         except Exception as e:
-            pass
+            raise e
+            #pass
              
     async def _image_to_bytes(self, event: conductor_events.ImageDownloadRequest):
         '''
@@ -233,8 +237,9 @@ class Database:
                 await self.bus.emit(request)
         
         except Exception as e:
-            await self.bus.emit(system_events.ChatErrorEvent(chat_id, 'Failed to download image.', e, event_id=event.event_id))
-            return 
+            raise e
+            #await self.bus.emit(system_events.ChatErrorEvent(chat_id, 'Failed to download image.', e, event_id=event.event_id))
+            #return 
 
     async def _save_images(self, event: db_events.ImageSaveRequest):
         '''
@@ -295,8 +300,9 @@ class Database:
             await self.bus.emit(response)
 
         except Exception as e:
-            await self.bus.emit(system_events.ChatErrorEvent("Couldn't save one of the images to disk.", e, event_id=event.event_id))
-            return
+            raise e
+            #await self.bus.emit(system_events.ChatErrorEvent("Couldn't save one of the images to disk.", e, event_id=event.event_id))
+            #return
     
     async def create_tables(self) -> None:
         """
@@ -378,8 +384,9 @@ class Database:
             )
             await self.conn.commit()
         except Exception as e:
-            await self.conn.rollback()
-            print(f"Error creating tables: {e}")
+            raise e
+            #await self.conn.rollback()
+            #print(f"Error creating tables: {e}")
 
     def create_tables_sync(self):
         '''
@@ -450,8 +457,9 @@ class Database:
             )
             self.conn.commit()
         except Exception as e:
-            self.conn.rollback()
-            print(f"Error creating tables (sync): {e}")
+            raise e
+            #self.conn.rollback()
+            #print(f"Error creating tables (sync): {e}")
 
     async def insert_chat(
         self,
@@ -659,8 +667,9 @@ class Database:
                 messages.append(msg)
 
         except Exception as e:
-            await self.bus.emit(system_events.ChatErrorEvent(chat_id, f"Failed to load memory for chat {chat_id}", e, event_id=event.event_id))
-            messages = []
+            raise e
+            #await self.bus.emit(system_events.ChatErrorEvent(chat_id, f"Failed to load memory for chat {chat_id}", e, event_id=event.event_id))
+            #messages = []
 
         response = db_events.MemoryResponse(chat_id=chat_id, messages=messages, event_id=event.event_id)
         await self.bus.emit(response)
