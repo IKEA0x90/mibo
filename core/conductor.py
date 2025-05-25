@@ -44,8 +44,7 @@ class Conductor:
                 return
         
         except Exception as e:
-            raise e
-            #await self.bus.emit(system_events.ErrorEvent("Woah! Somehow, this telegram message can't be parsed.", e))
+            await self.bus.emit(system_events.ErrorEvent("Woah! Somehow, this telegram message can't be parsed.", e))
 
         try:
             user = user.username or user.first_name
@@ -90,13 +89,12 @@ class Conductor:
 
             push_request = conductor_events.MessagePush(message_wrapper, event_id=event.event_id)
             chat_response = await self.bus.wait(push_request, db_events.NewChatAck)
-            chat = chat_response.chat
+            chat_wrapper = chat_response.chat
 
-            push_request = conductor_events.NewChatPush(chat, event_id=event.event_id)
+            push_request = conductor_events.NewChatPush(chat_wrapper, event_id=event.event_id)
             await self.bus.wait(push_request, mibo_events.AssistantCreated)
 
             await self.bus.emit(conductor_events.AssistantRequest(chat_id=chat_id, message=message_wrapper, event_id=event.event_id, typing=event.typing))
 
         except Exception as e:
-            raise e
-            #await self.bus.emit(system_events.ChatErrorEvent(chat_id=chat_id, error="Something's wrong with passing the messages from telegram to you.", e=e, event_id=event.event_id))
+            await self.bus.emit(system_events.ChatErrorEvent(chat_id=chat_id, error="Something's wrong with passing the messages from telegram to you.", e=e, event_id=event.event_id))

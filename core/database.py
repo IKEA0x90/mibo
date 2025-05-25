@@ -22,13 +22,11 @@ class Database:
         self.image_path = os.path.join(db_path, 'images')
 
         self.bus = bus
-
-        self.conn = None
-        self.cursor = None
+        self.conn = None 
         self._init_done = False
         self._lock = asyncio.Lock()  # Add lock to prevent race conditions
 
-    def get_all_chats(self) -> List[Tuple[str, str, int, int, int, int]]:
+    def get_all_chats(self) -> List[wrapper.ChatWrapper]: # Corrected return type
         '''
         Returns all chat IDs and their custom instructions from the database.
         Synchronous method for use during initialization.
@@ -53,9 +51,8 @@ class Database:
                                         for row in rows]
         
         except Exception as e:
-            raise e
-            #self.bus.emit_sync(system_events.ErrorEvent("Hmm.. Can't read your group chats from the database.", e))
-            #return []
+            self.bus.emit_sync(system_events.ErrorEvent("Hmm.. Can't read your group chats from the database.", e))
+            return []
 
     async def initialize(self):
         '''
@@ -63,26 +60,29 @@ class Database:
         '''
         try:
             self.conn = await aiosqlite.connect(self.db_path)
-            await self.conn.execute('PRAGMA foreign_keys = ON') # used for intra-table relations
-            self.conn.row_factory = aiosqlite.Row # convert rows to dict-like objects
-            self.cursor = await self.conn.cursor() # get the object that executes SQL commands
+            await self.conn.execute('PRAGMA foreign_keys = ON')
+            self.conn.row_factory = aiosqlite.Row
 
             self._register()
 
         except Exception as e:
-            raise e
-            #await self.bus.emit(system_events.ErrorEvent("The database somehow failed to initialize.", e))
+            await self.bus.emit(system_events.ErrorEvent("The database somehow failed to initialize.", e))
 
         async with self._lock:
             if not self._init_done:
+                # Note: The 'if not self.conn:' block below might be unreachable
+                # if the initial connection setup always succeeds or raises.
                 if not self.conn:
-
                     self.conn = await aiosqlite.connect(self.db_path)
-                    await self.conn.execute('PRAGMA foreign_keys = ON') # used for intra-table relations
-                    self.conn.row_factory = aiosqlite.Row # convert rows to dict-like objects
-                    self.cursor = await self.conn.cursor() # get the object that executes SQL commands
+                    await self.conn.execute('PRAGMA foreign_keys = ON')
+                    self.conn.row_factory = aiosqlite.Row
 
-                await self.create_tables()
+                cursor = await self.conn.cursor()
+                try:
+                    await self.create_tables(cursor)
+                finally:
+                    await cursor.close()
+
                 self._init_done = True
                 
     def initialize_sync(self):
@@ -91,18 +91,23 @@ class Database:
         Connects to the database and creates tables if they don't exist.
         '''
         try:
-            self.conn = sqlite3.connect(self.db_path)
-            self.conn.row_factory = sqlite3.Row
-            self.cursor = self.conn.cursor()
-            # No event registration in sync mode
-            self.create_tables_sync()
-            self._init_done = True
+            # Use a local synchronous connection for table creation
+            conn = sqlite3.connect(self.db_path)
+            conn.row_factory = sqlite3.Row
+            cursor = conn.cursor()
+            
+            self.create_tables_sync(cursor) # Pass local sync cursor
+            
+            conn.commit() # Commit changes made by create_tables_sync
+            cursor.close()
+            conn.close()
+            
+            self._init_done = True # Mark tables as created
         
             self._register()
         
         except Exception as e:
-            raise e
-            #self.bus.emit_sync(system_events.ErrorEvent("The database somehow failed to initialize (sync).", e))
+            self.bus.emit_sync(system_events.ErrorEvent("The database somehow failed to initialize.", e))
 
     def _register(self):
         '''
@@ -127,10 +132,12 @@ class Database:
             datetime_val = message.datetime if message.datetime else dt.datetime.now(tz=dt.timezone.utc)
             token_count = await message.tokens()
             
-            await self.cursor.execute("SELECT 1 FROM chats WHERE chat_id = ?", (chat_id,))
-            chat_exists = await self.cursor.fetchone()
+            chat = None # Initialize chat variable
+            async with self.conn.cursor() as cursor: # Use local cursor
+                await cursor.execute("SELECT * FROM chats WHERE chat_id = ?", (chat_id,))
+                row = await cursor.fetchone()
 
-            if not chat_exists:
+            if not row:
                 await self.insert_chat(chat_id)
                 # Create and emit the new chat event
                 chat = wrapper.ChatWrapper(
@@ -144,8 +151,7 @@ class Database:
                     presence_penalty=0.1
                 )
             else:
-                await self.cursor.execute("SELECT * FROM chats WHERE chat_id = ?", (chat_id,))
-                row = await self.cursor.fetchone()
+                keys = row.keys()
                 chat = wrapper.ChatWrapper(
                     chat_id=row['chat_id'],
                     custom_instructions=row['custom_instructions'],
@@ -193,9 +199,9 @@ class Database:
                         correct_option_idx=content.correct_option_idx,
                         explanation=content.explanation
                     )
+
         except Exception as e:
-            raise e
-            #pass
+            self.bus.emit(system_events.ChatErrorEvent(chat_id=chat_id, message=f"Failed to add a message to the database.", exception=e, event_id=event.event_id))
              
     async def _image_to_bytes(self, event: conductor_events.ImageDownloadRequest):
         '''
@@ -237,9 +243,7 @@ class Database:
                 await self.bus.emit(request)
         
         except Exception as e:
-            raise e
-            #await self.bus.emit(system_events.ChatErrorEvent(chat_id, 'Failed to download image.', e, event_id=event.event_id))
-            #return 
+            await self.bus.emit(system_events.ChatErrorEvent(chat_id, 'Failed to download image.', e, event_id=event.event_id))
 
     async def _save_images(self, event: db_events.ImageSaveRequest):
         '''
@@ -294,23 +298,22 @@ class Database:
                     img_base64 = base64.b64encode(buffered.getvalue()).decode('utf-8')
 
                     wrap = wrapper.ImageWrapper(new_width, new_height, filepath, img_base64)
+                    images.append(wrap)
             
             # Send the response event with the paths and base64 strings
             response = db_events.ImageResponse(chat_id=chat_id, images=images, event_id=event.event_id)
             await self.bus.emit(response)
 
         except Exception as e:
-            raise e
-            #await self.bus.emit(system_events.ChatErrorEvent("Couldn't save one of the images to disk.", e, event_id=event.event_id))
-            #return
+            await self.bus.emit(system_events.ChatErrorEvent("Couldn't save one of the images to disk.", e, event_id=event.event_id))
     
-    async def create_tables(self) -> None:
+    async def create_tables(self, cursor) -> None: # Accepts cursor
         """
         Create the schema for chats, messages, images, stickers, and polls.
         """
         try:
             # ------------------ chats ------------------
-            await self.cursor.execute("""
+            await cursor.execute("""
             CREATE TABLE IF NOT EXISTS chats (
                 chat_id           TEXT PRIMARY KEY,
                 custom_instructions TEXT NOT NULL DEFAULT '',
@@ -325,7 +328,7 @@ class Database:
             """)
 
             # ------------------ messages ------------------
-            await self.cursor.execute("""
+            await cursor.execute("""
             CREATE TABLE IF NOT EXISTS messages (
                 message_id   TEXT PRIMARY KEY,
                 chat_id      TEXT NOT NULL,
@@ -341,7 +344,7 @@ class Database:
             """)
 
             # ------------------ images ------------------
-            await self.cursor.execute("""
+            await cursor.execute("""
             CREATE TABLE IF NOT EXISTS images (
                 image_id    TEXT PRIMARY KEY,
                 message_id  TEXT NOT NULL,
@@ -352,7 +355,7 @@ class Database:
             """)
 
             # ------------------ stickers ------------------
-            await self.cursor.execute("""
+            await cursor.execute("""
             CREATE TABLE IF NOT EXISTS stickers (
                 sticker_id  TEXT PRIMARY KEY,
                 message_id  TEXT NOT NULL,
@@ -362,7 +365,7 @@ class Database:
             """)
 
             # ------------------ polls ------------------
-            await self.cursor.execute("""
+            await cursor.execute("""
             CREATE TABLE IF NOT EXISTS polls (
                 poll_id     TEXT PRIMARY KEY,
                 message_id  TEXT NOT NULL,
@@ -376,24 +379,24 @@ class Database:
             """)
 
             # ----------- helpful indexes -----------
-            await self.cursor.execute(
+            await cursor.execute(
                 "CREATE INDEX IF NOT EXISTS idx_messages_chat_id ON messages (chat_id)"
             )
-            await self.cursor.execute(
+            await cursor.execute(
                 "CREATE INDEX IF NOT EXISTS idx_images_message_id ON images (message_id)"
             )
-            await self.conn.commit()
-        except Exception as e:
-            raise e
-            #await self.conn.rollback()
-            #print(f"Error creating tables: {e}")
+            await self.conn.commit() # Commit on the main connection
 
-    def create_tables_sync(self):
+        except Exception as e:
+            await self.conn.rollback() # Consider rollback on the main connection
+            self.bus.emit(system_events.ErrorEvent("Failed to create database tables.", e))
+
+    def create_tables_sync(self, cursor): # Accepts cursor
         '''
         Synchronous version of create_tables for use with sqlite3.
         '''
         try:
-            self.cursor.execute("""
+            cursor.execute("""
             CREATE TABLE IF NOT EXISTS chats (
                 chat_id           TEXT PRIMARY KEY,
                 custom_instructions TEXT NOT NULL DEFAULT '',
@@ -406,7 +409,7 @@ class Database:
                 timestamp        TIMESTAMP DEFAULT CURRENT_TIMESTAMP
             );
             """)
-            self.cursor.execute("""
+            cursor.execute("""
             CREATE TABLE IF NOT EXISTS messages (
                 message_id   TEXT PRIMARY KEY,
                 chat_id      TEXT NOT NULL,
@@ -420,7 +423,7 @@ class Database:
                 FOREIGN KEY (chat_id) REFERENCES chats (chat_id) ON DELETE CASCADE
             );
             """)
-            self.cursor.execute("""
+            cursor.execute("""
             CREATE TABLE IF NOT EXISTS images (
                 image_id    TEXT PRIMARY KEY,
                 message_id  TEXT NOT NULL,
@@ -429,7 +432,7 @@ class Database:
                 FOREIGN KEY (message_id) REFERENCES messages (message_id) ON DELETE CASCADE
             );
             """)
-            self.cursor.execute("""
+            cursor.execute("""
             CREATE TABLE IF NOT EXISTS stickers (
                 sticker_id  TEXT PRIMARY KEY,
                 message_id  TEXT NOT NULL,
@@ -437,7 +440,7 @@ class Database:
                 FOREIGN KEY (message_id) REFERENCES messages (message_id) ON DELETE CASCADE
             );
             """)
-            self.cursor.execute("""
+            cursor.execute("""
             CREATE TABLE IF NOT EXISTS polls (
                 poll_id     TEXT PRIMARY KEY,
                 message_id  TEXT NOT NULL,
@@ -449,17 +452,14 @@ class Database:
                 FOREIGN KEY (message_id) REFERENCES messages (message_id) ON DELETE CASCADE
             );
             """)
-            self.cursor.execute(
+            cursor.execute(
                 "CREATE INDEX IF NOT EXISTS idx_messages_chat_id ON messages (chat_id)"
             )
-            self.cursor.execute(
+            cursor.execute(
                 "CREATE INDEX IF NOT EXISTS idx_images_message_id ON images (message_id)"
             )
-            self.conn.commit()
         except Exception as e:
-            raise e
-            #self.conn.rollback()
-            #print(f"Error creating tables (sync): {e}")
+            self.bus.emit_sync(system_events.ErrorEvent("Failed to create database tables.", e))
 
     async def insert_chat(
         self,
@@ -476,26 +476,28 @@ class Database:
         """
         Inserts a new chat and returns the chat_id.
         """
-        chat_id = chat_id or str(uuid.uuid4())
+        effective_chat_id = chat_id or str(uuid.uuid4())
         async with self._lock:
-            await self.cursor.execute(
-                """
-                INSERT OR IGNORE INTO chats
-                (chat_id, custom_instructions, chance, max_context_tokens, max_content_tokens, max_response_tokens, frequency_penalty, presence_penalty)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-                """,
-                (
-                    str(chat_id),
-                    custom_instructions,
-                    chance,
-                    max_context_tokens,
-                    max_content_tokens,
-                    max_response_tokens,
-                    frequency_penalty,
-                    presence_penalty
-                ),
-            )
-            await self.conn.commit()
+            async with self.conn.cursor() as cursor:
+                await cursor.execute(
+                    """
+                    INSERT OR IGNORE INTO chats
+                    (chat_id, custom_instructions, chance, max_context_tokens, max_content_tokens, max_response_tokens, frequency_penalty, presence_penalty)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+                    """,
+                    (
+                        str(effective_chat_id),
+                        custom_instructions,
+                        chance,
+                        max_context_tokens,
+                        max_content_tokens,
+                        max_response_tokens,
+                        frequency_penalty,
+                        presence_penalty
+                    ),
+                )
+                await self.conn.commit()
+        return str(effective_chat_id)
 
     async def insert_message(
         self,
@@ -512,27 +514,29 @@ class Database:
         Inserts a message linked to an existing chat. Returns message_id.
         Uses the provided datetime, or current time if not provided.
         """
-        message_id = str(message_id) or str(uuid.uuid4())
+        effective_message_id = str(message_id) or str(uuid.uuid4())
         if datetime is None:
             datetime = dt.datetime.now(tz=dt.timezone.utc)
         async with self._lock:
-            await self.cursor.execute(
-                """
-                INSERT OR IGNORE INTO messages
-                (message_id, chat_id, role, username, text, token_count, datetime)
-                VALUES (?, ?, ?, ?, ?, ?, ?)
-                """,
-                (
-                    message_id,
-                    str(chat_id),
-                    role,
-                    username,
-                    text,
-                    token_count,
-                    datetime
-                ),
-            )
-            await self.conn.commit()
+            async with self.conn.cursor() as cursor:
+                await cursor.execute(
+                    """
+                    INSERT OR IGNORE INTO messages
+                    (message_id, chat_id, role, username, text, token_count, datetime)
+                    VALUES (?, ?, ?, ?, ?, ?, ?)
+                    """,
+                    (
+                        effective_message_id,
+                        str(chat_id),
+                        role,
+                        username,
+                        text,
+                        token_count,
+                        datetime
+                    ),
+                )
+                await self.conn.commit()
+            return effective_message_id
 
     async def insert_image(
         self,
@@ -544,22 +548,24 @@ class Database:
         """
         Inserts an image row linked to an existing message. Returns image_id.
         """
-        image_id = image_id or str(uuid.uuid4())
+        effective_image_id = image_id or str(uuid.uuid4())
         async with self._lock:
-            await self.cursor.execute(
-                """
-                INSERT OR IGNORE INTO images
-                (image_id, message_id, image_url, content_tokens)
-                VALUES (?, ?, ?, ?)
-                """,
-                (
-                    image_id,
-                    str(message_id),
-                    image_url,
-                    content_tokens
-                ),
-            )
-            await self.conn.commit()
+            async with self.conn.cursor() as cursor:
+                await cursor.execute(
+                    """
+                    INSERT OR IGNORE INTO images
+                    (image_id, message_id, image_url, content_tokens)
+                    VALUES (?, ?, ?, ?)
+                    """,
+                    (
+                        effective_image_id,
+                        str(message_id),
+                        image_url,
+                        content_tokens
+                    ),
+                )
+                await self.conn.commit()
+        return effective_image_id
 
     async def insert_sticker(
         self,
@@ -571,21 +577,23 @@ class Database:
         """
         Inserts a sticker row linked to an existing message. Returns sticker_id.
         """
-        sticker_id = sticker_id or str(uuid.uuid4())
+        effective_sticker_id = sticker_id or str(uuid.uuid4())
         async with self._lock:
-            await self.cursor.execute(
-                """
-                INSERT OR IGNORE INTO stickers
-                (sticker_id, message_id, key_emoji)
-                VALUES (?, ?, ?)
-                """,
-                (
-                    sticker_id,
-                    str(message_id),
-                    key_emoji
-                ),
-            )
-            await self.conn.commit()
+            async with self.conn.cursor() as cursor:
+                await cursor.execute(
+                    """
+                    INSERT OR IGNORE INTO stickers
+                    (sticker_id, message_id, key_emoji)
+                    VALUES (?, ?, ?)
+                    """,
+                    (
+                        effective_sticker_id,
+                        str(message_id),
+                        key_emoji
+                    ),
+                )
+                await self.conn.commit()
+        return effective_sticker_id
 
     async def insert_poll(
         self,
@@ -601,26 +609,28 @@ class Database:
         """
         Inserts a poll row linked to an existing message. Returns poll_id.
         """
-        poll_id = poll_id or str(uuid.uuid4())
-        options_str = '\n'.join(options)
+        effective_poll_id = poll_id or str(uuid.uuid4())
+        options_str = '\\n'.join(options) # Ensure newline is escaped if it's part of the string literal for SQL
         async with self._lock:
-            await self.cursor.execute(
-                """
-                INSERT OR IGNORE INTO polls
-                (poll_id, message_id, question, options, multiple_choice, correct_option_idx, explanation)
-                VALUES (?, ?, ?, ?, ?, ?, ?)
-                """,
-                (
-                    poll_id,
-                    message_id,
-                    question,
-                    options_str,
-                    int(multiple_choice),
-                    correct_option_idx,
-                    explanation
-                ),
-            )
-            await self.conn.commit()
+            async with self.conn.cursor() as cursor:
+                await cursor.execute(
+                    """
+                    INSERT OR IGNORE INTO polls
+                    (poll_id, message_id, question, options, multiple_choice, correct_option_idx, explanation)
+                    VALUES (?, ?, ?, ?, ?, ?, ?)
+                    """,
+                    (
+                        effective_poll_id,
+                        message_id,
+                        question,
+                        options_str,
+                        int(multiple_choice),
+                        correct_option_idx,
+                        explanation
+                    ),
+                )
+                await self.conn.commit()
+            return effective_poll_id
 
     async def close(self):
         '''
@@ -629,7 +639,7 @@ class Database:
         if self.conn:
             await self.conn.close()
             self.conn = None
-            self.cursor = None
+            # self.cursor = None # Removed shared cursor
 
     async def _handle_memory_request(self, event: db_events.MemoryRequest):
         '''
@@ -639,37 +649,46 @@ class Database:
         messages = []
 
         try:
-            cursor = await self.cursor.execute("SELECT * FROM messages WHERE chat_id = ? ORDER BY datetime ASC", (chat_id,))
-            rows = await cursor.fetchall()
-            for row in rows:
+            async with self.conn.cursor() as cursor: # Use local cursor
+                await cursor.execute("SELECT * FROM messages WHERE chat_id = ? ORDER BY datetime ASC", (chat_id,))
+                rows = await cursor.fetchall()
+            
+            for row_data in rows: # Renamed to avoid conflict with 'row' in _add_message if it was in scope
                 # Reconstruct MessageWrapper
                 msg = wrapper.MessageWrapper(
-                    chat_id=row['chat_id'],
-                    message_id=row['message_id'],
-                    role=row['role'],
-                    user=row['username'],
-                    message=row['text'],
-                    ping=False,
-                    reply_id='',
-                    datetime=row['datetime']
+                    chat_id=row_data['chat_id'],
+                    message_id=row_data['message_id'],
+                    role=row_data['role'],
+                    user=row_data['username'],
+                    message=row_data['text'],
+                    ping=False, # Assuming default
+                    reply_id='', # Assuming default
+                    datetime=row_data['datetime'] # Will be processed next
                 )
 
                 try:
-                    dt_obj = dt.datetime.fromisoformat(row['datetime'])
+                    # Ensure datetime is timezone-aware UTC
+                    dt_str = row_data['datetime']
+                    if isinstance(dt_str, str):
+                        dt_obj = dt.datetime.fromisoformat(dt_str)
+                    elif isinstance(dt_str, dt.datetime):
+                        dt_obj = dt_str
+                    else: # Fallback for unexpected types
+                        dt_obj = dt.datetime.now(dt.timezone.utc)
+
                     if dt_obj.tzinfo is None:
                         dt_obj = dt_obj.replace(tzinfo=dt.timezone.utc)
                     else:
                         dt_obj = dt_obj.astimezone(dt.timezone.utc)
                     msg.datetime = dt_obj
-                except ValueError:
+                except ValueError: # Fallback for parsing errors
                     msg.datetime = dt.datetime.now(dt.timezone.utc)
 
                 messages.append(msg)
 
         except Exception as e:
-            raise e
-            #await self.bus.emit(system_events.ChatErrorEvent(chat_id, f"Failed to load memory for chat {chat_id}", e, event_id=event.event_id))
-            #messages = []
-
-        response = db_events.MemoryResponse(chat_id=chat_id, messages=messages, event_id=event.event_id)
-        await self.bus.emit(response)
+            await self.bus.emit(system_events.ChatErrorEvent(chat_id, f"Failed to retrieve your memory.", e, event_id=event.event_id))
+            messages = []
+        finally:
+            response = db_events.MemoryResponse(chat_id=chat_id, messages=messages, event_id=event.event_id)
+            await self.bus.emit(response)

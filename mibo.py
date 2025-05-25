@@ -34,6 +34,7 @@ class Mibo:
         self.typing_tasks: Dict[int, asyncio.Task] = {}
 
         self._prepare(token)
+        print(f'Mibo is alive! It is {self.start_datetime.hour}:{self.start_datetime.minute}:{self.start_datetime.second} UTC.')
 
     def _prepare(self, token: str):
         '''
@@ -152,8 +153,7 @@ class Mibo:
             await self.bus.emit(mibo_events.AssistantCreated(chat_id=chat_id, event_id=event.event_id))
     
         except Exception as e:
-            raise e
-            #await self.bus.emit(system_events.ChatErrorEvent(f"Couldn't create an instance of you for the new friend.", e))
+            await self.bus.emit(system_events.ChatErrorEvent(f"Couldn't create Mibo instance for the new chat.", e, event_id=event.event_id))
 
     async def _handle_message(self, update: Update, context: CallbackContext):
         '''
@@ -230,6 +230,7 @@ class Mibo:
         '''
         prefix = tools.Tool.MIBO_MESSAGE  # 'mibo:'
         pattern = rf'^(?:{prefix.rstrip()}\s+)+'
+        text2 = text.strip()
 
         if re.match(pattern, text, flags=re.IGNORECASE):
             text2 = re.sub(pattern, '', text, flags=re.IGNORECASE)
