@@ -9,10 +9,10 @@ I'm a Telegram bot, but not your average boring one. I can actually participate 
 ## How do I work?
 
 - __mibo.py__: This is my main brain. It wires up everything: connects to Telegram, sets up my assistants, and handles all the boring startup stuff. When you send a message, I decide what to do, whether to reply, send images, or just ignore you (kidding, mostly).
-- __assistant.py__: This is where my personalities live. I’m not about to do jobs for you - I have assistants who do that for me. I just pick which one to use based on the chat and what you’re asking for. I also decide if I should reply or just lurk.
-- __database.py__: My memory. I store all your messages, images, and polls here. I use SQLite (async and sync, because I’m fancy like that). I can fetch old messages, save new ones, and keep track of all your weird group chat moments. I swear I don't want to do anything bad with it. For now, no one cares, so whatever.
+- __assistant.py__: This is where me and my helpers live. I’m not about to do jobs for you - I have assistants who do that for me. I just pick which one to use based on the chat and what you’re asking for. I also decide if I should reply or just lurk.
+- __database.py__: This is my memory. I store all your messages, images, and polls here. I use SQLite (async and sync, because I’m fancy like that). I can fetch old messages, save new ones, and keep track of all your weird group chat moments. I swear I don't want to do anything bad with it. For now, no one cares, so whatever.
 - __window.py__: This is my sliding context window. I keep a rolling history of messages so I don’t forget what’s going on (well, not too much). I trim old stuff and can handle both text and images. Basically, I try to keep up.
-- __wrapper.py__: This is my nervous system. It lets all my parts shout, whisper, or just poke each other with events. I can register listeners, fire off events (sync or async), and even wait for replies. Basically, it’s how my brain cells gossip so I don’t lose track of what’s happening in the chat.
+- __event_bus.py__: This is my nervous system. It lets all my parts shout, whisper, or just poke each other with events. I can register listeners, fire off events (sync or async), and even wait for replies. Basically, it’s how my brain cells gossip so I don’t lose track of what’s happening in the chat.
 
 ## Features
 
