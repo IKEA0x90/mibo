@@ -127,10 +127,10 @@ class Database:
             datetime_val = message.datetime if message.datetime else dt.datetime.now(tz=dt.timezone.utc)
             token_count = await message.tokens()
             
-            await self.cursor.execute("SELECT 1 FROM chats WHERE chat_id = ?", (chat_id,))
-            chat_exists = await self.cursor.fetchone()
+            await self.cursor.execute("SELECT * FROM chats WHERE chat_id = ?", (chat_id,))
+            row = await self.cursor.fetchone()
 
-            if not chat_exists:
+            if not row:
                 await self.insert_chat(chat_id)
                 # Create and emit the new chat event
                 chat = wrapper.ChatWrapper(
@@ -144,8 +144,7 @@ class Database:
                     presence_penalty=0.1
                 )
             else:
-                await self.cursor.execute("SELECT * FROM chats WHERE chat_id = ?", (chat_id,))
-                row = await self.cursor.fetchone()
+                keys = row.keys()
                 chat = wrapper.ChatWrapper(
                     chat_id=row['chat_id'],
                     custom_instructions=row['custom_instructions'],
@@ -193,6 +192,7 @@ class Database:
                         correct_option_idx=content.correct_option_idx,
                         explanation=content.explanation
                     )
+
         except Exception as e:
             raise e
             #pass
@@ -294,6 +294,7 @@ class Database:
                     img_base64 = base64.b64encode(buffered.getvalue()).decode('utf-8')
 
                     wrap = wrapper.ImageWrapper(new_width, new_height, filepath, img_base64)
+                    images.append(wrap)
             
             # Send the response event with the paths and base64 strings
             response = db_events.ImageResponse(chat_id=chat_id, images=images, event_id=event.event_id)
@@ -533,6 +534,7 @@ class Database:
                 ),
             )
             await self.conn.commit()
+            return message_id
 
     async def insert_image(
         self,
@@ -621,6 +623,7 @@ class Database:
                 ),
             )
             await self.conn.commit()
+            return poll_id
 
     async def close(self):
         '''

@@ -34,6 +34,7 @@ class Mibo:
         self.typing_tasks: Dict[int, asyncio.Task] = {}
 
         self._prepare(token)
+        print(f'Mibo is alive! It is {self.start_datetime.hour}:{self.start_datetime.minute}:{self.start_datetime.second} UTC.')
 
     def _prepare(self, token: str):
         '''
