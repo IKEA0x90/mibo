@@ -231,6 +231,7 @@ class Mibo:
         '''
         prefix = tools.Tool.MIBO_MESSAGE  # 'mibo:'
         pattern = rf'^(?:{prefix.rstrip()}\s+)+'
+        text2 = text.strip()
 
         if re.match(pattern, text, flags=re.IGNORECASE):
             text2 = re.sub(pattern, '', text, flags=re.IGNORECASE)

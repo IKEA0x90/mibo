@@ -131,13 +131,6 @@ class Assistant:
         '''
         loop = asyncio.get_running_loop()
         return await loop.run_in_executor(None, lambda: sync_func(*args, **kwargs))
-    
-    @staticmethod
-    async def call_openai_debug(sync_func, *args, **kwargs):
-        '''
-        Returns a string.
-        '''
-        return 'This is a debug response (stop wasting tokens!)'
 
     async def _check_conditions(self, message: wrapper.MessageWrapper) -> bool:
         '''
@@ -218,8 +211,7 @@ class Assistant:
         request['messages'] = messages
 
         try:
-            response = await self.call_openai_debug()
-            #response = await self.call_openai(self.client.chat.completions.create, **request, extra_body=self.extra_body)
+            response = await self.call_openai(self.client.chat.completions.create, **request, extra_body=self.extra_body)
             
             # Process the response
             response_message = response.choices[0].message
