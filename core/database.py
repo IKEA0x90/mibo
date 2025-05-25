@@ -51,9 +51,8 @@ class Database:
                                         for row in rows]
         
         except Exception as e:
-            raise e
-            #self.bus.emit_sync(system_events.ErrorEvent("Hmm.. Can't read your group chats from the database.", e))
-            #return []
+            self.bus.emit_sync(system_events.ErrorEvent("Hmm.. Can't read your group chats from the database.", e))
+            return []
 
     async def initialize(self):
         '''
@@ -67,8 +66,7 @@ class Database:
             self._register()
 
         except Exception as e:
-            raise e
-            #await self.bus.emit(system_events.ErrorEvent("The database somehow failed to initialize.", e))
+            await self.bus.emit(system_events.ErrorEvent("The database somehow failed to initialize.", e))
 
         async with self._lock:
             if not self._init_done:
@@ -79,8 +77,12 @@ class Database:
                     await self.conn.execute('PRAGMA foreign_keys = ON')
                     self.conn.row_factory = aiosqlite.Row
 
-                async with self.conn.cursor() as cursor: # Create local cursor for create_tables
-                    await self.create_tables(cursor)    # Pass cursor
+                cursor = await self.conn.cursor()
+                try:
+                    await self.create_tables(cursor)
+                finally:
+                    await cursor.close()
+
                 self._init_done = True
                 
     def initialize_sync(self):
@@ -105,8 +107,7 @@ class Database:
             self._register()
         
         except Exception as e:
-            raise e
-            #self.bus.emit_sync(system_events.ErrorEvent("The database somehow failed to initialize (sync).", e))
+            self.bus.emit_sync(system_events.ErrorEvent("The database somehow failed to initialize.", e))
 
     def _register(self):
         '''
@@ -200,8 +201,7 @@ class Database:
                     )
 
         except Exception as e:
-            raise e
-            #pass
+            self.bus.emit(system_events.ChatErrorEvent(chat_id=chat_id, message=f"Failed to add a message to the database.", exception=e, event_id=event.event_id))
              
     async def _image_to_bytes(self, event: conductor_events.ImageDownloadRequest):
         '''
@@ -243,9 +243,7 @@ class Database:
                 await self.bus.emit(request)
         
         except Exception as e:
-            raise e
-            #await self.bus.emit(system_events.ChatErrorEvent(chat_id, 'Failed to download image.', e, event_id=event.event_id))
-            #return 
+            await self.bus.emit(system_events.ChatErrorEvent(chat_id, 'Failed to download image.', e, event_id=event.event_id))
 
     async def _save_images(self, event: db_events.ImageSaveRequest):
         '''
@@ -307,9 +305,7 @@ class Database:
             await self.bus.emit(response)
 
         except Exception as e:
-            raise e
-            #await self.bus.emit(system_events.ChatErrorEvent("Couldn't save one of the images to disk.", e, event_id=event.event_id))
-            #return
+            await self.bus.emit(system_events.ChatErrorEvent("Couldn't save one of the images to disk.", e, event_id=event.event_id))
     
     async def create_tables(self, cursor) -> None: # Accepts cursor
         """
@@ -390,10 +386,10 @@ class Database:
                 "CREATE INDEX IF NOT EXISTS idx_images_message_id ON images (message_id)"
             )
             await self.conn.commit() # Commit on the main connection
+
         except Exception as e:
-            # await self.conn.rollback() # Consider rollback on the main connection
-            raise e
-            #print(f"Error creating tables: {e}")
+            await self.conn.rollback() # Consider rollback on the main connection
+            self.bus.emit(system_events.ErrorEvent("Failed to create database tables.", e))
 
     def create_tables_sync(self, cursor): # Accepts cursor
         '''
@@ -462,10 +458,8 @@ class Database:
             cursor.execute(
                 "CREATE INDEX IF NOT EXISTS idx_images_message_id ON images (message_id)"
             )
-            # Caller (initialize_sync) handles commit
         except Exception as e:
-            raise e
-            #print(f"Error creating tables (sync): {e}")
+            self.bus.emit_sync(system_events.ErrorEvent("Failed to create database tables.", e))
 
     async def insert_chat(
         self,
@@ -693,9 +687,8 @@ class Database:
                 messages.append(msg)
 
         except Exception as e:
-            raise e
-            #await self.bus.emit(system_events.ChatErrorEvent(chat_id, f"Failed to load memory for chat {chat_id}", e, event_id=event.event_id))
-            #messages = []
-
-        response = db_events.MemoryResponse(chat_id=chat_id, messages=messages, event_id=event.event_id)
-        await self.bus.emit(response)
+            await self.bus.emit(system_events.ChatErrorEvent(chat_id, f"Failed to retrieve your memory.", e, event_id=event.event_id))
+            messages = []
+        finally:
+            response = db_events.MemoryResponse(chat_id=chat_id, messages=messages, event_id=event.event_id)
+            await self.bus.emit(response)

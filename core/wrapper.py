@@ -9,7 +9,7 @@ from services import tools
 
 class Wrapper():
     def __init__(self, id: str = None):
-        self.content_id: str = str(id) or str(uuid.uuid4())
+        self.content_id: str = str(id) if id is not None else str(uuid.uuid4())
 
     def tokens(self):
         encoding = tiktoken.encoding_for_model('gpt-4o')
@@ -70,7 +70,7 @@ class MessageWrapper(Wrapper):
         self.content_list: List[Wrapper] = []
 
         self.ping: bool = ping
-        self.reply_id: str = str(reply_id) or '' 
+        self.reply_id: str = str(reply_id or '') 
 
         try:
             self.datetime: dt.datetime = datetime.astimezone(dt.timezone.utc)

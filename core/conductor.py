@@ -44,8 +44,7 @@ class Conductor:
                 return
         
         except Exception as e:
-            raise e
-            #await self.bus.emit(system_events.ErrorEvent("Woah! Somehow, this telegram message can't be parsed.", e))
+            await self.bus.emit(system_events.ErrorEvent("Woah! Somehow, this telegram message can't be parsed.", e))
 
         try:
             user = user.username or user.first_name
@@ -98,7 +97,4 @@ class Conductor:
             await self.bus.emit(conductor_events.AssistantRequest(chat_id=chat_id, message=message_wrapper, event_id=event.event_id, typing=event.typing))
 
         except Exception as e:
-            import traceback
-            traceback.print_exc()
-            raise e
-            #await self.bus.emit(system_events.ChatErrorEvent(chat_id=chat_id, error="Something's wrong with passing the messages from telegram to you.", e=e, event_id=event.event_id))
+            await self.bus.emit(system_events.ChatErrorEvent(chat_id=chat_id, error="Something's wrong with passing the messages from telegram to you.", e=e, event_id=event.event_id))
