@@ -480,7 +480,7 @@ class Database:
     async def insert_chat(
         self,
         chat_id: str,
-        chat_name: str = "",
+        chat_name: str,
         *,
         custom_instructions: str = "",
         chance: int = 5,
@@ -504,6 +504,7 @@ class Database:
                     """,
                     (
                         str(effective_chat_id),
+                        chat_name,
                         custom_instructions,
                         chance,
                         max_context_tokens,
