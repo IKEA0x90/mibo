@@ -1,3 +1,4 @@
+import sys
 import datetime as dt
 
 from typing import cast
@@ -39,12 +40,14 @@ class Conductor:
 
             chat_id = chat.id
             message_id = message.message_id
+            chat_name = chat.effective_name or ''
 
             if not chat_id or not message_id:
                 return
         
         except Exception as e:
-            await self.bus.emit(system_events.ErrorEvent("Woah! Somehow, this telegram message can't be parsed.", e))
+            _, _, tb = sys.exc_info()
+            await self.bus.emit(system_events.ErrorEvent(error="Woah! Somehow, this telegram message can't be parsed.", e=e, tb=tb, event_id=event.event_id))
 
         try:
             user = user.username or user.first_name
@@ -62,11 +65,11 @@ class Conductor:
                 ping = True 
 
             if entities:
-                for entity, value in entities:
+                for entity, value in entities.items():
                     entity = cast(MessageEntity, entity) # for type hinting
 
                     if entity.type == 'mention':
-                        if entity.user and entity.user.username == self.username:
+                        if value.startswith('@') and value[1:] == tools.Tool.MIBO_PING:
                             ping = True
 
                     elif entity.type == 'url':
@@ -78,7 +81,7 @@ class Conductor:
 
             datetime: dt.datetime = message.date.astimezone(dt.timezone.utc)
             
-            message_wrapper = wrapper.MessageWrapper(chat_id, message_id, role, user, message_text, ping, reply_id, datetime)
+            message_wrapper = wrapper.MessageWrapper(chat_id, message_id, role, user, message_text, ping, reply_id, datetime, chat_name=chat_name)
 
             request = conductor_events.ImageDownloadRequest(update=update, context=context)
             response = await self.bus.wait(request, db_events.ImageResponse, 30)
@@ -97,4 +100,5 @@ class Conductor:
             await self.bus.emit(conductor_events.AssistantRequest(chat_id=chat_id, message=message_wrapper, event_id=event.event_id, typing=event.typing))
 
         except Exception as e:
-            await self.bus.emit(system_events.ChatErrorEvent(chat_id=chat_id, error="Something's wrong with passing the messages from telegram to you.", e=e, event_id=event.event_id))
+            _, _, tb = sys.exc_info()
+            await self.bus.emit(system_events.ErrorEvent(error="Something's wrong with passing the messages from telegram to you.", e=e, tb=tb, event_id=event.event_id, chat_id=chat_id))

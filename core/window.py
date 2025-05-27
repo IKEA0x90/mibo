@@ -32,6 +32,12 @@ class Window():
     def __delitem__(self, idx):
         del self.messages[idx]
 
+    def contains(self, message: wrapper.MessageWrapper) -> bool:
+        '''
+        Checks if the window contains a message with the same content_id.
+        '''
+        return any(msg.content_id == message.content_id for msg in self.messages)
+
     async def override(self, message: wrapper.MessageWrapper) -> None:
         '''
         Clears the windows and adds the message.
@@ -116,18 +122,23 @@ class Window():
         Preserves both text and images as content blocks.
         '''
         messages = []
+        message: wrapper.MessageWrapper
         for message in self.messages:
             content = []
+
             # Add text as a content block if present
-            text = str(message)
+            text = message.message if message.role == 'assistant' else str(message)
             if text:
                 content.append({"type": "text", "text": text})
+
             # Add images as content blocks
             if message.content_list:
                 for c in message.content_list:
                     if isinstance(c, wrapper.ImageWrapper):
                         content.append({"type": "image_url", "image_url": f"data:image/jpeg;base64,{c.image_base64}"})
+
             # For OpenAI chat completions, each message is a dict with 'role' and 'content' (list of blocks)
             m = {"role": message.role, "content": content}
             messages.append(m)
+
         return messages

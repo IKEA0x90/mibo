@@ -4,6 +4,8 @@ import asyncio
 import aiosqlite
 import sqlite3
 import base64
+import sys
+
 from io import BytesIO
 from PIL import Image
 
@@ -14,6 +16,7 @@ import datetime as dt
 
 from events import event_bus, db_events, conductor_events, system_events
 from core import wrapper
+from services import tools
 
 class Database:
     def __init__(self, bus: event_bus.EventBus, db_path: str):
@@ -38,12 +41,13 @@ class Database:
             conn.row_factory = sqlite3.Row
             cursor = conn.cursor()
 
-            cursor.execute("SELECT chat_id, custom_instructions, chance, max_context_tokens, max_content_tokens, max_response_tokens, frequency_penalty, presence_penalty FROM chats")
+            cursor.execute("SELECT chat_id, chat_name, custom_instructions, chance, max_context_tokens, max_content_tokens, max_response_tokens, frequency_penalty, presence_penalty FROM chats")
             rows = cursor.fetchall()
             
             conn.close()
             
             return [wrapper.ChatWrapper(row['chat_id'], 
+                                        row['chat_name'],
                                         row['custom_instructions'], 
                                         row['chance'], row['max_context_tokens'], 
                                         row['max_content_tokens'], row['max_response_tokens'], 
@@ -51,7 +55,8 @@ class Database:
                                         for row in rows]
         
         except Exception as e:
-            self.bus.emit_sync(system_events.ErrorEvent("Hmm.. Can't read your group chats from the database.", e))
+            _, _, tb = sys.exc_info()
+            self.bus.emit_sync(system_events.ErrorEvent(error="Hmm.. Can't read your group chats from the database.", e=e, tb=tb))
             return []
 
     async def initialize(self):
@@ -66,7 +71,8 @@ class Database:
             self._register()
 
         except Exception as e:
-            await self.bus.emit(system_events.ErrorEvent("The database somehow failed to initialize.", e))
+            _, _, tb = sys.exc_info()
+            await self.bus.emit(system_events.ErrorEvent(error = "The database somehow failed to initialize.", e=e, tb=tb))
 
         async with self._lock:
             if not self._init_done:
@@ -107,7 +113,8 @@ class Database:
             self._register()
         
         except Exception as e:
-            self.bus.emit_sync(system_events.ErrorEvent("The database somehow failed to initialize.", e))
+            _, _, tb = sys.exc_info()
+            self.bus.emit_sync(system_events.ErrorEvent(error="The database somehow failed to initialize.", e=e, tb=tb))
 
     def _register(self):
         '''
@@ -125,6 +132,7 @@ class Database:
         try:
             message = event.request
             chat_id = message.chat_id
+            chat_name = message.chat_name or ''
             message_id = message.content_id
             role = message.role
             username = message.user
@@ -138,22 +146,24 @@ class Database:
                 row = await cursor.fetchone()
 
             if not row:
-                await self.insert_chat(chat_id)
+                await self.insert_chat(chat_id, chat_name)
                 # Create and emit the new chat event
                 chat = wrapper.ChatWrapper(
                     chat_id=chat_id,
+                    chat_name=chat_name,
                     custom_instructions="",
-                    chance=5,
-                    max_context_tokens=3000,
-                    max_content_tokens=1500,
-                    max_response_tokens=500,
-                    frequency_penalty=0.1,
-                    presence_penalty=0.1
+                    chance=tools.Tool.CHANCE,
+                    max_context_tokens=tools.Tool.MAX_CONTENT_TOKENS,
+                    max_content_tokens=tools.Tool.MAX_CONTENT_TOKENS,
+                    max_response_tokens= tools.Tool.MAX_RESPONSE_TOKENS,
+                    frequency_penalty=tools.Tool.FREQUENCY_PENALTY,
+                    presence_penalty=tools.Tool.PRESENCE_PENALTY
                 )
             else:
                 keys = row.keys()
                 chat = wrapper.ChatWrapper(
                     chat_id=row['chat_id'],
+                    chat_name=row['chat_name'],
                     custom_instructions=row['custom_instructions'],
                     chance=row['chance'],
                     max_context_tokens=row['max_context_tokens'],
@@ -201,7 +211,8 @@ class Database:
                     )
 
         except Exception as e:
-            self.bus.emit(system_events.ChatErrorEvent(chat_id=chat_id, message=f"Failed to add a message to the database.", exception=e, event_id=event.event_id))
+            _, _, tb = sys.exc_info()
+            await self.bus.emit(system_events.ErrorEvent(error=f"Failed to add a message to the database.", e=e, tb=tb, event_id=event.event_id, chat_id=chat_id))
              
     async def _image_to_bytes(self, event: conductor_events.ImageDownloadRequest):
         '''
@@ -243,7 +254,8 @@ class Database:
                 await self.bus.emit(request)
         
         except Exception as e:
-            await self.bus.emit(system_events.ChatErrorEvent(chat_id, 'Failed to download image.', e, event_id=event.event_id))
+            _, _, tb = sys.exc_info()
+            await self.bus.emit(system_events.ErrorEvent(error='Failed to download image.', e=e, tb=tb, event_id=event.event_id, chat_id=chat_id))
 
     async def _save_images(self, event: db_events.ImageSaveRequest):
         '''
@@ -305,7 +317,8 @@ class Database:
             await self.bus.emit(response)
 
         except Exception as e:
-            await self.bus.emit(system_events.ChatErrorEvent("Couldn't save one of the images to disk.", e, event_id=event.event_id))
+            _, _, tb = sys.exc_info()
+            await self.bus.emit(system_events.ErrorEvent(error="Couldn't save one of the images to disk.", e=e, tb=tb, event_id=event.event_id, chat_id=chat_id))
     
     async def create_tables(self, cursor) -> None: # Accepts cursor
         """
@@ -313,16 +326,17 @@ class Database:
         """
         try:
             # ------------------ chats ------------------
-            await cursor.execute("""
+            await cursor.execute(f"""
             CREATE TABLE IF NOT EXISTS chats (
                 chat_id           TEXT PRIMARY KEY,
+                chat_name TEXT NOT NULL DEFAULT '',
                 custom_instructions TEXT NOT NULL DEFAULT '',
-                chance            INTEGER NOT NULL DEFAULT 5,
-                max_context_tokens INTEGER NOT NULL DEFAULT 3000,
-                max_content_tokens INTEGER NOT NULL DEFAULT 1500,
-                max_response_tokens INTEGER NOT NULL DEFAULT 500,
-                frequency_penalty FLOAT NOT NULL DEFAULT 0.1,
-                presence_penalty  FLOAT NOT NULL DEFAULT 0.1,
+                chance            INTEGER NOT NULL DEFAULT {tools.Tool.CHANCE},
+                max_context_tokens INTEGER NOT NULL DEFAULT {tools.Tool.MAX_CONTENT_TOKENS},
+                max_content_tokens INTEGER NOT NULL DEFAULT {tools.Tool.MAX_CONTENT_TOKENS},
+                max_response_tokens INTEGER NOT NULL DEFAULT {tools.Tool.MAX_RESPONSE_TOKENS},
+                frequency_penalty FLOAT NOT NULL DEFAULT {tools.Tool.FREQUENCY_PENALTY},
+                presence_penalty  FLOAT NOT NULL DEFAULT {tools.Tool.PRESENCE_PENALTY},
                 timestamp        TIMESTAMP DEFAULT CURRENT_TIMESTAMP
             );
             """)
@@ -389,23 +403,25 @@ class Database:
 
         except Exception as e:
             await self.conn.rollback() # Consider rollback on the main connection
-            self.bus.emit(system_events.ErrorEvent("Failed to create database tables.", e))
+            _, _, tb = sys.exc_info()
+            self.bus.emit(system_events.ErrorEvent(error="Failed to create database tables.", e=e, tb=tb))
 
     def create_tables_sync(self, cursor): # Accepts cursor
         '''
         Synchronous version of create_tables for use with sqlite3.
         '''
         try:
-            cursor.execute("""
+            cursor.execute(f"""
             CREATE TABLE IF NOT EXISTS chats (
                 chat_id           TEXT PRIMARY KEY,
+                chat_name TEXT NOT NULL DEFAULT '',
                 custom_instructions TEXT NOT NULL DEFAULT '',
-                chance            INTEGER NOT NULL DEFAULT 5,
-                max_context_tokens INTEGER NOT NULL DEFAULT 3000,
-                max_content_tokens INTEGER NOT NULL DEFAULT 1500,
-                max_response_tokens INTEGER NOT NULL DEFAULT 500,
-                frequency_penalty FLOAT NOT NULL DEFAULT 0.1,
-                presence_penalty  FLOAT NOT NULL DEFAULT 0.1,
+                chance            INTEGER NOT NULL DEFAULT {tools.Tool.CHANCE},
+                max_context_tokens INTEGER NOT NULL DEFAULT {tools.Tool.MAX_CONTENT_TOKENS},
+                max_content_tokens INTEGER NOT NULL DEFAULT {tools.Tool.MAX_CONTENT_TOKENS},
+                max_response_tokens INTEGER NOT NULL DEFAULT {tools.Tool.MAX_RESPONSE_TOKENS},
+                frequency_penalty FLOAT NOT NULL DEFAULT {tools.Tool.FREQUENCY_PENALTY},
+                presence_penalty  FLOAT NOT NULL DEFAULT {tools.Tool.PRESENCE_PENALTY},
                 timestamp        TIMESTAMP DEFAULT CURRENT_TIMESTAMP
             );
             """)
@@ -459,19 +475,21 @@ class Database:
                 "CREATE INDEX IF NOT EXISTS idx_images_message_id ON images (message_id)"
             )
         except Exception as e:
-            self.bus.emit_sync(system_events.ErrorEvent("Failed to create database tables.", e))
+            _, _, tb = sys.exc_info()
+            self.bus.emit_sync(system_events.ErrorEvent(error="Failed to create database tables.", e=e, tb=tb))
 
     async def insert_chat(
         self,
         chat_id: str,
+        chat_name: str,
         *,
         custom_instructions: str = "",
         chance: int = 5,
-        max_context_tokens: int = 3000,
-        max_content_tokens: int = 1500,
-        max_response_tokens: int = 500,
-        frequency_penalty: float = 0.1,
-        presence_penalty: float = 0.1
+        max_context_tokens: int = tools.Tool.MAX_CONTENT_TOKENS,
+        max_content_tokens: int = tools.Tool.MAX_CONTENT_TOKENS,
+        max_response_tokens: int = tools.Tool.MAX_RESPONSE_TOKENS,
+        frequency_penalty: float = tools.Tool.FREQUENCY_PENALTY,
+        presence_penalty: float = tools.Tool.PRESENCE_PENALTY
     ) -> str:
         """
         Inserts a new chat and returns the chat_id.
@@ -482,11 +500,12 @@ class Database:
                 await cursor.execute(
                     """
                     INSERT OR IGNORE INTO chats
-                    (chat_id, custom_instructions, chance, max_context_tokens, max_content_tokens, max_response_tokens, frequency_penalty, presence_penalty)
-                    VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+                    (chat_id, chat_name, custom_instructions, chance, max_context_tokens, max_content_tokens, max_response_tokens, frequency_penalty, presence_penalty)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
                     """,
                     (
                         str(effective_chat_id),
+                        chat_name,
                         custom_instructions,
                         chance,
                         max_context_tokens,
@@ -687,8 +706,10 @@ class Database:
                 messages.append(msg)
 
         except Exception as e:
-            await self.bus.emit(system_events.ChatErrorEvent(chat_id, f"Failed to retrieve your memory.", e, event_id=event.event_id))
+            _, _, tb = sys.exc_info()
+            await self.bus.emit(system_events.ErrorEvent(error=f"Failed to retrieve your memory.", e=e, tb=tb, event_id=event.event_id, chat_id=chat_id))
             messages = []
+
         finally:
             response = db_events.MemoryResponse(chat_id=chat_id, messages=messages, event_id=event.event_id)
             await self.bus.emit(response)

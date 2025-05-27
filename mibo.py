@@ -5,6 +5,7 @@ import openai
 import logging
 import random
 import re
+import traceback
 
 import datetime as dt
 from typing import List, Dict
@@ -76,6 +77,7 @@ class Mibo:
         self.bus.register(mibo_events.MiboMessageResponse, self._send_message)
         self.bus.register(mibo_events.MiboPollResponse, self._create_poll)
         self.bus.register(conductor_events.NewChatPush, self._create_assistant)
+        self.bus.register(system_events.ErrorEvent, self._handle_exception)
 
     async def run(self):
         '''
@@ -153,7 +155,8 @@ class Mibo:
             await self.bus.emit(mibo_events.AssistantCreated(chat_id=chat_id, event_id=event.event_id))
     
         except Exception as e:
-            await self.bus.emit(system_events.ChatErrorEvent(f"Couldn't create Mibo instance for the new chat.", e, event_id=event.event_id))
+            _, _, tb = sys.exc_info()
+            await self.bus.emit(system_events.ErrorEvent(error=f"Couldn't create Mibo instance for the new chat.", e=e, tb=tb, event_id=event.event_id, chat_id=event.chat.chat_id))
 
     async def _handle_message(self, update: Update, context: CallbackContext):
         '''
@@ -206,7 +209,7 @@ class Mibo:
             except asyncio.CancelledError:
                 pass
 
-        message_text: str = message.message
+        message_text: str = message._remove_prefix(message.message)
         message_images: List[wrapper.ImageWrapper] = message.get_images()
         message_sticker: wrapper.StickerWrapper = message.get_sticker()
         message_poll: wrapper.PollWrapper = message.get_poll()
@@ -216,7 +219,7 @@ class Mibo:
             await self.bus.emit(response)
 
         if message_sticker:
-            response = system_events.ChatErrorEvent(chat_id, 'Stickers are not supported yet.')
+            response = system_events.ErrorEvent(error='Stickers are not supported yet.', e=NotImplementedError("Stickers are not supported yet."), tb=None, event_id=event.event_id, chat_id=chat_id)
             await self.bus.emit(response)
 
         if message_poll:
@@ -235,7 +238,7 @@ class Mibo:
         if re.match(pattern, text, flags=re.IGNORECASE):
             text2 = re.sub(pattern, '', text, flags=re.IGNORECASE)
 
-        text_list = text2.split('\n')
+        text_list = text2.split('|n|')
 
         return text_list
 
@@ -284,6 +287,19 @@ class Mibo:
             for t in text_list[1:]:
                 await self.app.bot.send_message(chat_id=chat_id, text=t)
                 await asyncio.sleep(random.uniform(0.5, 3))
+
+    async def _handle_exception(self, event: system_events.ErrorEvent) -> None:
+        '''
+        Print exception logs.
+        '''
+        error = event.error
+        e = event.e
+        tb = event.tb
+
+        print(f"{error}")
+
+        if tb:
+            traceback.print_exception(type(e), e, tb)
 
     async def _create_poll(self, event: mibo_events.MiboPollResponse) -> None:
         '''

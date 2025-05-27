@@ -1,7 +1,7 @@
 import openai
 import datetime as dt
 import random
-import os
+import sys
 import asyncio
 
 from copy import copy
@@ -116,12 +116,18 @@ class Assistant:
 
         tokens = 0
         for m in prev_msgs:
+
+            if self.messages.contains(m):
+                continue
+
             mtoks = await m.tokens()
             if tokens + mtoks > self.max_context_tokens:
                 break
+
             # Add directly to window, do not use add_message (which can trigger completions)
             await self.messages._insert_live_message(m)
             tokens += mtoks
+
         self.ready = True
 
     @staticmethod
@@ -166,10 +172,6 @@ class Assistant:
 
             ev = assistant_events.AssistantDirectRequest(message=event.message, event_id=event.event_id)
             await self.bus.emit(ev)
-
-    async def _not_implemented(self, event_id: str, message: str):
-        issue = system_events.ChatErrorEvent(self.chat_id, 'Whoops! An error occurred: {}', event_id=event_id)
-        await self.bus.emit(issue)
 
     async def _trigger_completion(self, event: assistant_events.AssistantDirectRequest):
         '''
@@ -218,7 +220,10 @@ class Assistant:
             
             # Check if there are tool calls
             if hasattr(response_message, 'tool_calls') and response_message.tool_calls:
-                await self._not_implemented(event.event_id, 'Tools are not implemented yet.') 
+                
+                issue = system_events.ErrorEvent(error=f'Required functionality not implemented: {message}', e=NotImplementedError(message), tb=None, event_id=event.event_id, chat_id=self.chat_id)
+                await self.bus.emit(issue)
+
                 for tool_call in response_message.tool_calls:
                     if tool_call.type != "function_call":
                         continue
@@ -276,7 +281,8 @@ class Assistant:
                 await self.bus.emit(push_event)
 
         except Exception as e:
-            issue = system_events.ChatErrorEvent(self.chat_id, 'Whoops! An unexpected error occurred.', str(e), event_id=event.event_id)
+            _, _, tb = sys.exc_info()
+            issue = system_events.ErrorEvent(error='Whoops! An unexpected error occurred.', e=e, tb=tb, event_id=event.event_id, chat_id=self.chat_id)
             await self.bus.emit(issue)
 
 class CatAssistant(Assistant):

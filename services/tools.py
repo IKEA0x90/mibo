@@ -27,6 +27,7 @@ class Tool:
 
     DB_PATH = os.environ['DB_PATH']
     MIBO_MESSAGE = os.environ['MIBO_MESSAGE']
+    MIBO_PING = os.environ['MIBO_PING']
 
     MIBO = 'mibo'
     CAT_ASSISTANT = 'cat_assistant'
@@ -34,6 +35,13 @@ class Tool:
     POLL_ASSISTANT = 'poll_assistant'
     PROPERTY_ASSISTANT = 'property_assistant'
     MEMORY_ASSISTANT = 'memory_assistant'
+
+    CHANCE = 5
+    MAX_CONTEXT_TOKENS = 1000
+    MAX_CONTENT_TOKENS = 1000
+    MAX_RESPONSE_TOKENS = 500
+    FREQUENCY_PENALTY = 0.1
+    PRESENCE_PENALTY = 0.1
 
     IMAGE_ASSISTANT_EVENT = tool_events.ToolImageRequest
     POLL_ASSISTANT_EVENT = tool_events.ToolPollRequest
@@ -58,6 +66,7 @@ class Tool:
         '''
         moderation = 'low'
         model="gpt-image-1"
+        pass
 
     @staticmethod
     async def create_poll(question: str, options: list, multiple_choice: bool = False):
