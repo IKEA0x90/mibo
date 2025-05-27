@@ -60,9 +60,10 @@ class PollWrapper(Wrapper):
         return rstr
 
 class MessageWrapper(Wrapper):
-    def __init__(self, chat_id: str, message_id: str = None, role: str = 'assistant', user: str = None, message: str = '', ping: bool = True, reply_id: str = '', datetime: dt.datetime = None):
+    def __init__(self, chat_id: str, message_id: str = None, role: str = 'assistant', user: str = None, message: str = '', ping: bool = True, reply_id: str = '', datetime: dt.datetime = None, **kwargs):
         super().__init__(message_id)
         self.chat_id: str = str(chat_id)
+        self.chat_name: str = kwargs.get('chat_name', '')
         self.role: str = role or 'assistant'
         self.user: str = user or tools.Tool.MIBO
 

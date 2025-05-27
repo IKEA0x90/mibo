@@ -116,12 +116,18 @@ class Assistant:
 
         tokens = 0
         for m in prev_msgs:
+
+            if await self.messages.contains(m):
+                continue
+
             mtoks = await m.tokens()
             if tokens + mtoks > self.max_context_tokens:
                 break
+
             # Add directly to window, do not use add_message (which can trigger completions)
             await self.messages._insert_live_message(m)
             tokens += mtoks
+            
         self.ready = True
 
     @staticmethod

@@ -126,6 +126,7 @@ class Database:
         try:
             message = event.request
             chat_id = message.chat_id
+            chat_name = message.chat_name or ''
             message_id = message.content_id
             role = message.role
             username = message.user
@@ -143,6 +144,7 @@ class Database:
                 # Create and emit the new chat event
                 chat = wrapper.ChatWrapper(
                     chat_id=chat_id,
+                    chat_name=chat_name,
                     custom_instructions="",
                     chance=tools.Tool.CHANCE,
                     max_context_tokens=tools.Tool.MAX_CONTENT_TOKENS,
@@ -155,6 +157,7 @@ class Database:
                 keys = row.keys()
                 chat = wrapper.ChatWrapper(
                     chat_id=row['chat_id'],
+                    chat_name=row['chat_name'],
                     custom_instructions=row['custom_instructions'],
                     chance=row['chance'],
                     max_context_tokens=row['max_context_tokens'],
@@ -317,6 +320,7 @@ class Database:
             await cursor.execute(f"""
             CREATE TABLE IF NOT EXISTS chats (
                 chat_id           TEXT PRIMARY KEY,
+                chat_name TEXT NOT NULL DEFAULT '',
                 custom_instructions TEXT NOT NULL DEFAULT '',
                 chance            INTEGER NOT NULL DEFAULT {tools.Tool.CHANCE},
                 max_context_tokens INTEGER NOT NULL DEFAULT {tools.Tool.MAX_CONTENT_TOKENS},
@@ -400,6 +404,7 @@ class Database:
             cursor.execute(f"""
             CREATE TABLE IF NOT EXISTS chats (
                 chat_id           TEXT PRIMARY KEY,
+                chat_name TEXT NOT NULL DEFAULT '',
                 custom_instructions TEXT NOT NULL DEFAULT '',
                 chance            INTEGER NOT NULL DEFAULT {tools.Tool.CHANCE},
                 max_context_tokens INTEGER NOT NULL DEFAULT {tools.Tool.MAX_CONTENT_TOKENS},
@@ -465,6 +470,7 @@ class Database:
     async def insert_chat(
         self,
         chat_id: str,
+        chat_name: str = "",
         *,
         custom_instructions: str = "",
         chance: int = 5,
@@ -483,8 +489,8 @@ class Database:
                 await cursor.execute(
                     """
                     INSERT OR IGNORE INTO chats
-                    (chat_id, custom_instructions, chance, max_context_tokens, max_content_tokens, max_response_tokens, frequency_penalty, presence_penalty)
-                    VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+                    (chat_id, chat_name, custom_instructions, chance, max_context_tokens, max_content_tokens, max_response_tokens, frequency_penalty, presence_penalty)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
                     """,
                     (
                         str(effective_chat_id),
