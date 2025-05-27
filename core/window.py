@@ -116,18 +116,23 @@ class Window():
         Preserves both text and images as content blocks.
         '''
         messages = []
+        message: wrapper.MessageWrapper
         for message in self.messages:
             content = []
+
             # Add text as a content block if present
-            text = str(message)
+            text = message.message if message.role == 'assistant' else str(message)
             if text:
                 content.append({"type": "text", "text": text})
+
             # Add images as content blocks
             if message.content_list:
                 for c in message.content_list:
                     if isinstance(c, wrapper.ImageWrapper):
                         content.append({"type": "image_url", "image_url": f"data:image/jpeg;base64,{c.image_base64}"})
+
             # For OpenAI chat completions, each message is a dict with 'role' and 'content' (list of blocks)
             m = {"role": message.role, "content": content}
             messages.append(m)
+
         return messages
