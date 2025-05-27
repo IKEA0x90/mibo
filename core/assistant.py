@@ -117,7 +117,7 @@ class Assistant:
         tokens = 0
         for m in prev_msgs:
 
-            if await self.messages.contains(m):
+            if self.messages.contains(m):
                 continue
 
             mtoks = await m.tokens()
