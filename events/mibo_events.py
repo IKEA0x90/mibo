@@ -6,14 +6,9 @@ from datetime import datetime
 from events import event
 from core import wrapper
 
-# Mibo events
 class MiboMessage(event.Event):
-    def __init__(self, update: Update, context: CallbackContext, start_datetime: datetime, **kwargs):
-        super().__init__('mibo_message', update=update, context=context, start_datetime=start_datetime, **kwargs)
-
-class MiboSystemMessage(event.Event):
-    def __init__(self, update: Update, start_datetime: datetime, **kwargs):
-        super().__init__('mibo_system_message', update=update, start_datetime=start_datetime, **kwargs)
+    def __init__(self, update: Update, context: CallbackContext, start_datetime: datetime, typing, **kwargs):
+        super().__init__('mibo_message', update=update, context=context, start_datetime=start_datetime, typing=typing, **kwargs)
 
 class MiboCommand(event.Event):
     def __init__(self, update: Update, start_datetime: datetime, **kwargs):

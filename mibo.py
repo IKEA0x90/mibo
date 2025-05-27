@@ -6,16 +6,17 @@ import logging
 import random
 import re
 import traceback
+import uuid
 
 import datetime as dt
 from typing import List, Dict
-from telegram import Update, Chat, ChatMember, InputFile, InputMediaPhoto
+from telegram import Update, Chat, ChatMember, InputFile, InputMediaPhoto, Message, User
 from telegram.ext import Application, CallbackContext, CommandHandler, MessageHandler, ChatMemberHandler, filters
 from telegram.constants import ChatAction
 
 from events import event_bus, mibo_events, system_events, assistant_events, conductor_events
 from core import assistant, database, conductor, wrapper
-from services import tools
+from services import tools, templates
 
 class Mibo:
     def __init__(self, token: str, db_path: str = 'env'):
@@ -188,11 +189,35 @@ class Mibo:
         
         event = await self.bus.emit(mibo_events.MiboMessage(update, context, start_datetime=self.start_datetime, typing=typing))
 
-    async def _system_message(self, chat_id, system_message):
+    async def _system_message(self, chat_id, chat_name, system_message):
         '''
         Forces the bot to send a message to a chat, possibly appending a system message to the prompt.
         '''
-        event = await self.bus.emit(mibo_events.MiboSystemMessage(chat_id, system_message, start_datetime=self.start_datetime))
+        def typing():
+            if chat_id not in self.typing_tasks or self.typing_tasks[chat_id].done():
+                self.typing_tasks[chat_id] = asyncio.create_task(self._simulate_typing(chat_id))
+
+        user = User(id=0, first_name="System", is_bot=True)
+        chat = Chat(id=chat_id, type=Chat.PRIVATE, title=chat_name)
+        message = Message(
+            message_id=uuid.uuid4().int,
+            date=dt.datetime.now(dt.timezone.utc),
+            chat=chat,
+            from_user=user,
+            text=system_message
+        )
+        update = Update(update_id=uuid.uuid4().int, message=message)
+        event = mibo_events.MiboMessage(update=update, context=None, start_datetime=self.start_datetime, typing=typing)
+        event.system = True
+        await self.bus.wait(event, assistant_events.AssistantResponse)
+
+        old_task = self.typing_tasks.pop(chat_id, None)
+        if old_task and not old_task.done():
+            old_task.cancel()
+            try:
+                await old_task
+            except asyncio.CancelledError:
+                pass
 
     async def _parse_message(self, event: assistant_events.AssistantResponse):
         '''
@@ -301,6 +326,35 @@ class Mibo:
         if tb:
             traceback.print_exception(type(e), e, tb)
 
+    async def _notify_creator(self, events: Dict) -> None:
+        '''
+        Notify me about an event.
+        '''
+        admin_chat = tools.Tool.SYSTEM_CHAT
+
+        try:
+            if event := events.get('join'):
+                group_name = event.get('group_name', 'Unknown Group')
+                admin = event.get('admin', False)
+
+                message = templates.WelcomeNotification(group_name=group_name, admin=admin)
+
+                # Send the notification to the creator
+                await self._system_message(admin_chat, "Admin Notifications", str(message))
+
+                # Cancel the typing simulation for the creator notification
+                old_task = self.typing_tasks.pop(admin_chat, None)
+                if old_task and not old_task.done():
+                    old_task.cancel()
+                    try:
+                        await old_task
+                    except asyncio.CancelledError:
+                        pass
+
+        except Exception as e:
+            _, _, tb = sys.exc_info()
+            await self.bus.emit(system_events.ErrorEvent(error="Creator unreachable.", e=e, tb=tb))
+
     async def _create_poll(self, event: mibo_events.MiboPollResponse) -> None:
         '''
         Make a poll.
@@ -326,24 +380,32 @@ class Mibo:
 
     async def _welcome(self, update: Update, context: CallbackContext):
         '''
-        Sends a message to the group when the bot joins.
+        Sends a message to the group when the bot joins or leaves.
         '''
         chat = update.effective_chat
         old_status = update.my_chat_member.old_chat_member.status
         new_status = update.my_chat_member.new_chat_member.status
 
         if chat.type in [Chat.GROUP, Chat.SUPERGROUP]:
+
             # Bot was added to a group or supergroup
             if old_status in [ChatMember.LEFT, ChatMember.BANNED] and new_status in [ChatMember.MEMBER, ChatMember.ADMINISTRATOR]:
-                welcome_message = (
-                    f"Hello! I'm Mibo, your AI assistant. You can mention me (@{context.bot.username}) "
-                    f"in your messages or reply to my messages to interact with me."
-                )
-                await context.bot.send_message(chat_id=chat.id, text=welcome_message)
-            
+                group_name = chat.effective_name
+                is_admin = (new_status == ChatMember.ADMINISTRATOR)
+
+                await self._system_message(chat_id=chat.id, chat_name=group_name, system_message=str(templates.WelcomeMessage(group_name=group_name, admin=is_admin)))
+
+                events = {
+                    'join': {
+                        'group_name': group_name,
+                        'admin': is_admin
+                    }
+                }
+                await self._notify_creator(events)
+
             # Bot was removed from a group
             elif old_status in [ChatMember.MEMBER, ChatMember.ADMINISTRATOR] and new_status in [ChatMember.LEFT, ChatMember.BANNED]:
-                # Could log this event or perform cleanup if needed
+                # Log or handle cleanup if needed
                 pass
 
     async def _simulate_typing(self, chat_id: int):

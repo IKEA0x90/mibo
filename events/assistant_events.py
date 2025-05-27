@@ -24,3 +24,7 @@ class AssistantReadyPush(event.Event):
 class AssistantDirectRequest(event.Event):
     def __init__(self, message: wrapper.MessageWrapper, **kwargs):
         super().__init__('assistant_direct_request', message=message, **kwargs)
+
+class AssistantSystemReply(event.Event):
+    def __init__(self, message: wrapper.MessageWrapper, **kwargs):
+        super().__init__('assistant_system_reply', message=message, **kwargs)

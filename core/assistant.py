@@ -170,7 +170,7 @@ class Assistant:
             typing = event.typing
             typing()
 
-            ev = assistant_events.AssistantDirectRequest(message=event.message, event_id=event.event_id)
+            ev = assistant_events.AssistantDirectRequest(message=event.message, event_id=event.event_id, system=event.system)
             await self.bus.emit(ev)
 
     async def _trigger_completion(self, event: assistant_events.AssistantDirectRequest):
@@ -189,7 +189,7 @@ class Assistant:
         if not self.messages.ready:
             return
         
-        template = copy(self.assistant_object)
+        assistant_template = copy(self.assistant_object)
 
         user_messages: List[Dict] = await self.messages.transform_messages()
         messages: List[Dict] = []
@@ -200,13 +200,13 @@ class Assistant:
                 'content': [{'type': 'text', 'text': self.custom_instructions}]
             })
 
-        if (instr := template.get('instructions')):
+        if (instr := assistant_template.get('instructions')):
             messages.append({
                 'role': 'developer',
                 'content': [{'type': 'text', 'text': instr}]
             })
         
-        request = {'model': template['model']}
+        request = {'model': assistant_template['model']}
         for msg in user_messages:
             messages.append(msg)
 

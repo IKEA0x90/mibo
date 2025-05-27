@@ -24,8 +24,10 @@ class Conductor:
 
     async def _capture_message(self, event: mibo_events.MiboMessage):
         '''
-        Listens to mibo events on the bus and processes them into MessageWrappers.
-        '''
+        Listens to mibo events and processes them into MessageWrappers.
+        ''' 
+        system_message = hasattr(event, 'system')
+
         try:
             update: Update = event.update
             start_datetime: dt.datetime = event.start_datetime
@@ -51,9 +53,15 @@ class Conductor:
 
         try:
             user = user.username or user.first_name
-            role = 'assistant' if user == self.username else 'user'
+            if system_message:
+                role = 'developer'
+            else:
+                role = 'assistant' if user == self.username else 'user'
 
             message_text = message.text or ''
+            if not message_text:
+                return
+            
             entities = message.parse_entities(types=[
                 'mention',
                 'url'
@@ -61,7 +69,7 @@ class Conductor:
 
             ping = False
 
-            if chat.type == chat.PRIVATE:
+            if chat.type == chat.PRIVATE or system_message:
                 ping = True 
 
             if entities:
@@ -97,7 +105,7 @@ class Conductor:
             push_request = conductor_events.NewChatPush(chat_wrapper, event_id=event.event_id)
             await self.bus.wait(push_request, mibo_events.AssistantCreated)
 
-            await self.bus.emit(conductor_events.AssistantRequest(chat_id=chat_id, message=message_wrapper, event_id=event.event_id, typing=event.typing))
+            await self.bus.emit(conductor_events.AssistantRequest(chat_id=chat_id, message=message_wrapper, event_id=event.event_id, typing=event.typing, system=system_message))
 
         except Exception as e:
             _, _, tb = sys.exc_info()
