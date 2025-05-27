@@ -207,7 +207,7 @@ class Mibo:
                 await task
             except asyncio.CancelledError:
                 pass
-                
+
         message_text: str = message._remove_prefix(message.message)
         message_images: List[wrapper.ImageWrapper] = message.get_images()
         message_sticker: wrapper.StickerWrapper = message.get_sticker()
@@ -218,7 +218,7 @@ class Mibo:
             await self.bus.emit(response)
 
         if message_sticker:
-            response = system_events.ErrorEvent(error='Stickers are not supported yet.', e=NotImplementedError("Stickers are not supported yet."), event_id=event.event_id, chat_id=chat_id)
+            response = system_events.ErrorEvent(error='Stickers are not supported yet.', e=NotImplementedError("Stickers are not supported yet."), tb=None, event_id=event.event_id, chat_id=chat_id)
             await self.bus.emit(response)
 
         if message_poll:
@@ -291,7 +291,11 @@ class Mibo:
         '''
         Print exception logs.
         '''
-        print(event.error)
+        error = event.error
+        e = event.e
+        tb = event.tb
+
+        traceback.print_exception(type(e), e, tb)
 
     async def _create_poll(self, event: mibo_events.MiboPollResponse) -> None:
         '''

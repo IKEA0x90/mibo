@@ -127,7 +127,7 @@ class Assistant:
             # Add directly to window, do not use add_message (which can trigger completions)
             await self.messages._insert_live_message(m)
             tokens += mtoks
-            
+
         self.ready = True
 
     @staticmethod
@@ -221,7 +221,7 @@ class Assistant:
             # Check if there are tool calls
             if hasattr(response_message, 'tool_calls') and response_message.tool_calls:
                 
-                issue = system_events.ErrorEvent(error=f'Required functionality not implemented: {message}', e=NotImplementedError(message), event_id=event.event_id, chat_id=self.chat_id)
+                issue = system_events.ErrorEvent(error=f'Required functionality not implemented: {message}', e=NotImplementedError(message), tb=None, event_id=event.event_id, chat_id=self.chat_id)
                 await self.bus.emit(issue)
 
                 for tool_call in response_message.tool_calls:

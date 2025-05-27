@@ -1,3 +1,4 @@
+import sys
 import datetime as dt
 
 from typing import cast
@@ -45,7 +46,8 @@ class Conductor:
                 return
         
         except Exception as e:
-            await self.bus.emit(system_events.ErrorEvent("Woah! Somehow, this telegram message can't be parsed.", e))
+            _, _, tb = sys.exc_info()
+            await self.bus.emit(system_events.ErrorEvent(error="Woah! Somehow, this telegram message can't be parsed.", e=e, tb=tb, event_id=event.event_id))
 
         try:
             user = user.username or user.first_name
@@ -98,4 +100,5 @@ class Conductor:
             await self.bus.emit(conductor_events.AssistantRequest(chat_id=chat_id, message=message_wrapper, event_id=event.event_id, typing=event.typing))
 
         except Exception as e:
-            await self.bus.emit(system_events.ErrorEvent(error="Something's wrong with passing the messages from telegram to you.", e=e, event_id=event.event_id, chat_id=chat_id))
+            _, _, tb = sys.exc_info()
+            await self.bus.emit(system_events.ErrorEvent(error="Something's wrong with passing the messages from telegram to you.", e=e, tb=tb, event_id=event.event_id, chat_id=chat_id))
