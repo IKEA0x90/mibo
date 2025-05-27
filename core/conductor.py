@@ -65,11 +65,11 @@ class Conductor:
                 ping = True 
 
             if entities:
-                for entity, value in entities:
+                for entity, value in entities.items():
                     entity = cast(MessageEntity, entity) # for type hinting
 
                     if entity.type == 'mention':
-                        if entity.user and entity.user.username == self.username:
+                        if value.startswith('@') and value[1:] == tools.Tool.MIBO_PING:
                             ping = True
 
                     elif entity.type == 'url':
