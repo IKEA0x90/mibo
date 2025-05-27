@@ -207,8 +207,8 @@ class Mibo:
                 await task
             except asyncio.CancelledError:
                 pass
-
-        message_text: str = message.message
+                
+        message_text: str = message._remove_prefix(message.message)
         message_images: List[wrapper.ImageWrapper] = message.get_images()
         message_sticker: wrapper.StickerWrapper = message.get_sticker()
         message_poll: wrapper.PollWrapper = message.get_poll()
