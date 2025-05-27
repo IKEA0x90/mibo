@@ -281,7 +281,7 @@ class Assistant:
                 await self.bus.emit(push_event)
 
         except Exception as e:
-            issue = system_events.ErrorEvent(error='Whoops! An unexpected error occurred.', e=e, event_id=event.event_id, chat_id=self.chat_id)
+            issue = system_events.ErrorEvent(error='Whoops! An unexpected error occurred.', e=e, tb=None, event_id=event.event_id, chat_id=self.chat_id)
             await self.bus.emit(issue)
 
 class CatAssistant(Assistant):

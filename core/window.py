@@ -32,6 +32,12 @@ class Window():
     def __delitem__(self, idx):
         del self.messages[idx]
 
+    def contains(self, message: wrapper.MessageWrapper) -> bool:
+        '''
+        Checks if the window contains a message with the same content_id.
+        '''
+        return any(msg.content_id == message.content_id for msg in self.messages)
+
     async def override(self, message: wrapper.MessageWrapper) -> None:
         '''
         Clears the windows and adds the message.

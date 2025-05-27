@@ -295,7 +295,10 @@ class Mibo:
         e = event.e
         tb = event.tb
 
-        traceback.print_exception(type(e), e, tb)
+        print(f"{error}")
+
+        if tb:
+            traceback.print_exception(type(e), e, tb)
 
     async def _create_poll(self, event: mibo_events.MiboPollResponse) -> None:
         '''
