@@ -237,7 +237,7 @@ class Mibo:
         if re.match(pattern, text, flags=re.IGNORECASE):
             text2 = re.sub(pattern, '', text, flags=re.IGNORECASE)
 
-        text_list = text2.split('<n>')
+        text_list = text2.split('|n|')
 
         return text_list
 
