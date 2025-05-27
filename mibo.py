@@ -385,29 +385,33 @@ class Mibo:
         chat = update.effective_chat
         old_status = update.my_chat_member.old_chat_member.status
         new_status = update.my_chat_member.new_chat_member.status
+        group_name = chat.effective_name
+
+        events = {
+            'join': {
+                'group_name': group_name,
+                'admin': False
+            }
+        }
 
         if chat.type in [Chat.GROUP, Chat.SUPERGROUP]:
 
             # Bot was added to a group or supergroup
             if old_status in [ChatMember.LEFT, ChatMember.BANNED] and new_status in [ChatMember.MEMBER, ChatMember.ADMINISTRATOR]:
-                group_name = chat.effective_name
+                
                 is_admin = (new_status == ChatMember.ADMINISTRATOR)
 
                 await self._system_message(chat_id=chat.id, chat_name=group_name, system_message=str(templates.WelcomeMessage(group_name=group_name, admin=is_admin)))
 
-                events = {
-                    'join': {
-                        'group_name': group_name,
-                        'admin': is_admin
-                    }
-                }
-                await self._notify_creator(events)
+                events['admin'] = is_admin
 
             # Bot was removed from a group
             elif old_status in [ChatMember.MEMBER, ChatMember.ADMINISTRATOR] and new_status in [ChatMember.LEFT, ChatMember.BANNED]:
                 # Log or handle cleanup if needed
                 pass
-
+        
+        await self._notify_creator(events)
+        
     async def _simulate_typing(self, chat_id: int):
         try:
             while True:
