@@ -118,8 +118,9 @@ class MessageWrapper(Wrapper):
         return tokens + content_tokens
     
 class ChatWrapper():
-    def __init__(self, chat_id: str, custom_instructions: str, chance: int, max_context_tokens: int, max_content_tokens: int, max_response_tokens: int, frequency_penalty: float, presence_penalty: float):
+    def __init__(self, chat_id: str, chat_name: str, custom_instructions: str, chance: int, max_context_tokens: int, max_content_tokens: int, max_response_tokens: int, frequency_penalty: float, presence_penalty: float):
         self.chat_id: str = chat_id
+        self.chat_name: str = chat_name
         self.custom_instructions: str = custom_instructions or ''
         self.chance: int = chance or 5
         self.max_context_tokens: int = max_context_tokens or tools.Tool.MAX_CONTENT_TOKENS

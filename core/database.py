@@ -41,12 +41,13 @@ class Database:
             conn.row_factory = sqlite3.Row
             cursor = conn.cursor()
 
-            cursor.execute("SELECT chat_id, custom_instructions, chance, max_context_tokens, max_content_tokens, max_response_tokens, frequency_penalty, presence_penalty FROM chats")
+            cursor.execute("SELECT chat_id, chat_name, custom_instructions, chance, max_context_tokens, max_content_tokens, max_response_tokens, frequency_penalty, presence_penalty FROM chats")
             rows = cursor.fetchall()
             
             conn.close()
             
             return [wrapper.ChatWrapper(row['chat_id'], 
+                                        row['chat_name'],
                                         row['custom_instructions'], 
                                         row['chance'], row['max_context_tokens'], 
                                         row['max_content_tokens'], row['max_response_tokens'], 
@@ -145,7 +146,7 @@ class Database:
                 row = await cursor.fetchone()
 
             if not row:
-                await self.insert_chat(chat_id)
+                await self.insert_chat(chat_id, chat_name)
                 # Create and emit the new chat event
                 chat = wrapper.ChatWrapper(
                     chat_id=chat_id,
