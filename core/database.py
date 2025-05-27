@@ -211,7 +211,7 @@ class Database:
 
         except Exception as e:
             _, _, tb = sys.exc_info()
-            self.bus.emit(system_events.ErrorEvent(error=f"Failed to add a message to the database.", e=e, tb=tb, event_id=event.event_id, chat_id=chat_id))
+            await self.bus.emit(system_events.ErrorEvent(error=f"Failed to add a message to the database.", e=e, tb=tb, event_id=event.event_id, chat_id=chat_id))
              
     async def _image_to_bytes(self, event: conductor_events.ImageDownloadRequest):
         '''
