@@ -35,6 +35,13 @@ class Tool:
     PROPERTY_ASSISTANT = 'property_assistant'
     MEMORY_ASSISTANT = 'memory_assistant'
 
+    CHANCE = 5
+    MAX_CONTENT_TOKENS = 1000
+    MAX_CONTENT_TOKENS = 1000
+    MAX_RESPONSE_TOKENS = 500
+    FREQUENCY_PENALTY = 0.1,
+    PRESENCE_PENALTY = 0.1
+
     IMAGE_ASSISTANT_EVENT = tool_events.ToolImageRequest
     POLL_ASSISTANT_EVENT = tool_events.ToolPollRequest
     PROPERTY_ASSISTANT_EVENT = tool_events.ToolPropertyChangeRequest

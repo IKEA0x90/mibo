@@ -1,6 +1,6 @@
 import tiktoken
 import uuid
-import os
+import re
 
 import datetime as dt
 from typing import List
@@ -78,7 +78,21 @@ class MessageWrapper(Wrapper):
             self.datetime = dt.datetime.now(tz=dt.timezone.utc)
 
     def __str__(self):
-        return f'{self.user}: {self.message}'
+        return f'{self.user}: {self._remove_prefix(self.message)}'
+
+    @staticmethod
+    def _remove_prefix(text: str) -> str:
+        '''
+        Removes the prefixed name from the text if it exists
+        '''
+        prefix = tools.Tool.MIBO_MESSAGE  # 'mibo:'
+        pattern = rf'^(?:{prefix.rstrip()}\s+)+'
+        text2 = text.strip()
+
+        if re.match(pattern, text, flags=re.IGNORECASE):
+            text2 = re.sub(pattern, '', text, flags=re.IGNORECASE)
+
+        return text2
 
     def add_content(self, content: Wrapper):
         self.content_list.append(content)
@@ -107,8 +121,8 @@ class ChatWrapper():
         self.chat_id: str = chat_id
         self.custom_instructions: str = custom_instructions or ''
         self.chance: int = chance or 5
-        self.max_context_tokens: int = max_context_tokens or 3000
-        self.max_content_tokens: int = max_content_tokens or 1500
-        self.max_response_tokens: int = max_response_tokens or 500
-        self.frequency_penalty: float = frequency_penalty or 0.1
-        self.presence_penalty: float = presence_penalty or 0.1
+        self.max_context_tokens: int = max_context_tokens or tools.Tool.MAX_CONTENT_TOKENS
+        self.max_content_tokens: int = max_content_tokens or tools.Tool.MAX_CONTENT_TOKENS
+        self.max_response_tokens: int = max_response_tokens or tools.Tool.MAX_RESPONSE_TOKENS
+        self.frequency_penalty: float = frequency_penalty or tools.Tool.FREQUENCY_PENALTY
+        self.presence_penalty: float = presence_penalty or tools.Tool.PRESENCE_PENALTY

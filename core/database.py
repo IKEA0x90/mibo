@@ -14,6 +14,7 @@ import datetime as dt
 
 from events import event_bus, db_events, conductor_events, system_events
 from core import wrapper
+from services import tools
 
 class Database:
     def __init__(self, bus: event_bus.EventBus, db_path: str):
@@ -143,12 +144,12 @@ class Database:
                 chat = wrapper.ChatWrapper(
                     chat_id=chat_id,
                     custom_instructions="",
-                    chance=5,
-                    max_context_tokens=3000,
-                    max_content_tokens=1500,
-                    max_response_tokens=500,
-                    frequency_penalty=0.1,
-                    presence_penalty=0.1
+                    chance=tools.Tool.CHANCE,
+                    max_context_tokens=tools.Tool.MAX_CONTENT_TOKENS,
+                    max_content_tokens=tools.Tool.MAX_CONTENT_TOKENS,
+                    max_response_tokens= tools.Tool.MAX_RESPONSE_TOKENS,
+                    frequency_penalty=tools.Tool.FREQUENCY_PENALTY,
+                    presence_penalty=tools.Tool.PRESENCE_PENALTY
                 )
             else:
                 keys = row.keys()
@@ -313,16 +314,16 @@ class Database:
         """
         try:
             # ------------------ chats ------------------
-            await cursor.execute("""
+            await cursor.execute(f"""
             CREATE TABLE IF NOT EXISTS chats (
                 chat_id           TEXT PRIMARY KEY,
                 custom_instructions TEXT NOT NULL DEFAULT '',
-                chance            INTEGER NOT NULL DEFAULT 5,
-                max_context_tokens INTEGER NOT NULL DEFAULT 3000,
-                max_content_tokens INTEGER NOT NULL DEFAULT 1500,
-                max_response_tokens INTEGER NOT NULL DEFAULT 500,
-                frequency_penalty FLOAT NOT NULL DEFAULT 0.1,
-                presence_penalty  FLOAT NOT NULL DEFAULT 0.1,
+                chance            INTEGER NOT NULL DEFAULT {tools.Tool.CHANCE},
+                max_context_tokens INTEGER NOT NULL DEFAULT {tools.Tool.MAX_CONTENT_TOKENS},
+                max_content_tokens INTEGER NOT NULL DEFAULT {tools.Tool.MAX_CONTENT_TOKENS},
+                max_response_tokens INTEGER NOT NULL DEFAULT {tools.Tool.MAX_RESPONSE_TOKENS},
+                frequency_penalty FLOAT NOT NULL DEFAULT {tools.Tool.FREQUENCY_PENALTY},
+                presence_penalty  FLOAT NOT NULL DEFAULT {tools.Tool.PRESENCE_PENALTY},
                 timestamp        TIMESTAMP DEFAULT CURRENT_TIMESTAMP
             );
             """)
@@ -396,16 +397,16 @@ class Database:
         Synchronous version of create_tables for use with sqlite3.
         '''
         try:
-            cursor.execute("""
+            cursor.execute(f"""
             CREATE TABLE IF NOT EXISTS chats (
                 chat_id           TEXT PRIMARY KEY,
                 custom_instructions TEXT NOT NULL DEFAULT '',
-                chance            INTEGER NOT NULL DEFAULT 5,
-                max_context_tokens INTEGER NOT NULL DEFAULT 3000,
-                max_content_tokens INTEGER NOT NULL DEFAULT 1500,
-                max_response_tokens INTEGER NOT NULL DEFAULT 500,
-                frequency_penalty FLOAT NOT NULL DEFAULT 0.1,
-                presence_penalty  FLOAT NOT NULL DEFAULT 0.1,
+                chance            INTEGER NOT NULL DEFAULT {tools.Tool.CHANCE},
+                max_context_tokens INTEGER NOT NULL DEFAULT {tools.Tool.MAX_CONTENT_TOKENS},
+                max_content_tokens INTEGER NOT NULL DEFAULT {tools.Tool.MAX_CONTENT_TOKENS},
+                max_response_tokens INTEGER NOT NULL DEFAULT {tools.Tool.MAX_RESPONSE_TOKENS},
+                frequency_penalty FLOAT NOT NULL DEFAULT {tools.Tool.FREQUENCY_PENALTY},
+                presence_penalty  FLOAT NOT NULL DEFAULT {tools.Tool.PRESENCE_PENALTY},
                 timestamp        TIMESTAMP DEFAULT CURRENT_TIMESTAMP
             );
             """)
@@ -467,11 +468,11 @@ class Database:
         *,
         custom_instructions: str = "",
         chance: int = 5,
-        max_context_tokens: int = 3000,
-        max_content_tokens: int = 1500,
-        max_response_tokens: int = 500,
-        frequency_penalty: float = 0.1,
-        presence_penalty: float = 0.1
+        max_context_tokens: int = tools.Tool.MAX_CONTENT_TOKENS,
+        max_content_tokens: int = tools.Tool.MAX_CONTENT_TOKENS,
+        max_response_tokens: int = tools.Tool.MAX_RESPONSE_TOKENS,
+        frequency_penalty: float = tools.Tool.FREQUENCY_PENALTY,
+        presence_penalty: float = tools.Tool.PRESENCE_PENALTY
     ) -> str:
         """
         Inserts a new chat and returns the chat_id.
