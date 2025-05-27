@@ -66,6 +66,7 @@ class Tool:
         '''
         moderation = 'low'
         model="gpt-image-1"
+        pass
 
     @staticmethod
     async def create_poll(question: str, options: list, multiple_choice: bool = False):
