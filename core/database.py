@@ -202,7 +202,7 @@ class Database:
                     )
 
         except Exception as e:
-            self.bus.emit(system_events.ChatErrorEvent(chat_id=chat_id, message=f"Failed to add a message to the database.", exception=e, event_id=event.event_id))
+            self.bus.emit(system_events.ErrorEvent(message=f"Failed to add a message to the database.", exception=e, event_id=event.event_id, chat_id=chat_id))
              
     async def _image_to_bytes(self, event: conductor_events.ImageDownloadRequest):
         '''
@@ -244,7 +244,7 @@ class Database:
                 await self.bus.emit(request)
         
         except Exception as e:
-            await self.bus.emit(system_events.ChatErrorEvent(chat_id, 'Failed to download image.', e, event_id=event.event_id))
+            await self.bus.emit(system_events.ErrorEvent(message='Failed to download image.', e=e, event_id=event.event_id, chat_id=chat_id))
 
     async def _save_images(self, event: db_events.ImageSaveRequest):
         '''
@@ -306,7 +306,7 @@ class Database:
             await self.bus.emit(response)
 
         except Exception as e:
-            await self.bus.emit(system_events.ChatErrorEvent("Couldn't save one of the images to disk.", e, event_id=event.event_id))
+            await self.bus.emit(system_events.ErrorEvent(error="Couldn't save one of the images to disk.", e=e, event_id=event.event_id, chat_id=chat_id))
     
     async def create_tables(self, cursor) -> None: # Accepts cursor
         """
@@ -688,7 +688,7 @@ class Database:
                 messages.append(msg)
 
         except Exception as e:
-            await self.bus.emit(system_events.ChatErrorEvent(chat_id, f"Failed to retrieve your memory.", e, event_id=event.event_id))
+            await self.bus.emit(system_events.ErrorEvent(error=f"Failed to retrieve your memory.", e=e, event_id=event.event_id, chat_id=chat_id))
             messages = []
         finally:
             response = db_events.MemoryResponse(chat_id=chat_id, messages=messages, event_id=event.event_id)

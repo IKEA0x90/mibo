@@ -5,6 +5,7 @@ import openai
 import logging
 import random
 import re
+import traceback
 
 import datetime as dt
 from typing import List, Dict
@@ -76,6 +77,7 @@ class Mibo:
         self.bus.register(mibo_events.MiboMessageResponse, self._send_message)
         self.bus.register(mibo_events.MiboPollResponse, self._create_poll)
         self.bus.register(conductor_events.NewChatPush, self._create_assistant)
+        self.bus.register(system_events.ErrorEvent, self._handle_exception)
 
     async def run(self):
         '''
@@ -153,7 +155,7 @@ class Mibo:
             await self.bus.emit(mibo_events.AssistantCreated(chat_id=chat_id, event_id=event.event_id))
     
         except Exception as e:
-            await self.bus.emit(system_events.ChatErrorEvent(f"Couldn't create Mibo instance for the new chat.", e, event_id=event.event_id))
+            await self.bus.emit(system_events.ErrorEvent(error=f"Couldn't create Mibo instance for the new chat.", e=e, event_id=event.event_id, chat_id=event.chat.chat_id))
 
     async def _handle_message(self, update: Update, context: CallbackContext):
         '''
@@ -216,7 +218,7 @@ class Mibo:
             await self.bus.emit(response)
 
         if message_sticker:
-            response = system_events.ChatErrorEvent(chat_id, 'Stickers are not supported yet.')
+            response = system_events.ErrorEvent(error='Stickers are not supported yet.', e=NotImplementedError("Stickers are not supported yet."), event_id=event.event_id, chat_id=chat_id)
             await self.bus.emit(response)
 
         if message_poll:
@@ -284,6 +286,12 @@ class Mibo:
             for t in text_list[1:]:
                 await self.app.bot.send_message(chat_id=chat_id, text=t)
                 await asyncio.sleep(random.uniform(0.5, 3))
+
+    async def _handle_exception(self, event: system_events.ErrorEvent) -> None:
+        '''
+        Print exception logs.
+        '''
+        print(event.error)
 
     async def _create_poll(self, event: mibo_events.MiboPollResponse) -> None:
         '''
