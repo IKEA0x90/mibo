@@ -392,6 +392,10 @@ class Mibo:
         new_status = update.my_chat_member.new_chat_member.status
         group_name = chat.effective_name
 
+        update_datetime = update.my_chat_member.date
+        if update_datetime < self.start_datetime:
+            return
+
         events = {}
 
         if chat.type in [Chat.GROUP, Chat.SUPERGROUP]:
