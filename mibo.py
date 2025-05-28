@@ -52,15 +52,13 @@ class Mibo:
         poll_assistant = self.client.beta.assistants.retrieve(tools.Tool.POLL_ASSISTANT_ID).to_dict()
         property_assistant = self.client.beta.assistants.retrieve(tools.Tool.PROPERTY_ASSISTANT_ID).to_dict()
         memory_assistant = self.client.beta.assistants.retrieve(tools.Tool.MEMORY_ASSISTANT_ID).to_dict()
-        important_assistant = self.client.beta.assistants.retrieve(tools.Tool.STORAGE_MIBO_ID).to_dict()
 
         self.templates = {'template': template_assistant,
                     'cat_template': cat_assistant, 
                     'image_template': image_assistant, 
                     'poll_template': poll_assistant, 
                     'property_template': property_assistant, 
-                    'memory_template': memory_assistant,
-                    'important_template': important_assistant}
+                    'memory_template': memory_assistant}
 
         self.assistants = assistant.initialize_assistants(self.db, self.client, self.bus, self.templates, self.start_datetime)
         
@@ -152,9 +150,6 @@ class Mibo:
                 chat=chat,
                 assistant_type=tools.Tool.MIBO
             )
-
-            if chat_id == tools.Tool.IMPORTANT_INFO_STORAGE:
-                new_assistant.assistant_type = 'important_template'
                 
             self.assistants[chat_id] = new_assistant
             
@@ -405,10 +400,6 @@ class Mibo:
                 is_admin = (new_status == ChatMember.ADMINISTRATOR)
 
                 message = templates.WelcomeMessage(group_name=group_name, admin=is_admin)
-
-                # TODO DEFINETELY REMOVE THIS 
-                if str(chat.id) == tools.Tool.IMPORTANT_INFO_STORAGE:
-                    message = templates.INFOSTORAGE_REMOVE(group_name=group_name, admin=is_admin)
 
                 await self._system_message(chat_id=chat.id, chat_name=group_name, system_message=str(message))
 

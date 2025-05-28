@@ -30,7 +30,6 @@ class Tool:
     MIBO_MESSAGE = os.environ['MIBO_MESSAGE']
     MIBO_PING = os.environ['MIBO_PING']
     SYSTEM_CHAT = os.environ['SYSTEM_CHAT']
-    IMPORTANT_INFO_STORAGE = os.environ['IMPORTANT_INFO_STORAGE']
 
     MIBO = os.environ['MIBO']
     CAT_ASSISTANT = os.environ['CAT_ASSISTANT']
