@@ -21,6 +21,7 @@ class Tool:
     POLL_ASSISTANT_ID = os.environ['POLL_ASSISTANT_ID']
     PROPERTY_ASSISTANT_ID = os.environ['PROPERTY_ASSISTANT_ID']
     MEMORY_ASSISTANT_ID = os.environ['MEMORY_ASSISTANT_ID']
+    STORAGE_MIBO_ID = os.environ['STORAGE_MIBO_ID']
 
     TELEGRAM_KEY = os.environ['TELEGRAM_KEY']
     OPENAI_KEY = os.environ['OPENAI_KEY']
@@ -29,13 +30,15 @@ class Tool:
     MIBO_MESSAGE = os.environ['MIBO_MESSAGE']
     MIBO_PING = os.environ['MIBO_PING']
     SYSTEM_CHAT = os.environ['SYSTEM_CHAT']
+    IMPORTANT_INFO_STORAGE = os.environ['IMPORTANT_INFO_STORAGE']
 
-    MIBO = 'mibo'
-    CAT_ASSISTANT = 'cat_assistant'
-    IMAGE_ASSISTANT = 'image_assistant'
-    POLL_ASSISTANT = 'poll_assistant'
-    PROPERTY_ASSISTANT = 'property_assistant'
-    MEMORY_ASSISTANT = 'memory_assistant'
+    MIBO = os.environ['MIBO']
+    CAT_ASSISTANT = os.environ['CAT_ASSISTANT']
+    IMAGE_ASSISTANT = os.environ['IMAGE_ASSISTANT']
+    POLL_ASSISTANT = os.environ['POLL_ASSISTANT']
+    PROPERTY_ASSISTANT = os.environ['PROPERTY_ASSISTANT']
+    MEMORY_ASSISTANT = os.environ['MEMORY_ASSISTANT']
+    MIBO_RU = os.environ['MIBO_RU']
 
     CHANCE = 5
     MAX_CONTEXT_TOKENS = 1000
