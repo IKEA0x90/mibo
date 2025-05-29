@@ -23,6 +23,12 @@ class Mibo:
         self.token = token
         self.start_datetime = dt.datetime.now(dt.timezone.utc)
 
+        # laod the environment first to catch early errors
+        try:
+            _ = tools.Tool()
+        except TypeError:
+            exit(1)
+
         self.bus = event_bus.EventBus()
         self.db = database.Database(self.bus, db_path)
         self.conductor = conductor.Conductor(self.bus)
@@ -290,7 +296,7 @@ class Mibo:
         if text_list and not images:
             for t in text_list:
                 await self.app.bot.send_message(chat_id=chat_id, text=t)
-                await asyncio.sleep(random.uniform(0.5, 3))
+                await asyncio.sleep(0.05 * len(t)) # average of 0.5 for 10 characters and 5 for 100 characters
             return
 
         # If only images
@@ -342,14 +348,14 @@ class Mibo:
                 # Send the notification to the creator
                 await self._system_message(admin_chat, "Admin Notifications", str(message))
 
-                # Cancel the typing simulation for the creator notification
-                old_task = self.typing_tasks.pop(admin_chat, None)
-                if old_task and not old_task.done():
-                    old_task.cancel()
-                    try:
-                        await old_task
-                    except asyncio.CancelledError:
-                        pass
+            # Cancel the typing simulation for the creator notification
+            old_task = self.typing_tasks.pop(admin_chat, None)
+            if old_task and not old_task.done():
+                old_task.cancel()
+                try:
+                    await old_task
+                except asyncio.CancelledError:
+                    pass
 
         except Exception as e:
             _, _, tb = sys.exc_info()
@@ -387,30 +393,33 @@ class Mibo:
         new_status = update.my_chat_member.new_chat_member.status
         group_name = chat.effective_name
 
-        events = {
-            'join': {
-                'group_name': group_name,
-                'admin': False
-            }
-        }
+        update_datetime = update.my_chat_member.date
+        if update_datetime < self.start_datetime:
+            return
+
+        events = {}
 
         if chat.type in [Chat.GROUP, Chat.SUPERGROUP]:
-
             # Bot was added to a group or supergroup
             if old_status in [ChatMember.LEFT, ChatMember.BANNED] and new_status in [ChatMember.MEMBER, ChatMember.ADMINISTRATOR]:
                 
                 is_admin = (new_status == ChatMember.ADMINISTRATOR)
 
-                await self._system_message(chat_id=chat.id, chat_name=group_name, system_message=str(templates.WelcomeMessage(group_name=group_name, admin=is_admin)))
+                message = templates.WelcomeMessage(group_name=group_name, admin=is_admin)
 
-                events['admin'] = is_admin
+                await self._system_message(chat_id=chat.id, chat_name=group_name, system_message=str(message))
+
+                events['join'] = {
+                    'group_name': group_name,
+                    'admin': is_admin
+                }
+
+                await self._notify_creator(events)
 
             # Bot was removed from a group
             elif old_status in [ChatMember.MEMBER, ChatMember.ADMINISTRATOR] and new_status in [ChatMember.LEFT, ChatMember.BANNED]:
                 # Log or handle cleanup if needed
                 pass
-        
-        await self._notify_creator(events)
         
     async def _simulate_typing(self, chat_id: int):
         try:
