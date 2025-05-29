@@ -23,6 +23,12 @@ class Mibo:
         self.token = token
         self.start_datetime = dt.datetime.now(dt.timezone.utc)
 
+        # laod the environment first to catch early errors
+        try:
+            _ = tools.Tool()
+        except TypeError:
+            exit(1)
+
         self.bus = event_bus.EventBus()
         self.db = database.Database(self.bus, db_path)
         self.conductor = conductor.Conductor(self.bus)

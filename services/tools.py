@@ -39,13 +39,17 @@ class Tool:
     MEMORY_ASSISTANT = os.environ['MEMORY_ASSISTANT']
     MIBO_RU = os.environ['MIBO_RU']
 
-    CHANCE = os.environ['CHANCE']
-    MAX_CONTEXT_TOKENS = os.environ['MAX_CONTEXT_TOKENS']
-    MAX_CONTENT_TOKENS = os.environ['MAX_CONTENT_TOKENS']
-    MAX_RESPONSE_TOKENS = os.environ['MAX_RESPONSE_TOKENS']
-    FREQUENCY_PENALTY = os.environ['FREQUENCY_PENALTY']
-    PRESENCE_PENALTY = os.environ['PRESENCE_PENALTY']
+    try:
+        CHANCE = int(os.environ['CHANCE'])
+        MAX_CONTEXT_TOKENS = int(os.environ['MAX_CONTEXT_TOKENS'])
+        MAX_CONTENT_TOKENS = int(os.environ['MAX_CONTENT_TOKENS'])
+        MAX_RESPONSE_TOKENS = int(os.environ['MAX_RESPONSE_TOKENS'])
+        FREQUENCY_PENALTY = float(os.environ['FREQUENCY_PENALTY'])
+        PRESENCE_PENALTY = float(os.environ['PRESENCE_PENALTY'])
 
+    except TypeError:
+        raise TypeError("Environment variables that should be a number isn't.")
+    
     IMAGE_ASSISTANT_EVENT = tool_events.ToolImageRequest
     POLL_ASSISTANT_EVENT = tool_events.ToolPollRequest
     PROPERTY_ASSISTANT_EVENT = tool_events.ToolPropertyChangeRequest
