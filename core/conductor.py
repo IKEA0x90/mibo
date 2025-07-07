@@ -91,9 +91,9 @@ class Conductor:
             if reply_id and (reply_message.from_user.id == context.bot.id):
                 ping = True
 
-            if message_text.lower().count(f'{tools.Tool.MIBO}') or message_text.lower().count(f'{tools.Tool.MIBO_RU}'):
+            if f'{tools.Tool.MIBO}' in message_text.lower() or f'{tools.Tool.MIBO_RU}' in message_text.lower():
                 ping = True
-
+                
             datetime: dt.datetime = message.date.astimezone(dt.timezone.utc)
             
             message_wrapper = wrapper.MessageWrapper(chat_id, message_id, role, user, message_text, ping, reply_id, datetime, chat_name=chat_name)
