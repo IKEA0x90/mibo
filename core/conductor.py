@@ -83,9 +83,16 @@ class Conductor:
                     elif entity.type == 'url':
                         # special url processing
                         pass
-
+            
             reply_message = message.reply_to_message
+
             reply_id = reply_message.message_id if reply_message else None
+
+            if reply_id and (reply_message.from_user.id == context.bot.id):
+                ping = True
+
+            if message_text.lower().count(f'{tools.Tool.MIBO}') or message_text.lower().count(f'{tools.Tool.MIBO_RU}'):
+                ping = True
 
             datetime: dt.datetime = message.date.astimezone(dt.timezone.utc)
             

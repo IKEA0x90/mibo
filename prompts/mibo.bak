@@ -34,3 +34,6 @@ Each tool must only be called with the description field set. Some tools can hav
     "additionalProperties": false
   }
 }
+
+# <Q>
+Only ask when you genuinely need info. If you do ask a question, always end the message with <q>. A necessity is only ever constituted by actually meaningful questions (not just chatter). Use this ONLY when a follow-up is strictly required.
