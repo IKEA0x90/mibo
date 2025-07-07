@@ -47,8 +47,8 @@ class Tool:
         FREQUENCY_PENALTY = float(os.environ['FREQUENCY_PENALTY'])
         PRESENCE_PENALTY = float(os.environ['PRESENCE_PENALTY'])
 
-    except TypeError:
-        raise TypeError("Environment variables that should be a number isn't.")
+    except (ValueError, KeyError) as e:
+        raise ValueError(f"Error loading environment variables: {e}. Ensure all required variables are set and have valid numeric values.")
     
     IMAGE_ASSISTANT_EVENT = tool_events.ToolImageRequest
     POLL_ASSISTANT_EVENT = tool_events.ToolPollRequest

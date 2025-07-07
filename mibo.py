@@ -23,7 +23,7 @@ class Mibo:
         self.token = token
         self.start_datetime = dt.datetime.now(dt.timezone.utc)
 
-        # laod the environment first to catch early errors
+        # load the environment first to catch early errors
         try:
             _ = tools.Tool()
         except TypeError:
