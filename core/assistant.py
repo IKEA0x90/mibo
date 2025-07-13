@@ -254,6 +254,9 @@ class Assistant:
                 if not message_text.strip() and not images:
                     return
                 
+                # Replace random stuff that I don't like and is easier to change here rather than in the prompt
+                message_text = tools.Tool.replacers(message_text)
+                
                 assistant_message = wrapper.MessageWrapper(
                     chat_id=self.chat_id,
                     message_id=str(response.id),

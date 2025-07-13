@@ -76,6 +76,17 @@ class Tool:
         pass
 
     @staticmethod
+    def replacers(original: str) -> str:
+        '''
+        Custom defined replacers for a message.
+        Replaces random stuff that I don't like and is easier to change here rather than in the prompt.
+        (real homies hate em dashes)
+        '''
+        message = original.replace('—', ' - ') 
+
+        return message
+
+    @staticmethod
     async def create_poll(question: str, options: list, multiple_choice: bool = False):
         pass
 
