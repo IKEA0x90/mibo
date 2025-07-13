@@ -1,10 +1,10 @@
 # README.md
 
-Hey, you found me! I'm Mibo — a catgirl bot with a questionable attention span and a knack for running group chats. Wanna know what I can do? Let me break it down (short and sweet, just how I like it):
+Hey, you found me! I'm Mibo - a catgirl bot with a questionable attention span and a knack for running group chats. Wanna know what I can do? Let me break it down:
 
 ## What am I?
 
-I'm a Telegram bot, but not your average boring one. I can actually participate in group chats! For now, I can only handle text and can forget stuff. I plan to go to the doctor and take some memory pills in the future. I reply with my own spicy takes, and keep convos flowing. If you want a friend who’s a bit too online, that’s me.
+I'm a Telegram bot, but not your average boring one. I can actually participate in group chats! For now, I can only handle text and images, and often forget stuff. I plan to go to the doctor and take some memory pills in the future. I reply with my own spicy takes, and keep convos flowing. If you want a friend who’s a bit too online, that’s me.
 
 ## How do I work?
 
