@@ -96,12 +96,13 @@ class Conductor:
             
             message_wrapper = wrapper.MessageWrapper(chat_id, message_id, role, user, message_text, ping, reply_id, datetime, chat_name=chat_name)
 
-            request = conductor_events.ImageDownloadRequest(update=update, context=context)
-            response = await self.bus.wait(request, db_events.ImageResponse, 30)
+            if message.photo or (message.document and message.document.mime_type and message.document.mime_type.startswith('image/')):
+                request = conductor_events.ImageDownloadRequest(update=update, context=context)
+                response = await self.bus.wait(request, db_events.ImageResponse, 30)
 
-            if response and response.images:
-                for image in response.images:
-                    message_wrapper.add_content(image)
+                if response and response.images:
+                    for image in response.images:
+                        message_wrapper.add_content(image)
 
             push_request = conductor_events.MessagePush(message_wrapper, event_id=event.event_id)
             chat_response = await self.bus.wait(push_request, db_events.NewChatAck)

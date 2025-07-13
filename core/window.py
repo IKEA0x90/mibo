@@ -11,8 +11,10 @@ from events import assistant_events, event_bus
 class Window():
     def __init__(self, chat_id: str, start_datetime: dt.datetime, template: dict, max_context_tokens: int, max_content_tokens: int):
         self.chat_id: str = chat_id
-        self.tokens: int = 0
         self.start_datetime: dt.datetime = start_datetime
+
+        self.context_tokens: int = 0
+        self.content_tokens: int = 0
 
         self._lock = asyncio.Lock()
         self._stale_buffer: Deque[wrapper.MessageWrapper] = deque()
@@ -78,6 +80,8 @@ class Window():
             key=lambda msg: msg.datetime,
             reverse=True
         )
+
+        # TODO - process context tokens and content tokens separately
 
         token_sum = 0
         for msg in sorted_buffer:

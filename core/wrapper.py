@@ -11,21 +11,16 @@ class Wrapper():
     def __init__(self, id: str = None):
         self.content_id: str = str(id) if id is not None else str(uuid.uuid4())
 
-    def tokens(self):
-        encoding = tiktoken.encoding_for_model('gpt-4o')
-        tokens = len(encoding.encode(str(self)))
-        return tokens
-
 class ImageWrapper(Wrapper):
     def __init__(self, x: int, y: int, image_url: str, image_base64: str = None):
         super().__init__()
         self.x = x or 0
         self.y = y or 0
         self.image_url: str = image_url or ''
-        self.image_base64: str = ''
+        self.image_base64: str = image_base64 or ''
         self.image_description: str = ''
 
-    async def tokens(self):
+    async def content_tokens(self):
         width = (self.x + 512 -1) // 512 # round up by adding 511
         height = (self.y + 512 -1) // 512
 
@@ -36,7 +31,7 @@ class StickerWrapper(Wrapper):
         super().__init__()
         self.key_emoji: str = key_emoji
 
-    async def tokens(self):
+    async def content_tokens(self):
         return 1
 
 class PollWrapper(Wrapper):
@@ -109,13 +104,17 @@ class MessageWrapper(Wrapper):
         polls = [c for c in self.content_list if isinstance(c, PollWrapper)]
         return polls[0] if polls else None
     
-    async def tokens(self, model='gpt-4o'):
+    async def context_tokens(self, model='gpt-4o'):
         encoding = tiktoken.encoding_for_model(model)
-            
         tokens = len(encoding.encode(str(self)))
-        content_tokens = sum([c.tokens() for c in self.content_list])
+        return tokens
+    
+    async def content_tokens(self, model='gpt-4o'):
+        # this works in py 3.12+ but runs sequentially.
+        # c.content_tokens() runs fast enough for that not to be a problem.
+        content_tokens = sum([await c.content_tokens() for c in self.content_list])
 
-        return tokens + content_tokens
+        return content_tokens
     
 class ChatWrapper():
     def __init__(self, chat_id: str, chat_name: str, custom_instructions: str, chance: int, max_context_tokens: int, max_content_tokens: int, max_response_tokens: int, frequency_penalty: float, presence_penalty: float):

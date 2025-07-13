@@ -120,6 +120,8 @@ class Assistant:
             if self.messages.contains(m):
                 continue
 
+            # TODO - process context tokens and content tokens separately
+
             mtoks = await m.tokens()
             if tokens + mtoks > self.max_context_tokens:
                 break

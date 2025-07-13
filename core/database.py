@@ -120,10 +120,16 @@ class Database:
         '''
         Register bus event listeners
         '''
+        # Prevent double registration
+        if hasattr(self, '_handlers_registered') and self._handlers_registered:
+            return
+            
         self.bus.register(conductor_events.ImageDownloadRequest, self._image_to_bytes)
         self.bus.register(db_events.ImageSaveRequest, self._save_images)
         self.bus.register(conductor_events.MessagePush, self._add_message)    
         self.bus.register(db_events.MemoryRequest, self._handle_memory_request)
+        
+        self._handlers_registered = True
 
     async def _add_message(self, event: conductor_events.MessagePush):
         '''
@@ -138,6 +144,9 @@ class Database:
             username = message.user
             text = message.message            
             datetime_val = message.datetime if message.datetime else dt.datetime.now(tz=dt.timezone.utc)
+
+            # TODO - process context tokens and content tokens separately
+
             token_count = await message.tokens()
             
             chat = None # Initialize chat variable
@@ -153,7 +162,7 @@ class Database:
                     chat_name=chat_name,
                     custom_instructions="",
                     chance=tools.Tool.CHANCE,
-                    max_context_tokens=tools.Tool.MAX_CONTENT_TOKENS,
+                    max_context_tokens=tools.Tool.MAX_CONTEXT_TOKENS,
                     max_content_tokens=tools.Tool.MAX_CONTENT_TOKENS,
                     max_response_tokens= tools.Tool.MAX_RESPONSE_TOKENS,
                     frequency_penalty=tools.Tool.FREQUENCY_PENALTY,
@@ -190,7 +199,7 @@ class Database:
                     await self.insert_image(
                         message_id=db_message_id,
                         image_id=content.content_id,
-                        content_tokens=await content.tokens(),
+                        content_tokens=await content.content_tokens(),
                         image_url=content.image_url
                     )
                 elif isinstance(content, wrapper.StickerWrapper):
@@ -229,29 +238,22 @@ class Database:
             message: Message = update.effective_message
             file_bytes = []
 
-            # Handle photos
+            # Handle photos - only get the largest size (last in the list)
             if message.photo:
-                for photo_size in message.photo:
-                    file = await context.bot.get_file(photo_size.file_id)
-                    photo_bytes = await file.download_as_bytearray()
-                    file_bytes.append(photo_bytes)
+                largest_photo = message.photo[-1]  # Last photo is the largest
+                file = await context.bot.get_file(largest_photo.file_id)
+                photo_bytes = await file.download_as_bytearray()
+                file_bytes.append(photo_bytes)
 
             # Handle single image document
-            elif message.document and message.document.mime_type.startswith('image/'):
+            elif message.document and message.document.mime_type and message.document.mime_type.startswith('image/'):
                 file = await context.bot.get_file(message.document.file_id)
                 doc_bytes = await file.download_as_bytearray()
                 file_bytes.append(doc_bytes)
 
-            # If needed: process via media_group (albums) from a handler
-            # PTB handles albums by grouping updates with the same media_group_id
-            # You need to manage album logic at a higher level in a handler
-
-            if file_bytes:
-                request = db_events.ImageSaveRequest(chat_id=str(message.chat.id), file_bytes=file_bytes, event_id=event.event_id)
-                await self.bus.emit(request)
-            else:
-                request = db_events.ImageSaveRequest(chat_id=str(message.chat.id), file_bytes=[], event_id=event.event_id)
-                await self.bus.emit(request)
+            # Always emit ImageSaveRequest, even with empty file_bytes
+            request = db_events.ImageSaveRequest(chat_id=str(message.chat.id), file_bytes=file_bytes, event_id=event.event_id)
+            await self.bus.emit(request)
         
         except Exception as e:
             _, _, tb = sys.exc_info()
