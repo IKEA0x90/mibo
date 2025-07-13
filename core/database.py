@@ -260,7 +260,7 @@ class Database:
     async def _save_images(self, event: db_events.ImageSaveRequest):
         '''
         Compresses the image to jpg
-        Resizes the bigger size to 1000px, keeping the other scaled with it, using bicubic interpolation.
+        Resizes the bigger size to 768px, keeping the other scaled with it, using bicubic interpolation.
         Saves image to disk and returns the path.
         Makes a uuid4.hex uid for each image, making that the item name. 
         Also makes a list of the same images in base64 strings.
