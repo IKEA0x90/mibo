@@ -102,34 +102,23 @@ class Assistant:
 
     async def _prepare(self, event: conductor_events.MessagePush):
         '''
-        Fill the window with old messages from the database, but do not trigger completions.
-        Does not load actual images, only their summaries.
+        Prepare the window without triggering completions.
         '''
-        message = event.request
-        if message.chat_id != self.chat_id:
+        if event.request.chat_id != self.chat_id or self.ready:
             return
-        if self.ready:
-            return
-        
+
         memory_request = db_events.MemoryRequest(chat_id=self.chat_id)
         memory_response = await self.bus.wait(memory_request, db_events.MemoryResponse)
-        previous_messages = sorted(memory_response.messages, key=lambda m: m.datetime)
 
-        tokens = 0
-
-        for m in previous_messages:
-
-            if self.messages.contains(m):
+        for message in memory_response.messages:
+            if message.datetime < self.start_datetime:
+                # backlog – include for context, no completion later
+                await self.messages._insert_live_message(message)
                 continue
 
-            context_tokens = await m.context_tokens()
-
-            if tokens + context_tokens > self.max_context_tokens:
-                break
-
-            # Add directly to window, do not use add_message (which can trigger completions)
-            await self.messages._insert_live_message(m)
-            tokens += context_tokens
+            # live messages that arrived before the window was ready
+            if not self.messages.contains(message):
+                await self.messages._insert_live_message(message)
 
         self.ready = True
 

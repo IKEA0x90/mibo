@@ -320,7 +320,6 @@ class Database:
                 reply_id     TEXT DEFAULT NULL,
                 datetime     TIMESTAMP NOT NULL,
                 context_tokens       INTEGER DEFAULT 0,
-                content_tokens       INTEGER DEFAULT 0,
                 FOREIGN KEY (chat_id) REFERENCES chats (chat_id) ON DELETE CASCADE
             );
             ''',
@@ -328,11 +327,13 @@ class Database:
             '''
             CREATE TABLE IF NOT EXISTS images (
                 image_id    TEXT PRIMARY KEY,
+                message_id  TEXT NOT NULL,
                 x           INTEGER NOT NULL,
                 y           INTEGER NOT NULL,
                 image_bytes     BLOB NOT NULL,
-                image_summary   TEXT DEFAULT '',
-                content_tokens  INTEGER NOT NULL,
+                image_summary   TEXT DEFAULT '' NOT NULL,
+                content_tokens  INTEGER DEFAULT 0 NOT NULL,
+                summary_tokens  INTEGER DEFAULT 0 NOT NULL,
                 FOREIGN KEY (message_id) REFERENCES messages (message_id) ON DELETE CASCADE
             );
             ''',
@@ -395,46 +396,70 @@ class Database:
         Responds to MemoryRequest with a MemoryResponse containing all messages for the chat_id, ordered by datetime ascending.
         '''
         chat_id = event.chat_id
-        messages = []
 
         try:
             async with self.conn.cursor() as cursor:
-                await cursor.execute('SELECT * FROM messages WHERE chat_id = ? ORDER BY datetime ASC', (chat_id,))
-                rows = await cursor.fetchall()
-            
-            for row_data in rows: 
                 
-                message = wrapper.MessageWrapper(
-                    chat_id=row_data['chat_id'],
-                    message_id=row_data['message_id'],
-                    role=row_data['role'],
-                    user=row_data['user'],
-                    message=row_data['message'],
-                    ping=False,
-                    reply_id=row_data['reply_id'] or '',
-                    datetime=row_data['datetime'],
+                await cursor.execute(
+                    'SELECT max_context_tokens FROM chats WHERE chat_id = ?',
+                    (chat_id,),
                 )
+                row = await cursor.fetchone()
+                max_tokens = row['max_context_tokens'] if row else tools.Tool.MAX_CONTEXT_TOKENS
 
-                try:
-                    # Ensure datetime is timezone-aware UTC
-                    datetime_string = row_data['datetime']
-                    if isinstance(datetime_string, str):
-                        datetime = dt.datetime.fromisoformat(datetime_string)
-                    elif isinstance(datetime_string, dt.datetime):
-                        datetime = datetime_string
-                    else: # Fallback for unexpected types
-                        datetime = dt.datetime.now(dt.timezone.utc)
+                # thanks chat gpt
+                # loads messages from oldest to newest, starting from the most recent messages, up to max_tokens
+                sql = '''
+                WITH ranked AS (
+                    SELECT m.*,
+                        SUM(m.context_tokens) OVER (ORDER BY m.datetime DESC)
+                            AS running_total
+                    FROM   messages AS m
+                    WHERE  m.chat_id = ?
+                    ORDER  BY m.datetime DESC
+                )
+                SELECT *
+                FROM   ranked
+                WHERE  running_total <= ?
+                ORDER  BY datetime ASC;
+                '''
 
-                    if datetime.tzinfo is None:
-                        datetime = datetime.replace(tzinfo=dt.timezone.utc)
-                    else:
-                        datetime = datetime.astimezone(dt.timezone.utc)
-                    message.datetime = datetime
+                await cursor.execute(sql, (chat_id, max_tokens))
+                rows = await cursor.fetchall()
+                
+                for row_data in rows: 
+                    
+                    message = wrapper.MessageWrapper(
+                        chat_id=row_data['chat_id'],
+                        message_id=row_data['message_id'],
+                        role=row_data['role'],
+                        user=row_data['user'],
+                        message=row_data['message'],
+                        ping=False,
+                        reply_id=row_data['reply_id'] or '',
+                        datetime=row_data['datetime'],
+                    )
 
-                except ValueError: # Fallback for parsing errors
-                    message.datetime = dt.datetime.now(dt.timezone.utc)
+                    try:
+                        # Ensure datetime is timezone-aware UTC
+                        datetime_string = row_data['datetime']
+                        if isinstance(datetime_string, str):
+                            datetime = dt.datetime.fromisoformat(datetime_string)
+                        elif isinstance(datetime_string, dt.datetime):
+                            datetime = datetime_string
+                        else: # Fallback for unexpected types
+                            datetime = dt.datetime.now(dt.timezone.utc)
 
-                messages.append(message)
+                        if datetime.tzinfo is None:
+                            datetime = datetime.replace(tzinfo=dt.timezone.utc)
+                        else:
+                            datetime = datetime.astimezone(dt.timezone.utc)
+                        message.datetime = datetime
+
+                    except ValueError: # Fallback for parsing errors
+                        message.datetime = dt.datetime.now(dt.timezone.utc)
+
+                    messages.append(message)
 
         except Exception as e:
             _, _, tb = sys.exc_info()

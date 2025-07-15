@@ -24,12 +24,22 @@ class ImageWrapper(Wrapper):
         self.image_bytes: bytes = image_bytes or b''
 
         self.image_summary: str = kwargs.get('image_summary', '')
+        
+        self.content_tokens_precalculated: int = kwargs.get('content_tokens', False)
+        self.summary_tokens: int = kwargs.get('summary_tokens', 0)
 
     def content_tokens(self):
-        width = (self.x + 512 -1) // 512 # round up by adding 511
-        height = (self.y + 512 -1) // 512
+        if self.image_bytes is not None and self.content_tokens_precalculated:
+            return self.content_tokens_precalculated
+        
+        elif self.image_bytes is None and self.summary_tokens:
+            return self.summary_tokens
+        
+        else:
+            width = (self.x + 512 -1) // 512 # round up by adding 511
+            height = (self.y + 512 -1) // 512
 
-        return 85 + 170 * (height + width)
+            return 85 + 170 * (height + width)
     
     def to_dict(self):
         return {
@@ -39,6 +49,7 @@ class ImageWrapper(Wrapper):
             'image_bytes': self.image_bytes,
             'image_summary': self.image_summary,
             'content_tokens': self.content_tokens(),
+            'summary_tokens': len(tiktoken.encoding_for_model('gpt-4o').encode(self.image_summary)),
         }
 
 class MessageWrapper(Wrapper):

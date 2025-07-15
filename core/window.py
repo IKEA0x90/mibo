@@ -57,42 +57,19 @@ class Window():
         returns True if the window now contains the latest context.
         '''
         async with self._lock:
-            message_datetime = message.datetime
+            is_new = message.datetime >= self.start_datetime
 
-            if not self.ready:
-                if message_datetime < self.start_datetime:
-                    self._stale_buffer.append(message)
-                    return False
-                else:
-                    await self._finalize_stale_collection()
-                    self.ready = True
-
-                    response = assistant_events.AssistantReadyPush(event_id=event_id)
-                    await bus.emit(response)
-
+            # always keep the message for context
             await self._insert_live_message(message)
-            return True
 
-    async def _finalize_stale_collection(self) -> None:
-        # Sort by datetime descending (latest first)
-        sorted_buffer = sorted(
-            self._stale_buffer,
-            key=lambda msg: msg.datetime,
-            reverse=True
-        )
+            # if this is the first non‑stale message after start‑up
+            # mark the window ready and broadcast.
+            if not self.ready and is_new:
+                self.ready = True
+                await bus.emit(assistant_events.AssistantReadyPush(event_id=event_id))
 
-        # TODO - process context tokens and content tokens separately
-
-        token_sum = 0
-        for msg in sorted_buffer:
-            msg_tokens = await msg.tokens()
-            if token_sum + msg_tokens > self.max_context_tokens:
-                continue
-            self.messages.append(msg)
-            token_sum += msg_tokens
-
-        self.tokens = token_sum
-        self._stale_buffer.clear()
+            # assistant should respond only for new messages *after* ready.
+            return is_new and self.ready
 
     async def _insert_live_message(self, message: wrapper.MessageWrapper) -> None:
         message_tokens = await message.tokens()
