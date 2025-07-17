@@ -3,9 +3,10 @@ import asyncio
 import aiosqlite
 import sqlite3
 import sys
-
+import aiofiles
 import datetime as dt
 
+from pathlib import Path
 from uuid import uuid4
 from typing import List
 from events import event_bus, db_events, conductor_events, system_events
@@ -17,6 +18,9 @@ class Database:
         self.path = db_path
         self.db_path = os.path.join(db_path, 'mibo.db')
         self.image_path = os.path.join(db_path, 'images')
+
+        self.db_path = Path(self.db_path)
+        self.image_path = Path(self.image_path)
 
         self.bus = bus
         self.conn = None 
@@ -40,12 +44,12 @@ class Database:
             
             conn.close()
             
-            return [wrapper.ChatWrapper(row['chat_id'], row['chat_name'],
-                                        row['custom_instructions'], row['chance'], 
-                                        row['max_tokens'], row['max_response_tokens'], 
-                                        row['frequency_penalty'], row['presence_penalty']) 
-                                        for row in rows]
-        
+            return [wrapper.ChatWrapper(id=row['chat_id'], name=row['chat_name'],
+                                        custom_instructions=row['custom_instructions'], chance=row['chance'],
+                                        max_tokens=row['max_tokens'], max_response_tokens=row['max_response_tokens'],
+                                        frequency_penalty=row['frequency_penalty'], presence_penalty=row['presence_penalty'])
+                    for row in rows]
+
         except Exception as e:
             _, _, tb = sys.exc_info()
             self.bus.emit_sync(system_events.ErrorEvent(error="Hmm.. Can't read your group chats from the database.", e=e, tb=tb))
@@ -209,7 +213,7 @@ class Database:
             if not row:
                 await self.insert_chat(chat_id, chat_name)
                 chat = wrapper.ChatWrapper(
-                    chat_id=chat_id, chat_name=chat_name,
+                    id=chat_id, name=chat_name,
                     custom_instructions='', chance=tools.Tool.CHANCE,
                     max_tokens=tools.Tool.MAX_TOKENS, max_response_tokens=tools.Tool.MAX_RESPONSE_TOKENS,
                     frequency_penalty=tools.Tool.FREQUENCY_PENALTY, presence_penalty=tools.Tool.PRESENCE_PENALTY
@@ -217,7 +221,7 @@ class Database:
 
             else:
                 chat = wrapper.ChatWrapper(
-                    chat_id=row['chat_id'], chat_name=row['chat_name'],
+                    id=row['chat_id'], name=row['chat_name'],
                     custom_instructions=row['custom_instructions'], chance=row['chance'],
                     max_tokens=row['max_tokens'], max_response_tokens=row['max_response_tokens'],
                     frequency_penalty=row['frequency_penalty'], presence_penalty=row['presence_penalty'],
@@ -227,7 +231,8 @@ class Database:
             for w in wrappers:
                 if isinstance(w, wrapper.ImageWrapper):
                     if not w.image_path:
-                        self._save_image(w)
+                        filepath = await self._save_image(w)
+                        w.image_path = filepath
 
             for w in wrappers:
                 if isinstance(w, wrapper.Wrapper):
@@ -456,15 +461,15 @@ class Database:
             response = db_events.MemoryResponse(chat_id=chat_id, messages=messages, event_id=event.event_id)
             await self.bus.emit(response)
 
-    def _save_image(self, image: wrapper.ImageWrapper) -> str:
-        '''
-        Saves the image to disk and assigns its path to the wrapper
-        '''
-        path = f'{self.image_path}/{image.chat_id}'
-        os.makedirs(path, exist_ok=True)
-        filepath = f'{path}/{uuid4().hex}.jpg'
+    async def _save_image(self, image: wrapper.ImageWrapper) -> str:
+        chat_dir = self.image_path / str(image.chat_id)
+        await asyncio.to_thread(chat_dir.mkdir, parents=True, exist_ok=True)
 
-        with open(filepath, 'wb') as f:
-            f.write(image.data or b'')
+        filepath = chat_dir / f"{uuid4().hex}.jpg"
+        data = image.image_bytes or b""
 
-        image.filepath = filepath
+        async with aiofiles.open(filepath, "wb") as f:
+            await f.write(data)
+
+        image.image_path = str(filepath)
+        return image.image_path

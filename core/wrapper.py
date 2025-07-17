@@ -68,8 +68,8 @@ class Wrapper():
 
 @register_wrapper
 class MessageWrapper(Wrapper):
-    def __init__(self, message_id: str, chat_id: str, role: str = 'assistant', user: str = None, message: str = '', ping: bool = True, **kwargs):
-        super().__init__(message_id, chat_id, datetime=kwargs.get('datetime', None))
+    def __init__(self, id: str, chat_id: str, role: str = 'assistant', user: str = None, message: str = '', ping: bool = True, **kwargs):
+        super().__init__(id, chat_id, datetime=kwargs.get('datetime', None))
         
         self.chat_name: str = kwargs.get('chat_name', '')
         self.role: str = role or 'assistant'
@@ -123,8 +123,8 @@ class MessageWrapper(Wrapper):
 
 @register_wrapper
 class ImageWrapper(Wrapper):
-    def __init__(self, image_id: str, chat_id: str, x: int, y: int, image_bytes: Optional[bytes] = None, image_path: Optional[str] = None, **kwargs):
-        super().__init__(image_id, chat_id, datetime=kwargs.get('datetime', None))
+    def __init__(self, id: str, chat_id: str, x: int, y: int, image_bytes: Optional[bytes] = None, image_path: Optional[str] = None, **kwargs):
+        super().__init__(id, chat_id, datetime=kwargs.get('datetime', None))
         self.x = x or 0
         self.y = y or 0
 
@@ -171,8 +171,8 @@ class ImageWrapper(Wrapper):
 
 @register_wrapper  
 class PollWrapper(Wrapper):
-    def __init__(self, poll_id: str, chat_id: str, question: str, options: List[str], multiple_choice: bool, correct_option_idx: int = 0, explanation: str = '', **kwargs):
-        super().__init__(poll_id, chat_id, datetime=kwargs.get('datetime', None))
+    def __init__(self, id: str, chat_id: str, question: str, options: List[str], multiple_choice: bool, correct_option_idx: int = 0, explanation: str = '', **kwargs):
+        super().__init__(id, chat_id, datetime=kwargs.get('datetime', None))
 
         self.question: str = question or ''
         self.options: List[str] = options or []
@@ -210,10 +210,12 @@ class PollWrapper(Wrapper):
         return rstr
     
 class ChatWrapper():
-    def __init__(self, chat_id: str, chat_name: str, **kwargs):
-        self.id: str = str(chat_id)
+    def __init__(self, id: str, name: str, **kwargs):
+        self.id: str = str(id)
         self.chat_id = self.id
-        self.chat_name: str = chat_name
+
+        self.name = str(name)
+        self.chat_name: str = name
 
         self.custom_instructions: str = kwargs.get('custom_instructions', '')
         self.chance: int = kwargs.get('chance', tools.Tool.CHANCE)

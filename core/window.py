@@ -93,7 +93,7 @@ class Window():
     async def _trim_excess_tokens(self) -> None:
         while self.tokens > self.max_tokens and self.messages:
             oldest_msg = self.messages.popleft()
-            oldest_tokens = await oldest_msg.tokens
+            oldest_tokens = oldest_msg.tokens
             self.tokens -= oldest_tokens
 
     async def transform_messages(self) -> List[Dict[str, object]]:
@@ -109,6 +109,10 @@ class Window():
 
             if isinstance(message, wrapper.MessageWrapper):
                 message: wrapper.MessageWrapper
+
+                if not message.message:
+                    continue
+
                 text = message.message if message.role == 'assistant' else str(message)
                 if text:
                     content.append({"type": "text", "text": text})
@@ -122,6 +126,8 @@ class Window():
                     content.append({"type": "text", "text": f"|IMAGE|{message.image_summary or '|IMAGE|Image content not available.'}"})
 
             # For OpenAI chat completions, each message is a dict with 'role' and 'content'
+
+            #TODO doesn't work, make message.role a parent field
             m = {"role": message.role, "content": content}
             
             messages.append(m)

@@ -145,12 +145,18 @@ class Assistant:
         '''
         if not self.messages.ready:
             return False
-        if message.ping:
+
+        if isinstance(message, wrapper.MessageWrapper):
+            if message.ping:
+                return True
+            chance = random.randint(1, 100)
+            if chance <= self.chance:
+                return True
+            return False
+        
+        #TODO no way to detect if a photo has a ping - link text to photo
+        if isinstance(message, wrapper.ImageWrapper):
             return True
-        chance = random.randint(1, 100)
-        if chance <= self.chance:
-            return True
-        return False
 
     async def _add_message(self, event: conductor_events.AssistantRequest):
         '''
@@ -158,17 +164,18 @@ class Assistant:
         Adds the message to the window.
         Triggers _trigger_completion().
         '''
-        if event.chat_id != self.chat_id:
-            return
-        
-        await self.messages.add_message(event.event_id, event.message, self.bus)
-        run = await self._check_conditions(event.message)
-        if run:
-            typing = event.typing
-            typing()
+        for message in event.messages:
+            if event.chat_id != self.chat_id:
+                return
 
-            ev = assistant_events.AssistantDirectRequest(message=event.message, event_id=event.event_id, system=event.system)
-            await self.bus.emit(ev)
+            await self.messages.add_message(event.event_id, message, self.bus)
+            run = await self._check_conditions(message)
+            if run:
+                typing = event.typing
+                typing()
+
+                ev = assistant_events.AssistantDirectRequest(message=message, event_id=event.event_id, system=event.system)
+                await self.bus.emit(ev)
 
     async def _trigger_completion(self, event: assistant_events.AssistantDirectRequest):
         '''
@@ -260,7 +267,7 @@ class Assistant:
                 wrapper_list = []
 
                 assistant_message = wrapper.MessageWrapper(
-                    message_id=str(response.id), chat_id=self.chat_id, 
+                    id=str(response.id), chat_id=self.chat_id, 
                     role='assistant', user=tools.Tool.MIBO,
                     message=message_text, ping=False,
                     datetime=dt.datetime.now(tz=dt.timezone.utc)
@@ -270,7 +277,7 @@ class Assistant:
                 # Add images to content_list
                 for img in images:
                     if 'image_url' in img:
-                        incomplete_wrapper = wrapper.ImageWrapper(image_id=str(response.id), chat_id=self.chat_id, x=0, y=0)
+                        incomplete_wrapper = wrapper.ImageWrapper(id=str(response.id), chat_id=self.chat_id, x=0, y=0)
                         image = await self._download_image_url(img['image_url'], incomplete_wrapper=incomplete_wrapper, parent_event=event)
                         wrapper_list.append(image)
 
@@ -369,6 +376,7 @@ class CatAssistant(Assistant):
             self.bus.emit(ev)
         
         message = wrapper.MessageWrapper(
+            id=None,
             chat_id=self.chat_id,
             role='assistant',
             user=tools.Tool.CAT_ASSISTANT,

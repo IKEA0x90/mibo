@@ -98,10 +98,10 @@ class Conductor:
                 
             datetime: dt.datetime = message.date.astimezone(dt.timezone.utc)
 
-            message_wrapper = wrapper.MessageWrapper(message_id=message_id, chat_id=chat_id, role=role, user=user, message=message_text, ping=ping, reply_id=reply_id, datetime=datetime, chat_name=chat_name)
+            message_wrapper = wrapper.MessageWrapper(id=message_id, chat_id=chat_id, role=role, user=user, message=message_text, ping=ping, reply_id=reply_id, datetime=datetime, chat_name=chat_name)
             content = await self._look_for_content(update, context, event)
 
-            wrappers = [message_wrapper] + content
+            wrappers = ([message_wrapper] if message_wrapper.message else []) + content
             push_request = conductor_events.WrapperPush(wrappers, chat_id=chat_id, event_id=event.event_id)
             
             chat_response = await self.bus.wait(push_request, db_events.NewChatAck)
@@ -110,7 +110,7 @@ class Conductor:
             push_request = conductor_events.NewChatPush(chat_wrapper, event_id=event.event_id)
             await self.bus.wait(push_request, mibo_events.AssistantCreated)
 
-            await self.bus.emit(conductor_events.AssistantRequest(chat_id=chat_id, message=message_wrapper, event_id=event.event_id, typing=event.typing, system=system_message))
+            await self.bus.emit(conductor_events.AssistantRequest(chat_id=chat_id, messages=wrappers, event_id=event.event_id, typing=event.typing, system=system_message))
 
         except Exception as e:
             _, _, tb = sys.exc_info()
@@ -154,7 +154,7 @@ class Conductor:
 
             # Resize and get image bytes asynchronously
             async def process_image(img_bytes):
-                def sync_process():
+                def sync_process(img_bytes):
                     with Image.open(BytesIO(img_bytes)) as img:
                         # Resize the image keeping aspect ratio, with max dimension of 768px
                         width, height = img.size
@@ -179,15 +179,14 @@ class Conductor:
                         img.save(buffered, format='JPEG', quality=85)
                         img_bytes = buffered.getvalue()
                         
-                    wrap = wrapper.ImageWrapper(new_width, new_height, img_bytes)
+                    wrap = wrapper.ImageWrapper(id=message.id, chat_id=chat.id, x=new_width, y=new_height, image_bytes=img_bytes)
                     return wrap
                 
                 return await asyncio.to_thread(sync_process, img_bytes)
             
             images = await asyncio.gather(*[process_image(img_bytes) for img_bytes in file_bytes])
 
-            image_wrappers = [wrapper.ImageWrapper(message.id, chat.id, image.x, image.y, image.image_bytes) for image in images]
-            return image_wrappers
+            return images
         
         except Exception as e:
             _, _, tb = sys.exc_info()
