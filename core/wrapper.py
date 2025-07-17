@@ -1,61 +1,50 @@
+import base64
+from pyparsing import Optional
 import tiktoken
-import uuid
 import re
 
 import datetime as dt
-from typing import List
+from typing import Any, Dict, List, Literal
 
 from services import tools
 
+wrapper_types = Literal['message', 'image']
+
 class Wrapper():
-    def __init__(self, id: str = None):
-        self.id: str = str(id) if id is not None else str(uuid.uuid4())
+    def __init__(self, id: str, chat_id: str, type: wrapper_types, datetime: dt.datetime = None):
+        self.id: str = str(id)
+        self.chat_id: str = str(chat_id)
+        self.type: wrapper_types = str(type)
 
-    def to_dict(self):
+        self.tokens: int = 0
+
+        try:
+            self.datetime: dt.datetime = datetime.astimezone(dt.timezone.utc)
+        except Exception:
+            self.datetime = dt.datetime.now(tz=dt.timezone.utc)
+
+    def to_parent_dict(self) -> Dict[str, Any]:
+        '''
+        Common meta row for the parent wrappers table
+        '''
         return {
-            'id': self.id,
+            'telegram_id': self.id,
+            'chat_id': self.chat_id,
+            'wrapper_type': self.type,
+            'datetime': self.datetime,
+            'tokens': self.tokens,
         }
 
-class ImageWrapper(Wrapper):
-    def __init__(self, x: int, y: int, image_bytes: bytes, **kwargs):
-        super().__init__()
-        self.x = x or 0
-        self.y = y or 0
-        self.image_bytes: bytes = image_bytes or b''
+    def to_child_dict(self) -> Dict[str, Any]:
+        raise NotImplementedError("Subclasses should implement this method to return child-specific data.")
 
-        self.image_summary: str = kwargs.get('image_summary', '')
-        
-        self.content_tokens_precalculated: int = kwargs.get('content_tokens', False)
-        self.summary_tokens: int = kwargs.get('summary_tokens', 0)
-
-    def content_tokens(self):
-        if self.image_bytes is not None and self.content_tokens_precalculated:
-            return self.content_tokens_precalculated
-        
-        elif self.image_bytes is None and self.summary_tokens:
-            return self.summary_tokens
-        
-        else:
-            width = (self.x + 512 -1) // 512 # round up by adding 511
-            height = (self.y + 512 -1) // 512
-
-            return 85 + 170 * (height + width)
-    
-    def to_dict(self):
-        return {
-            'image_id': self.id,
-            'x': self.x,
-            'y': self.y,
-            'image_bytes': self.image_bytes,
-            'image_summary': self.image_summary,
-            'content_tokens': self.content_tokens(),
-            'summary_tokens': len(tiktoken.encoding_for_model('gpt-4o').encode(self.image_summary)),
-        }
+    def calculate_tokens(self):
+        raise NotImplementedError("Subclasses should implement this method to calculate tokens.")
 
 class MessageWrapper(Wrapper):
-    def __init__(self, chat_id: str, message_id: str = None, role: str = 'assistant', user: str = None, message: str = '', ping: bool = True, reply_id: str = '', datetime: dt.datetime = None, **kwargs):
-        super().__init__(message_id)
-        self.chat_id: str = str(chat_id)
+    def __init__(self, message_id: str, chat_id: str, role: str = 'assistant', user: str = None, message: str = '', ping: bool = True, reply_id: str = '', **kwargs):
+        super().__init__(message_id, chat_id, type='message', datetime=kwargs.get('datetime', None))
+        
         self.chat_name: str = kwargs.get('chat_name', '')
         self.role: str = role or 'assistant'
         self.user: str = user or tools.Tool.MIBO
@@ -63,28 +52,16 @@ class MessageWrapper(Wrapper):
         self.reactions: List[str] = kwargs.get('reactions', [])
 
         self.message: str = message or ''
-        self.content_list: List[Wrapper] = []
 
         self.ping: bool = ping
         self.reply_id: str = str(reply_id or '') 
 
-        try:
-            self.datetime: dt.datetime = datetime.astimezone(dt.timezone.utc)
-        except Exception:
-            self.datetime = dt.datetime.now(tz=dt.timezone.utc)
-
-    def to_dict(self):
+    def to_child_dict(self):
         return {
-            'message_id': self.id,
-            'chat_id': self.chat_id,
             'role': self.role,
             'user': self.user,
-            'reactions': self.reactions,
             'message': self.message,
-            'context_tokens': self.context_tokens(),
-            'content_tokens': self.content_tokens(),
             'reply_id': self.reply_id,
-            'datetime': self.datetime,
         }
 
     def __str__(self):
@@ -103,45 +80,74 @@ class MessageWrapper(Wrapper):
             text2 = re.sub(pattern, '', text, flags=re.IGNORECASE)
 
         return text2
-
-    def add_content(self, content: Wrapper):
-        self.content_list.append(content)
-
-    def get_images(self) -> List[ImageWrapper]:
-        return [c for c in self.content_list if isinstance(c, ImageWrapper)]
     
-    def context_tokens(self, model='gpt-4o'):
+    def calculate_tokens(self, model='gpt-4o'):
         encoding = tiktoken.encoding_for_model(model)
         tokens = len(encoding.encode(str(self)))
         return tokens
-    
-    def content_tokens(self, model='gpt-4o'):
-        # this works in py 3.12+ but runs sequentially.
-        # c.content_tokens() runs fast enough for that not to be a problem.
-        content_tokens = sum([c.content_tokens() for c in self.content_list])
 
-        return content_tokens
+class ImageWrapper(Wrapper):
+    def __init__(self, image_id: str, chat_id: str, x: int, y: int, image_bytes: Optional[bytes] = None, image_path: Optional[str] = None, **kwargs):
+        super().__init__(image_id, chat_id, type='image', datetime=kwargs.get('datetime', None))
+        self.x = x or 0
+        self.y = y or 0
+
+        self.image_bytes: bytes = image_bytes or b''
+        self.image_path: str = image_path or ''
+
+        self.image_summary: str = kwargs.get('image_summary', '')
+        
+        self.content_tokens_precalculated: int = kwargs.get('content_tokens', False)
+        self.summary_tokens: int = kwargs.get('summary_tokens', 0)
+
+    def calculate_tokens(self):
+        if self.image_bytes is not None and self.content_tokens_precalculated:
+            return self.content_tokens_precalculated
+        
+        elif self.image_bytes is None and self.summary_tokens:
+            return self.summary_tokens
+        
+        else:
+            width = (self.x + 512 -1) // 512 # round up by adding 511
+            height = (self.y + 512 -1) // 512
+
+            return 85 + 170 * (height + width)
     
-class ChatWrapper(Wrapper):
-    def __init__(self, chat_id: str, chat_name: str, custom_instructions: str, chance: int, max_context_tokens: int, max_content_tokens: int, max_response_tokens: int, frequency_penalty: float, presence_penalty: float):
-        super().__init__(chat_id)
+    def get_base64(self) -> str:
+        '''
+        Get the base64 of the image bytes.
+        '''
+        if not self.image_bytes:
+            return ''
+        return base64.b64encode(self.image_bytes).decode('utf-8')
+
+    def to_child_dict(self):
+        return {
+            'x': self.x,
+            'y': self.y,
+            'image_path': self.image_path,
+            'image_summary': self.image_summary,
+        }
+    
+class ChatWrapper():
+    def __init__(self, chat_id: str, chat_name: str, **kwargs):
+        self.id: str = str(chat_id)
         self.chat_name: str = chat_name
-        self.custom_instructions: str = custom_instructions or ''
-        self.chance: int = chance or 5
-        self.max_context_tokens: int = max_context_tokens or tools.Tool.MAX_CONTENT_TOKENS
-        self.max_content_tokens: int = max_content_tokens or tools.Tool.MAX_CONTENT_TOKENS
-        self.max_response_tokens: int = max_response_tokens or tools.Tool.MAX_RESPONSE_TOKENS
-        self.frequency_penalty: float = frequency_penalty or tools.Tool.FREQUENCY_PENALTY
-        self.presence_penalty: float = presence_penalty or tools.Tool.PRESENCE_PENALTY
+
+        self.custom_instructions: str = kwargs.get('custom_instructions', '')
+        self.chance: int = kwargs.get('chance', tools.Tool.CHANCE)
+        self.max_tokens: int = kwargs.get('max_tokens', tools.Tool.MAX_TOKENS)
+        self.max_response_tokens: int = kwargs.get('max_response_tokens', tools.Tool.MAX_RESPONSE_TOKENS)
+        self.frequency_penalty: float = kwargs.get('frequency_penalty', tools.Tool.FREQUENCY_PENALTY)
+        self.presence_penalty: float = kwargs.get('presence_penalty', tools.Tool.PRESENCE_PENALTY)
 
     def to_dict(self):
         return {
-            'chat_id': self.chat_id,
+            'id': self.chat_id,
             'chat_name': self.chat_name,
             'custom_instructions': self.custom_instructions,
             'chance': self.chance,
-            'max_context_tokens': self.max_context_tokens,
-            'max_content_tokens': self.max_content_tokens,
+            'max_tokens': self.max_tokens,
             'max_response_tokens': self.max_response_tokens,
             'frequency_penalty': self.frequency_penalty,
             'presence_penalty': self.presence_penalty,

@@ -41,8 +41,7 @@ class Tool:
 
     try:
         CHANCE = int(os.environ['CHANCE'])
-        MAX_CONTEXT_TOKENS = int(os.environ['MAX_CONTEXT_TOKENS'])
-        MAX_CONTENT_TOKENS = int(os.environ['MAX_CONTENT_TOKENS'])
+        MAX_TOKENS = int(os.environ['MAX_TOKENS'])
         MAX_RESPONSE_TOKENS = int(os.environ['MAX_RESPONSE_TOKENS'])
         FREQUENCY_PENALTY = float(os.environ['FREQUENCY_PENALTY'])
         PRESENCE_PENALTY = float(os.environ['PRESENCE_PENALTY'])
@@ -65,15 +64,6 @@ class Tool:
             return Tool.PROPERTY_ASSISTANT_EVENT
         elif assistant_type == Tool.MEMORY_ASSISTANT:
             return Tool.MEMORY_ASSISTANT_EVENT
-        
-    @staticmethod
-    async def create_image(prompt: str, ) -> str:
-        '''
-        Create an image and given 
-        '''
-        moderation = 'low'
-        model="gpt-image-1"
-        pass
 
     @staticmethod
     def replacers(original: str) -> str:
@@ -85,19 +75,3 @@ class Tool:
         message = original.replace('—', ' - ') 
 
         return message
-
-    @staticmethod
-    async def create_poll(question: str, options: list, multiple_choice: bool = False):
-        pass
-
-    @staticmethod
-    async def send_sticker(key_emoji: str):
-        pass
-
-    @staticmethod
-    async def change_property(property_name: str, value):
-        pass
-
-    @staticmethod
-    async def memorize_key_information(key: str, information: str):
-        pass

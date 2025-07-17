@@ -60,10 +60,10 @@ class Mibo:
         memory_assistant = self.client.beta.assistants.retrieve(tools.Tool.MEMORY_ASSISTANT_ID).to_dict()
 
         self.templates = {'template': template_assistant,
-                    'cat_template': cat_assistant, 
-                    'image_template': image_assistant, 
+                    'cat_template': cat_assistant,
+                    'image_template': image_assistant,
                     'poll_template': poll_assistant, 
-                    'property_template': property_assistant, 
+                    'property_template': property_assistant,
                     'memory_template': memory_assistant}
 
         self.assistants = assistant.initialize_assistants(self.db, self.client, self.bus, self.templates, self.start_datetime)
@@ -229,8 +229,12 @@ class Mibo:
         '''
         Parses a message and calls the correct responder.
         '''
-        chat_id = str(event.message.chat_id)
-        message: wrapper.MessageWrapper = event.message
+        messages: wrapper.Wrapper = event.messages
+
+        if not messages:
+            return
+        
+        chat_id = messages[0].chat_id
 
         task = self.typing_tasks.pop(chat_id, None)
         if task and not task.done():
@@ -240,22 +244,19 @@ class Mibo:
             except asyncio.CancelledError:
                 pass
 
-        message_text: str = message._remove_prefix(message.message)
-        message_images: List[wrapper.ImageWrapper] = message.get_images()
-        message_sticker: wrapper.StickerWrapper = message.get_sticker()
-        message_poll: wrapper.PollWrapper = message.get_poll()
+        message_text: str = ''
+        message_images: List[wrapper.ImageWrapper] = []
+
+        for message in messages:
+            if isinstance(message, wrapper.MessageWrapper):
+                message_text: str = message._remove_prefix(message.message)
+
+            if isinstance(message, wrapper.ImageWrapper):
+                message_images.append(message)
 
         if message_text or message_images:
             response = mibo_events.MiboMessageResponse(chat_id, message_text, message_images)
             await self.bus.emit(response)
-
-        if message_sticker:
-            response = system_events.ErrorEvent(error='Stickers are not supported yet.', e=NotImplementedError("Stickers are not supported yet."), tb=None, event_id=event.event_id, chat_id=chat_id)
-            await self.bus.emit(response)
-
-        if message_poll:
-            response = mibo_events.MiboPollResponse(chat_id, message_poll)
-            await self.bus.emit(response)    
         
     @staticmethod
     def parse_text(text: str) -> List[str]:
@@ -296,7 +297,7 @@ class Mibo:
         if text_list and not images:
             for t in text_list:
                 await self.app.bot.send_message(chat_id=chat_id, text=t)
-                await asyncio.sleep(0.05 * len(t)) # average of 0.5 for 10 characters and 5 for 100 characters
+                await asyncio.sleep(self.typing_delay(t)) # average of 0.5 for 10 characters and 5 for 100 characters
             return
 
         # If only images
@@ -317,7 +318,17 @@ class Mibo:
 
             for t in text_list[1:]:
                 await self.app.bot.send_message(chat_id=chat_id, text=t)
-                await asyncio.sleep(random.uniform(0.5, 3))
+                await asyncio.sleep(self.typing_delay(t))
+
+    def typing_delay(self, text: str):
+        length = len(text)
+        avg_cpm = 500
+        jitter_sd = 0.08
+        # Ramp from 0 to 0.3 seconds over the first 16 characters
+        reaction = random.uniform(0.0, 0.3) * min(length, 16) / 16
+        base = (60.0 / avg_cpm) * length
+        multiplier = max(0.2, random.gauss(1.0, jitter_sd))
+        return max(0.0, reaction + base * multiplier)
 
     async def _handle_exception(self, event: system_events.ErrorEvent) -> None:
         '''
