@@ -7,13 +7,20 @@ from typing import Any, Dict, List, Literal, Optional
 
 from services import tools
 
-wrapper_types = Literal['message', 'image', 'poll']
+# make a dictionary for all possible wrappers
+WRAPPER_REGISTRY = {}
+def register_wrapper(cls):
+    type_name = cls.__name__.replace('Wrapper', '').lower() # type is the class name without 'Wrapper'
+    cls.type = type_name # this only assigns type to the class, not to the instance
+    WRAPPER_REGISTRY[type_name] = cls
+    return cls
 
+@register_wrapper
 class Wrapper():
-    def __init__(self, id: str, chat_id: str, type: wrapper_types, datetime: dt.datetime = None):
+    def __init__(self, id: str, chat_id: str, datetime: dt.datetime = None):
         self.id: str = str(id)
         self.chat_id: str = str(chat_id)
-        self.type: wrapper_types = str(type)
+        self.type = self.__class__.type # this assigns type to the instance
 
         self.tokens: int = 0
 
@@ -33,16 +40,36 @@ class Wrapper():
             'datetime': self.datetime,
             'tokens': self.tokens,
         }
+    
+    @classmethod
+    def from_db_row(cls, parent_row, child_row):
+        combined_data = {**parent_row, **child_row}
+        
+        constructor_params = {
+            'id': combined_data.get('telegram_id'),
+            'chat_id': combined_data.get('chat_id'),
+            'datetime': combined_data.get('datetime'),
+            'tokens': combined_data.get('tokens', 0)
+        }
+    
+        constructor_params.update(child_row)
+        
+        return cls(**constructor_params)
 
     def to_child_dict(self) -> Dict[str, Any]:
         raise NotImplementedError("Subclasses should implement this method to return child-specific data.")
+    
+    @classmethod
+    def get_child_fields(cls):
+        raise NotImplementedError("Subclasses should implement this method to return child field names.")
 
     def calculate_tokens(self):
         raise NotImplementedError("Subclasses should implement this method to calculate tokens.")
 
+@register_wrapper
 class MessageWrapper(Wrapper):
-    def __init__(self, message_id: str, chat_id: str, role: str = 'assistant', user: str = None, message: str = '', ping: bool = True, reply_id: str = '', **kwargs):
-        super().__init__(message_id, chat_id, type='message', datetime=kwargs.get('datetime', None))
+    def __init__(self, message_id: str, chat_id: str, role: str = 'assistant', user: str = None, message: str = '', ping: bool = True, **kwargs):
+        super().__init__(message_id, chat_id, datetime=kwargs.get('datetime', None))
         
         self.chat_name: str = kwargs.get('chat_name', '')
         self.role: str = role or 'assistant'
@@ -53,7 +80,10 @@ class MessageWrapper(Wrapper):
         self.message: str = message or ''
 
         self.ping: bool = ping
-        self.reply_id: str = str(reply_id or '') 
+
+        self.reply_id: str = kwargs.get('reply_id', None)
+        self.quote_start: int = kwargs.get('quote_start', None)
+        self.quote_end: int = kwargs.get('quote_end', None)
 
     def to_child_dict(self):
         return {
@@ -61,7 +91,13 @@ class MessageWrapper(Wrapper):
             'user': self.user,
             'message': self.message,
             'reply_id': self.reply_id,
+            'quote_start': self.quote_start,
+            'quote_end': self.quote_end,
         }
+    
+    @classmethod
+    def get_child_fields(cls):
+        return ['role', 'user', 'message', 'reply_id', 'quote_start', 'quote_end']
 
     def __str__(self):
         return f'{self.user}: {self._remove_prefix(self.message)}'
@@ -85,9 +121,10 @@ class MessageWrapper(Wrapper):
         tokens = len(encoding.encode(str(self)))
         return tokens
 
+@register_wrapper
 class ImageWrapper(Wrapper):
     def __init__(self, image_id: str, chat_id: str, x: int, y: int, image_bytes: Optional[bytes] = None, image_path: Optional[str] = None, **kwargs):
-        super().__init__(image_id, chat_id, type='image', datetime=kwargs.get('datetime', None))
+        super().__init__(image_id, chat_id, datetime=kwargs.get('datetime', None))
         self.x = x or 0
         self.y = y or 0
 
@@ -128,9 +165,14 @@ class ImageWrapper(Wrapper):
             'image_summary': self.image_summary,
         }
     
+    @classmethod
+    def get_child_fields(cls):
+        return ['x', 'y', 'image_path', 'image_summary']
+
+@register_wrapper  
 class PollWrapper(Wrapper):
     def __init__(self, poll_id: str, chat_id: str, question: str, options: List[str], multiple_choice: bool, correct_option_idx: int = 0, explanation: str = '', **kwargs):
-        super().__init__(poll_id, chat_id, type='poll', datetime=kwargs.get('datetime', None))
+        super().__init__(poll_id, chat_id, datetime=kwargs.get('datetime', None))
 
         self.question: str = question or ''
         self.options: List[str] = options or []
@@ -155,10 +197,14 @@ class PollWrapper(Wrapper):
             'explanation': self.explanation,
         }
     
+    @classmethod
+    def get_child_fields(cls):
+        return ['question', 'options', 'multiple_choice', 'correct_option_idx', 'explanation']
+
     def __str__(self):
         rstr = []
-        rstr.append(f'|POLL{"(multiple choice)|" if self.multiple_choice else "|"}: {self.question}\n')
-        rstr.append('Options:\n')
+        rstr.append(f'|POLL|{self.question}\n')
+        rstr.append(f'Options {"(multiple choice)|" if self.multiple_choice else "|"}:\n')
         for i, option in enumerate(self.options):
             rstr.append(f"{i+1}. {option}")
         return rstr

@@ -277,6 +277,8 @@ class Database:
                 user      TEXT NOT NULL,
                 message   TEXT NOT NULL,
                 reply_id  INTEGER,
+                quote_start INTEGER,
+                quote_end INTEGER,
                 FOREIGN KEY (sql_id) REFERENCES wrappers (sql_id) ON DELETE CASCADE
             );
             ''',
@@ -384,80 +386,66 @@ class Database:
                 await self.bus.emit(response)
                 return
 
-            # split ids by type for child fetches
-            msg_sql_ids = [r['sql_id'] for r in parent_rows if r['wrapper_type'] == 'message']
-            img_sql_ids = [r['sql_id'] for r in parent_rows if r['wrapper_type'] == 'image']
+            sql_ids = {}
+            for r in parent_rows:
+                wrapper_type = r['wrapper_type']
+                if wrapper_type not in sql_ids:
+                    sql_ids[wrapper_type] = []
+                sql_ids[wrapper_type].append(r['sql_id'])
 
-            msg_map = {}
-            img_map = {}
-
+            tables = {}
             async with self.conn.cursor() as cursor:
-                if msg_sql_ids:
-                    question_marks = ','.join('?' for _ in msg_sql_ids) # the correct number of ? for the query
-                    await cursor.execute(f'''
-                        SELECT sql_id, role, user, message, reply_id
-                        FROM messages
-                        WHERE sql_id IN ({question_marks})
-                    ''', msg_sql_ids)
-                    for row in await cursor.fetchall():
-                        msg_map[row['sql_id']] = row
+                for wrapper_type, sql_ids in sql_ids.items():
+                    wrapper_class = wrapper.WRAPPER_REGISTRY.get(wrapper_type)
+                    if not wrapper_class or not sql_ids:
+                        continue
+                    
+                    table = f"{wrapper_type}s"
+                    child_fields = wrapper_class.get_child_fields()
 
-                if img_sql_ids:
-                    question_marks = ','.join('?' for _ in img_sql_ids)
-                    await cursor.execute(f'''
-                        SELECT sql_id, x, y, image_path, image_summary
-                        FROM images
-                        WHERE sql_id IN ({question_marks})
-                    ''', img_sql_ids)
-                    for row in await cursor.fetchall():
-                        img_map[row['sql_id']] = row
+                    placeholder_marks = ','.join('?' for _ in sql_ids)
+                    child_query_sql = f"SELECT sql_id, {', '.join(child_fields)} FROM {table} WHERE sql_id IN ({placeholder_marks})"
+                    
+                    await cursor.execute(child_query_sql, sql_ids)
+                    child_rows = await cursor.fetchall()
+                    
+                    tables[wrapper_type] = {
+                        child_row['sql_id']: dict(child_row) for child_row in child_rows
+                    }
 
-            for row_data in parent_rows:
-                wrapper_type = row_data['wrapper_type']
-                datetime_raw = row_data['datetime']
-
+            for parent_row in parent_rows:
+                wrapper_type = parent_row['wrapper_type']
+                sql_id = parent_row['sql_id']
+                
+                wrapper_class = wrapper.WRAPPER_REGISTRY.get(wrapper_type)
+                if not wrapper_class:
+                    continue 
+                    
+                child_data = tables.get(wrapper_type, {})
+                child_row = child_data.get(sql_id, {})
+                
+                if not child_row:
+                    continue
+                
+                parent_dict = dict(parent_row)
+                
+                datetime_raw = parent_dict['datetime']
                 if isinstance(datetime_raw, dt.datetime):
-                    datetime = datetime_raw.astimezone(dt.timezone.utc)
+                    parsed_datetime = datetime_raw.astimezone(dt.timezone.utc)
                 else:
                     try:
-                        datetime = dt.datetime.fromisoformat(datetime_raw)
-                        if datetime.tzinfo is None:
-                            datetime = datetime.replace(tzinfo=dt.timezone.utc)
+                        parsed_datetime = dt.datetime.fromisoformat(datetime_raw)
+                        if parsed_datetime.tzinfo is None:
+                            parsed_datetime = parsed_datetime.replace(tzinfo=dt.timezone.utc)
                         else:
-                            datetime = datetime.astimezone(dt.timezone.utc)
+                            parsed_datetime = parsed_datetime.astimezone(dt.timezone.utc)
                     except Exception:
-                        datetime = dt.datetime.now(dt.timezone.utc)
-
-                if wrapper_type == 'message':
-                    child = msg_map.get(row_data['sql_id'])
-                    if not child:
-                        continue
-
-                    m = wrapper.MessageWrapper(
-                        message_id=row_data['telegram_id'], chat_id=row_data['chat_id'],
-                        role=child['role'], user=child['user'],
-                        message=child['message'], ping=False,
-                        reply_id=child['reply_id'], datetime=datetime, 
-                        tokens=row_data['tokens']
-                    )
-                    messages.append(m)
-
-                elif wrapper_type == 'image':
-                    child = img_map.get(row_data['sql_id'])
-                    if not child:
-                        continue
-
-                    im = wrapper.ImageWrapper(
-                        image_id=row_data['telegram_id'], chat_id=row_data['chat_id'],
-                        x=child['x'], y=child['y'],
-                        image_bytes=None, image_path=child['image_path'],
-                        image_summary=child['image_summary'], datetime=datetime, 
-                        tokens=row_data['tokens'],
-                    )
-                    messages.append(im)
-
-                else:
-                    continue
+                        parsed_datetime = dt.datetime.now(dt.timezone.utc)
+                
+                parent_dict['datetime'] = parsed_datetime
+                
+                wrapper_instance = wrapper_class.from_db_row(parent_dict, child_row)
+                messages.append(wrapper_instance)
 
         except Exception as e:
             _, _, tb = sys.exc_info()

@@ -18,10 +18,6 @@ class AssistantToolPush(event.Event):
     def __init__(self, response: wrapper.Wrapper, **kwargs):
         super().__init__('assistant_tool_push', response=response, **kwargs)
 
-class AssistantReadyPush(event.Event):
-    def __init__(self, **kwargs):
-        super().__init__('assistant_ready_response', **kwargs)
-
 class AssistantDirectRequest(event.Event):
     def __init__(self, message: wrapper.Wrapper, **kwargs):
         super().__init__('assistant_direct_request', message=message, **kwargs)

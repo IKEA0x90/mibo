@@ -64,7 +64,6 @@ class Window():
             # mark the window ready and broadcast.
             if not self.ready and is_new:
                 self.ready = True
-                await bus.emit(assistant_events.AssistantReadyPush(event_id=event_id))
 
             # assistant should respond only for new messages *after* ready.
             return is_new and self.ready
