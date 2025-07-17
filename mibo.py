@@ -56,15 +56,11 @@ class Mibo:
         cat_assistant = self.client.beta.assistants.retrieve(tools.Tool.CAT_ASSISTANT_ID).to_dict()
         image_assistant = self.client.beta.assistants.retrieve(tools.Tool.IMAGE_ASSISTANT_ID).to_dict()
         poll_assistant = self.client.beta.assistants.retrieve(tools.Tool.POLL_ASSISTANT_ID).to_dict()
-        property_assistant = self.client.beta.assistants.retrieve(tools.Tool.PROPERTY_ASSISTANT_ID).to_dict()
-        memory_assistant = self.client.beta.assistants.retrieve(tools.Tool.MEMORY_ASSISTANT_ID).to_dict()
 
         self.templates = {'template': template_assistant,
                     'cat_template': cat_assistant,
                     'image_template': image_assistant,
-                    'poll_template': poll_assistant, 
-                    'property_template': property_assistant,
-                    'memory_template': memory_assistant}
+                    'poll_template': poll_assistant}
 
         self.assistants = assistant.initialize_assistants(self.db, self.client, self.bus, self.templates, self.start_datetime)
         

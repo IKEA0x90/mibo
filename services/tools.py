@@ -11,9 +11,6 @@ class Tool:
 
     CREATE_IMAGE = 'create_image'
     CREATE_POLL = 'create_poll'
-    SEND_STICKER = 'send_sticker'
-    CHANGE_PROPERTY = 'change_property'
-    MEMORIZE_KEY_INFORMATION = 'memorize_key_information'
 
     MIBO_ID = os.environ['MIBO_ID']
     CAT_ASSISTANT_ID = os.environ['CAT_ASSISTANT_ID']
@@ -51,8 +48,6 @@ class Tool:
     
     IMAGE_ASSISTANT_EVENT = tool_events.ToolImageRequest
     POLL_ASSISTANT_EVENT = tool_events.ToolPollRequest
-    PROPERTY_ASSISTANT_EVENT = tool_events.ToolPropertyChangeRequest
-    MEMORY_ASSISTANT_EVENT = tool_events.ToolMemorizeKeyInformationRequest
 
     @staticmethod
     def get_event(assistant_type: str):
@@ -60,10 +55,6 @@ class Tool:
             return Tool.IMAGE_ASSISTANT_EVENT
         elif assistant_type == Tool.POLL_ASSISTANT:
             return Tool.POLL_ASSISTANT_EVENT
-        elif assistant_type == Tool.PROPERTY_ASSISTANT:
-            return Tool.PROPERTY_ASSISTANT_EVENT
-        elif assistant_type == Tool.MEMORY_ASSISTANT:
-            return Tool.MEMORY_ASSISTANT_EVENT
 
     @staticmethod
     def replacers(original: str) -> str:

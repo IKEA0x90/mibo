@@ -366,22 +366,6 @@ class CatAssistant(Assistant):
         if interaction_type == tools.Tool.CREATE_IMAGE:
             ev = tool_events.ToolImageRequest(context=interaction_context, event_id=event.event_id)
             self.bus.emit(ev)
-
-        elif interaction_type == tools.Tool.CREATE_POLL:
-            ev = tool_events.ToolPollRequest(context=interaction_context, event_id=event.event_id)
-            self.bus.emit(ev)
-
-        elif interaction_type == tools.Tool.SEND_STICKER:
-            ev = tool_events.ToolStickerRequest(context=interaction_context, event_id=event.event_id)
-            self.bus.emit(ev)
-
-        elif interaction_type == tools.Tool.CHANGE_PROPERTY:
-            ev = tool_events.ToolPropertyChangeRequest(context=interaction_context, event_id=event.event_id)
-            self.bus.emit(ev)
-
-        elif interaction_type == tools.Tool.MEMORIZE_KEY_INFORMATION:
-            ev = tool_events.ToolMemorizeKeyInformationRequest(context=interaction_context, event_id=event.event_id)
-            self.bus.emit(ev)
         
         message = wrapper.MessageWrapper(
             chat_id=self.chat_id,

@@ -8,7 +8,7 @@ from typing import cast
 from telegram import Update, Message, MessageEntity
 from telegram.ext import CallbackContext
 
-from events import event_bus, conductor_events, db_events, system_events, mibo_events
+from events import event, event_bus, conductor_events, db_events, system_events, mibo_events
 from core import wrapper
 from services import tools
 
@@ -97,9 +97,9 @@ class Conductor:
                 ping = True
                 
             datetime: dt.datetime = message.date.astimezone(dt.timezone.utc)
-            
-            message_wrapper = wrapper.MessageWrapper(message_id, chat_id, role, user, message_text, ping, reply_id, datetime, chat_name=chat_name)
-            content = await self.look_for_content(update, context, event)
+
+            message_wrapper = wrapper.MessageWrapper(message_id=message_id, chat_id=chat_id, role=role, user=user, message=message_text, ping=ping, reply_id=reply_id, datetime=datetime, chat_name=chat_name)
+            content = await self._look_for_content(update, context, event)
 
             wrappers = [message_wrapper] + content
             push_request = conductor_events.WrapperPush(wrappers, chat_id=chat_id, event_id=event.event_id)
@@ -118,7 +118,7 @@ class Conductor:
 
     # ---------------------------------- #
 
-    async def _look_for_content(self, update: Update, context: CallbackContext, parent_event: event_bus.Event):
+    async def _look_for_content(self, update: Update, context: CallbackContext, parent_event: event.Event):
         message: Message = update.effective_message
         content = []
 
@@ -128,7 +128,7 @@ class Conductor:
 
         return content
 
-    async def _download_images_telegram(self, update: Update, context: CallbackContext, parent_event: event_bus.Event):
+    async def _download_images_telegram(self, update: Update, context: CallbackContext, parent_event: event.Event):
         '''
         Download all image files (photos or image documents) from a Telegram message and return a list of ImageWrappers.
         '''

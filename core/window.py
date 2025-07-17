@@ -70,7 +70,7 @@ class Window():
             return is_new and self.ready
 
     async def _insert_live_message(self, message: wrapper.Wrapper) -> None:
-        message_tokens = message.tokens or await message.calculate_tokens()
+        message_tokens = message.tokens or message.calculate_tokens()
         inserted = False
 
         # Assume messages arrive mostly in order

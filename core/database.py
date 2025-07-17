@@ -42,7 +42,7 @@ class Database:
             
             return [wrapper.ChatWrapper(row['chat_id'], row['chat_name'],
                                         row['custom_instructions'], row['chance'], 
-                                        row['max_context_tokens'], row['max_content_tokens'], row['max_response_tokens'], 
+                                        row['max_tokens'], row['max_response_tokens'], 
                                         row['frequency_penalty'], row['presence_penalty']) 
                                         for row in rows]
         
@@ -122,6 +122,35 @@ class Database:
         
         self._handlers_registered = True
 
+    async def insert_chat(self, chat_id: str, chat_name: str, *,
+        custom_instructions: str = "",
+        chance: int = 5,
+        max_tokens: int = tools.Tool.MAX_TOKENS,
+        max_response_tokens: int = tools.Tool.MAX_RESPONSE_TOKENS,
+        frequency_penalty: float = tools.Tool.FREQUENCY_PENALTY,
+        presence_penalty: float = tools.Tool.PRESENCE_PENALTY) -> str:
+        """
+        Inserts a new chat and returns the chat_id.
+        """
+        effective_chat_id = chat_id or str(uuid4())
+        async with self._lock:
+            async with self.conn.cursor() as cursor:
+                await cursor.execute(
+                    """
+                    INSERT OR IGNORE INTO chats
+                    (chat_id, chat_name, custom_instructions, chance, max_tokens, max_response_tokens, frequency_penalty, presence_penalty)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+                    """,
+                    (
+                        str(effective_chat_id), chat_name,
+                        custom_instructions, chance,
+                        max_tokens, max_response_tokens,
+                        frequency_penalty, presence_penalty
+                    ),
+                )
+                await self.conn.commit()
+        return str(effective_chat_id)
+
     async def _insert(self, content: wrapper.Wrapper) -> str:
         '''
         Inserts a wrapper linked to an existing chat.
@@ -182,7 +211,7 @@ class Database:
                 chat = wrapper.ChatWrapper(
                     chat_id=chat_id, chat_name=chat_name,
                     custom_instructions='', chance=tools.Tool.CHANCE,
-                    max_context_tokens=tools.Tool.MAX_TOKENS, max_response_tokens=tools.Tool.MAX_RESPONSE_TOKENS,
+                    max_tokens=tools.Tool.MAX_TOKENS, max_response_tokens=tools.Tool.MAX_RESPONSE_TOKENS,
                     frequency_penalty=tools.Tool.FREQUENCY_PENALTY, presence_penalty=tools.Tool.PRESENCE_PENALTY
                 )
 
@@ -202,6 +231,7 @@ class Database:
 
             for w in wrappers:
                 if isinstance(w, wrapper.Wrapper):
+                    w.tokens = w.calculate_tokens()
                     await self._insert(w)
             
             # we're finished
@@ -310,7 +340,7 @@ class Database:
         Responds with a MemoryResponse containing wrappers for chat_id
         starting from the most recent entries,
         ordered oldest to newest,
-        capped by max_context_tokens.
+        capped by max_tokens.
         '''
         chat_id = event.chat_id
         messages = []
@@ -366,7 +396,7 @@ class Database:
                     question_marks = ','.join('?' for _ in msg_sql_ids) # the correct number of ? for the query
                     await cursor.execute(f'''
                         SELECT sql_id, role, user, message, reply_id
-                        FROM message_wrappers
+                        FROM messages
                         WHERE sql_id IN ({question_marks})
                     ''', msg_sql_ids)
                     for row in await cursor.fetchall():
@@ -376,7 +406,7 @@ class Database:
                     question_marks = ','.join('?' for _ in img_sql_ids)
                     await cursor.execute(f'''
                         SELECT sql_id, x, y, image_path, image_summary
-                        FROM image_wrappers
+                        FROM images
                         WHERE sql_id IN ({question_marks})
                     ''', img_sql_ids)
                     for row in await cursor.fetchall():
