@@ -318,7 +318,7 @@ class Mibo:
 
     def typing_delay(self, text: str):
         length = len(text)
-        avg_cpm = 500
+        avg_cpm = 800
         jitter_sd = 0.08
         # Ramp from 0 to 0.3 seconds over the first 16 characters
         reaction = random.uniform(0.0, 0.3) * min(length, 16) / 16

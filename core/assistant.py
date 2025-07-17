@@ -39,6 +39,7 @@ class Assistant:
         self.template: dict = templates.get('template', {})
         self.chat: wrapper.ChatWrapper = chat
         self.assistant_type: str = assistant_type
+        self.start_datetime: dt.datetime = start_datetime
 
         # mibo only has the cat assistant
         if assistant_type == tools.Tool.MIBO:

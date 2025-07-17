@@ -124,7 +124,8 @@ class Conductor:
 
         if message.photo or (message.document and message.document.mime_type and message.document.mime_type.startswith('image/')):
             image_list = await self._download_images_telegram(update, context, parent_event)
-            content.extend(image_list)
+            if isinstance(image_list, list) and image_list:
+                content.extend(image_list)
 
         return content
 
@@ -181,7 +182,7 @@ class Conductor:
                     wrap = wrapper.ImageWrapper(new_width, new_height, img_bytes)
                     return wrap
                 
-                return await asyncio.to_thread(sync_process)
+                return await asyncio.to_thread(sync_process, img_bytes)
             
             images = await asyncio.gather(*[process_image(img_bytes) for img_bytes in file_bytes])
 
