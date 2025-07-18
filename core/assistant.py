@@ -277,7 +277,7 @@ class Assistant:
                 # Add images to content_list
                 for img in images:
                     if 'image_url' in img:
-                        incomplete_wrapper = wrapper.ImageWrapper(id=str(response.id), chat_id=self.chat_id, x=0, y=0)
+                        incomplete_wrapper = wrapper.ImageWrapper(id=str(response.id), chat_id=self.chat_id, x=0, y=0, role='assistant', user=tools.Tool.MIBO)
                         image = await self._download_image_url(img['image_url'], incomplete_wrapper=incomplete_wrapper, parent_event=event)
                         wrapper_list.append(image)
 
@@ -378,11 +378,11 @@ class CatAssistant(Assistant):
         message = wrapper.MessageWrapper(
             id=None,
             chat_id=self.chat_id,
-            role='assistant',
-            user=tools.Tool.CAT_ASSISTANT,
             message=tool_args.get('message', ''),
             ping=True,
-            datetime=dt.datetime.now(tz=dt.timezone.utc)
+            datetime=dt.datetime.now(tz=dt.timezone.utc),
+            role='assistant',
+            user=tools.Tool.CAT_ASSISTANT,
         )
 
         await self.messages.override(message)

@@ -271,6 +271,8 @@ class Database:
                 wrapper_type  TEXT NOT NULL,
                 datetime      TIMESTAMP NOT NULL,
                 tokens        INTEGER NOT NULL DEFAULT 0,
+                role          TEXT NOT NULL,
+                user          TEXT NOT NULL,
                 FOREIGN KEY (chat_id) REFERENCES chats (chat_id) ON DELETE CASCADE
             );
             ''',
@@ -278,8 +280,6 @@ class Database:
             '''
             CREATE TABLE IF NOT EXISTS messages (
                 sql_id    INTEGER PRIMARY KEY,
-                role      TEXT NOT NULL,
-                user      TEXT NOT NULL,
                 message   TEXT NOT NULL,
                 reply_id  INTEGER,
                 quote_start INTEGER,
@@ -368,6 +368,8 @@ class Database:
                     w.wrapper_type,
                     w.datetime,
                     w.tokens,
+                    w.role,
+                    w.user,
                     SUM(w.tokens) OVER (
                         PARTITION BY w.chat_id
                         ORDER BY w.datetime DESC, w.sql_id DESC

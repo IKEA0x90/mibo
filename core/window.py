@@ -121,13 +121,12 @@ class Window():
                 message: wrapper.ImageWrapper
                 base64 = message.get_base64()
                 if base64:
-                    content.append({"type": "image_url", "image_url": f"data:image/jpeg;base64,{base64}"})
+                    content.append({"type": "image_url", "image_url": {'url': f"data:image/jpeg;base64,{base64}"}})
                 else:
                     content.append({"type": "text", "text": f"|IMAGE|{message.image_summary or '|IMAGE|Image content not available.'}"})
 
             # For OpenAI chat completions, each message is a dict with 'role' and 'content'
 
-            #TODO doesn't work, make message.role a parent field
             m = {"role": message.role, "content": content}
             
             messages.append(m)

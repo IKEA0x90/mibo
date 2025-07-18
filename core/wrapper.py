@@ -3,7 +3,7 @@ import tiktoken
 import re
 
 import datetime as dt
-from typing import Any, Dict, List, Literal, Optional
+from typing import Any, Dict, List, Optional
 
 from services import tools
 
@@ -17,12 +17,15 @@ def register_wrapper(cls):
 
 @register_wrapper
 class Wrapper():
-    def __init__(self, id: str, chat_id: str, datetime: dt.datetime = None):
+    def __init__(self, id: str, chat_id: str, datetime: dt.datetime = None, **kwargs):
         self.id: str = str(id)
         self.chat_id: str = str(chat_id)
         self.type = self.__class__.type # this assigns type to the instance
 
         self.tokens: int = 0
+
+        self.role: str = kwargs.get('role', 'assistant')
+        self.user: str = kwargs.get('user', tools.Tool.MIBO)
 
         try:
             self.datetime: dt.datetime = datetime.astimezone(dt.timezone.utc)
@@ -39,6 +42,8 @@ class Wrapper():
             'wrapper_type': self.type,
             'datetime': self.datetime,
             'tokens': self.tokens,
+            'role': self.role,
+            'user': self.user,
         }
     
     @classmethod
@@ -49,7 +54,9 @@ class Wrapper():
             'id': combined_data.get('telegram_id'),
             'chat_id': combined_data.get('chat_id'),
             'datetime': combined_data.get('datetime'),
-            'tokens': combined_data.get('tokens', 0)
+            'tokens': combined_data.get('tokens', 0),
+            'role': combined_data.get('role', 'assistant'),
+            'user': combined_data.get('user', tools.Tool.MIBO),
         }
     
         constructor_params.update(child_row)
@@ -68,12 +75,10 @@ class Wrapper():
 
 @register_wrapper
 class MessageWrapper(Wrapper):
-    def __init__(self, id: str, chat_id: str, role: str = 'assistant', user: str = None, message: str = '', ping: bool = True, **kwargs):
-        super().__init__(id, chat_id, datetime=kwargs.get('datetime', None))
+    def __init__(self, id: str, chat_id: str, message: str = '', ping: bool = True, **kwargs):
+        super().__init__(id, chat_id, datetime=kwargs.get('datetime', None), role=kwargs.get('role'), user=kwargs.get('user'))
         
         self.chat_name: str = kwargs.get('chat_name', '')
-        self.role: str = role or 'assistant'
-        self.user: str = user or tools.Tool.MIBO
 
         self.reactions: List[str] = kwargs.get('reactions', [])
 
@@ -87,8 +92,6 @@ class MessageWrapper(Wrapper):
 
     def to_child_dict(self):
         return {
-            'role': self.role,
-            'user': self.user,
             'message': self.message,
             'reply_id': self.reply_id,
             'quote_start': self.quote_start,
@@ -97,7 +100,7 @@ class MessageWrapper(Wrapper):
     
     @classmethod
     def get_child_fields(cls):
-        return ['role', 'user', 'message', 'reply_id', 'quote_start', 'quote_end']
+        return ['message', 'reply_id', 'quote_start', 'quote_end']
 
     def __str__(self):
         return f'{self.user}: {self._remove_prefix(self.message)}'
@@ -124,7 +127,7 @@ class MessageWrapper(Wrapper):
 @register_wrapper
 class ImageWrapper(Wrapper):
     def __init__(self, id: str, chat_id: str, x: int, y: int, image_bytes: Optional[bytes] = None, image_path: Optional[str] = None, **kwargs):
-        super().__init__(id, chat_id, datetime=kwargs.get('datetime', None))
+        super().__init__(id, chat_id, datetime=kwargs.get('datetime', None), role=kwargs.get('role'), user=kwargs.get('user'))
         self.x = x or 0
         self.y = y or 0
 
@@ -172,7 +175,7 @@ class ImageWrapper(Wrapper):
 @register_wrapper  
 class PollWrapper(Wrapper):
     def __init__(self, id: str, chat_id: str, question: str, options: List[str], multiple_choice: bool, correct_option_idx: int = 0, explanation: str = '', **kwargs):
-        super().__init__(id, chat_id, datetime=kwargs.get('datetime', None))
+        super().__init__(id, chat_id, datetime=kwargs.get('datetime', None), role=kwargs.get('role'), user=kwargs.get('user'))
 
         self.question: str = question or ''
         self.options: List[str] = options or []

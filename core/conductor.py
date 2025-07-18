@@ -98,8 +98,13 @@ class Conductor:
                 
             datetime: dt.datetime = message.date.astimezone(dt.timezone.utc)
 
-            message_wrapper = wrapper.MessageWrapper(id=message_id, chat_id=chat_id, role=role, user=user, message=message_text, ping=ping, reply_id=reply_id, datetime=datetime, chat_name=chat_name)
+            message_wrapper = wrapper.MessageWrapper(id=message_id, chat_id=chat_id, message=message_text, ping=ping, reply_id=reply_id, datetime=datetime, chat_name=chat_name, role=role, user=user)
             content = await self._look_for_content(update, context, event)
+
+            c: wrapper.Wrapper
+            for c in content:
+                c.role = role
+                c.user = user
 
             wrappers = ([message_wrapper] if message_wrapper.message else []) + content
             push_request = conductor_events.WrapperPush(wrappers, chat_id=chat_id, event_id=event.event_id)
