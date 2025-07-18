@@ -62,7 +62,7 @@ class Conductor:
             else:
                 role = 'assistant' if user == self.username else 'user'
 
-            message_text = message.text or message.caption or''
+            message_text = message.text or message.caption or ''
             
             entities = message.parse_entities(types=[
                 'mention',

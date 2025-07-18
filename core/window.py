@@ -59,7 +59,7 @@ class Window():
             # always keep the message for context
             await self._insert_live_message(message)
 
-            # if this is the first non‑stale message after start‑up
+            # if this is the first non-stale message after startup
             # mark the window ready and broadcast.
             if not self.ready and is_new:
                 self.ready = True
