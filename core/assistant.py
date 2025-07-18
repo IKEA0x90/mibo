@@ -146,17 +146,12 @@ class Assistant:
         if not self.messages.ready:
             return False
 
-        if isinstance(message, wrapper.MessageWrapper):
-            if message.ping:
-                return True
-            chance = random.randint(1, 100)
-            if chance <= self.chance:
-                return True
-            return False
-        
-        #TODO no way to detect if a photo has a ping - link text to photo
-        if isinstance(message, wrapper.ImageWrapper):
+        if hasattr(message, 'ping') and message.ping:
             return True
+        chance = random.randint(1, 100)
+        if chance <= self.chance:
+            return True
+        return False
 
     async def _add_message(self, event: conductor_events.AssistantRequest):
         '''

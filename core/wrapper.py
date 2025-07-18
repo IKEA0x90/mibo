@@ -22,7 +22,7 @@ class Wrapper():
         self.chat_id: str = str(chat_id)
         self.type = self.__class__.type # this assigns type to the instance
 
-        self.tokens: int = 0
+        self.tokens: int = kwargs.get('tokens', 0)
 
         self.role: str = kwargs.get('role', 'assistant')
         self.user: str = kwargs.get('user', tools.Tool.MIBO)
@@ -60,8 +60,9 @@ class Wrapper():
         }
     
         constructor_params.update(child_row)
+        inst = cls(**constructor_params)
         
-        return cls(**constructor_params)
+        return inst
 
     def to_child_dict(self) -> Dict[str, Any]:
         raise NotImplementedError("Subclasses should implement this method to return child-specific data.")
@@ -76,7 +77,7 @@ class Wrapper():
 @register_wrapper
 class MessageWrapper(Wrapper):
     def __init__(self, id: str, chat_id: str, message: str = '', ping: bool = True, **kwargs):
-        super().__init__(id, chat_id, datetime=kwargs.get('datetime', None), role=kwargs.get('role'), user=kwargs.get('user'))
+        super().__init__(id, chat_id, **kwargs)
         
         self.chat_name: str = kwargs.get('chat_name', '')
 
@@ -127,7 +128,7 @@ class MessageWrapper(Wrapper):
 @register_wrapper
 class ImageWrapper(Wrapper):
     def __init__(self, id: str, chat_id: str, x: int, y: int, image_bytes: Optional[bytes] = None, image_path: Optional[str] = None, **kwargs):
-        super().__init__(id, chat_id, datetime=kwargs.get('datetime', None), role=kwargs.get('role'), user=kwargs.get('user'))
+        super().__init__(id, chat_id, **kwargs)
         self.x = x or 0
         self.y = y or 0
 
@@ -139,7 +140,12 @@ class ImageWrapper(Wrapper):
         self.tokens_precalculated: int = kwargs.get('tokens', False)
         self.summary_tokens: int = kwargs.get('summary_tokens', 0)
 
+        self.detail: str = kwargs.get('detail', 'low')
+
     def calculate_tokens(self):
+        if self.detail == 'low':
+            return 85
+
         if self.image_bytes is not None and self.tokens_precalculated:
             return self.tokens_precalculated
         
@@ -159,7 +165,7 @@ class ImageWrapper(Wrapper):
         if not self.image_bytes:
             return ''
         return base64.b64encode(self.image_bytes).decode('utf-8')
-
+    
     def to_child_dict(self):
         return {
             'x': self.x,
@@ -175,7 +181,7 @@ class ImageWrapper(Wrapper):
 @register_wrapper  
 class PollWrapper(Wrapper):
     def __init__(self, id: str, chat_id: str, question: str, options: List[str], multiple_choice: bool, correct_option_idx: int = 0, explanation: str = '', **kwargs):
-        super().__init__(id, chat_id, datetime=kwargs.get('datetime', None), role=kwargs.get('role'), user=kwargs.get('user'))
+        super().__init__(id, chat_id, **kwargs)
 
         self.question: str = question or ''
         self.options: List[str] = options or []

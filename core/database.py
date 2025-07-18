@@ -378,7 +378,7 @@ class Database:
                 FROM wrappers AS w
                 WHERE w.chat_id = ?
             )
-            SELECT sql_id, telegram_id, chat_id, wrapper_type, datetime, tokens
+            SELECT sql_id, telegram_id, chat_id, wrapper_type, datetime, tokens, role, user
             FROM ranked
             WHERE running_total <= ?
             ORDER BY datetime ASC, telegram_id ASC, sql_id ASC;
@@ -452,6 +452,10 @@ class Database:
                 parent_dict['datetime'] = parsed_datetime
                 
                 wrapper_instance = wrapper_class.from_db_row(parent_dict, child_row)
+                
+                if isinstance(wrapper_instance, wrapper.ImageWrapper) and wrapper_instance.image_path:
+                    wrapper_instance.image_bytes = await self._load_image(wrapper_instance.image_path)
+                
                 messages.append(wrapper_instance)
 
         except Exception as e:
@@ -462,6 +466,22 @@ class Database:
         finally:
             response = db_events.MemoryResponse(chat_id=chat_id, messages=messages, event_id=event.event_id)
             await self.bus.emit(response)
+
+    async def _load_image(self, image_path: str) -> bytes:
+        '''
+        Load image bytes from the given file path.
+        Returns empty bytes if the file doesn't exist or can't be read.
+        '''
+        try:
+            if not image_path or not os.path.exists(image_path):
+                return b''
+            
+            async with aiofiles.open(image_path, 'rb') as f:
+                return await f.read()
+        except Exception as e:
+            _, _, tb = sys.exc_info()
+            await self.bus.emit(system_events.ErrorEvent(error=f'Failed to load image from {image_path}', e=e, tb=tb))
+            return b''
 
     async def _save_image(self, image: wrapper.ImageWrapper) -> str:
         chat_dir = self.image_path / str(image.chat_id)

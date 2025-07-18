@@ -3,10 +3,9 @@ import asyncio
 
 from typing import List, Dict, Deque
 from collections import deque
-from copy import deepcopy
 
 from core import wrapper
-from events import assistant_events, event_bus
+from events import event_bus
 
 class Window():
     def __init__(self, chat_id: str, start_datetime: dt.datetime, template: dict, max_tokens: int):
@@ -120,8 +119,10 @@ class Window():
             elif isinstance(message, wrapper.ImageWrapper):
                 message: wrapper.ImageWrapper
                 base64 = message.get_base64()
+                detail = message.detail
+                
                 if base64:
-                    content.append({"type": "image_url", "image_url": {'url': f"data:image/jpeg;base64,{base64}"}})
+                    content.append({"type": "image_url", "image_url": {'url': f"data:image/jpeg;base64,{base64}", 'detail': detail}})
                 else:
                     content.append({"type": "text", "text": f"|IMAGE|{message.image_summary or '|IMAGE|Image content not available.'}"})
 

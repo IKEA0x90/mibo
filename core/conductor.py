@@ -105,6 +105,7 @@ class Conductor:
             for c in content:
                 c.role = role
                 c.user = user
+                c.ping = ping
 
             wrappers = ([message_wrapper] if message_wrapper.message else []) + content
             push_request = conductor_events.WrapperPush(wrappers, chat_id=chat_id, event_id=event.event_id)
