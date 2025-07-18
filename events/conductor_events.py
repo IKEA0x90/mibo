@@ -4,17 +4,13 @@ from typing import List
 from events import event
 from core import wrapper
 
-class MessagePush(event.Event):
-    def __init__(self, message: wrapper.MessageWrapper, **kwargs):
-        super().__init__('message_request', request=message, **kwargs)
+class WrapperPush(event.Event):
+    def __init__(self, wrapper_list: List[wrapper.Wrapper], chat_id: str, **kwargs):
+        super().__init__('wrapper_push', wrapper_list=wrapper_list, chat_id=chat_id, **kwargs)
 
 class AssistantRequest(event.Event):
-    def __init__(self, chat_id: str, message: wrapper.MessageWrapper, **kwargs):
-        super().__init__('assistant_call', chat_id=chat_id, message=message, **kwargs)
-
-class ImageDownloadRequest(event.Event):
-    def __init__(self, update, context, **kwargs):
-        super().__init__('image_download_request', update=update, context=context, **kwargs)
+    def __init__(self, chat_id: str, messages: List[wrapper.Wrapper], **kwargs):
+        super().__init__('assistant_call', chat_id=chat_id, messages=messages, **kwargs)
 
 class NewChatPush(event.Event):
     def __init__(self, chat: wrapper.ChatWrapper, **kwargs):

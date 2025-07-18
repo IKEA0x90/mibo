@@ -3,11 +3,14 @@ import datetime as dt
 import random
 import sys
 import asyncio
+import aiohttp
 
 from copy import copy
 from typing import List, Dict
+from io import BytesIO
+from PIL import Image
 
-from events import event_bus, conductor_events, assistant_events, system_events, tool_events, db_events
+from events import event_bus, conductor_events, assistant_events, system_events, tool_events, db_events, event
 from core import database, window, wrapper
 from services import tools
 
@@ -36,6 +39,7 @@ class Assistant:
         self.template: dict = templates.get('template', {})
         self.chat: wrapper.ChatWrapper = chat
         self.assistant_type: str = assistant_type
+        self.start_datetime: dt.datetime = start_datetime
 
         # mibo only has the cat assistant
         if assistant_type == tools.Tool.MIBO:
@@ -59,7 +63,7 @@ class Assistant:
 
         self._load()
 
-        self.messages = window.Window(chat_id, start_datetime, self.template, self.max_context_tokens, self.max_content_tokens)
+        self.messages = window.Window(chat_id, start_datetime, self.template, self.max_tokens)
 
         self._register()
 
@@ -72,8 +76,7 @@ class Assistant:
 
         self.custom_instructions = self.chat.custom_instructions
         self.chance = self.chat.chance
-        self.max_context_tokens = self.chat.max_context_tokens
-        self.max_content_tokens = self.chat.max_content_tokens
+        self.max_tokens = self.chat.max_tokens
         self.max_response_tokens = self.chat.max_response_tokens
 
         self.frequency_penalty = self.chat.frequency_penalty
@@ -98,35 +101,29 @@ class Assistant:
     def _register(self):
         self.bus.register(conductor_events.AssistantRequest, self._add_message)
         self.bus.register(assistant_events.AssistantDirectRequest, self._trigger_completion)
-        self.bus.register(conductor_events.MessagePush, self._prepare)
+        self.bus.register(conductor_events.WrapperPush, self._prepare)
 
-    async def _prepare(self, event: conductor_events.MessagePush):
+    async def _prepare(self, event: conductor_events.WrapperPush):
         '''
-        Fill the window with old messages from the database, but do not trigger completions.
+        Prepare the window without triggering completions.
         '''
-        msg = event.request
-        if msg.chat_id != self.chat_id:
+        if event.chat_id != self.chat_id or self.ready:
             return
-        if self.ready:
-            return
-        
-        mem_req = db_events.MemoryRequest(chat_id=self.chat_id)
-        mem_resp = await self.bus.wait(mem_req, db_events.MemoryResponse)
-        prev_msgs = sorted(mem_resp.messages, key=lambda m: m.datetime)
 
-        tokens = 0
-        for m in prev_msgs:
+        memory_request = db_events.MemoryRequest(chat_id=self.chat_id)
+        memory_response = await self.bus.wait(memory_request, db_events.MemoryResponse)
 
-            if self.messages.contains(m):
+        message: wrapper.Wrapper = None
+
+        for message in memory_response.messages:
+            if message.datetime < self.start_datetime:
+                # backlog – include for context, no completion later
+                await self.messages._insert_live_message(message)
                 continue
 
-            mtoks = await m.tokens()
-            if tokens + mtoks > self.max_context_tokens:
-                break
-
-            # Add directly to window, do not use add_message (which can trigger completions)
-            await self.messages._insert_live_message(m)
-            tokens += mtoks
+            # live messages that arrived before the window was ready
+            if not self.messages.contains(message):
+                await self.messages._insert_live_message(message)
 
         self.ready = True
 
@@ -148,7 +145,8 @@ class Assistant:
         '''
         if not self.messages.ready:
             return False
-        if message.ping:
+
+        if hasattr(message, 'ping') and message.ping:
             return True
         chance = random.randint(1, 100)
         if chance <= self.chance:
@@ -161,17 +159,18 @@ class Assistant:
         Adds the message to the window.
         Triggers _trigger_completion().
         '''
-        if event.chat_id != self.chat_id:
-            return
-        
-        await self.messages.add_message(event.event_id, event.message, self.bus)
-        run = await self._check_conditions(event.message)
-        if run:
-            typing = event.typing
-            typing()
+        for message in event.messages:
+            if event.chat_id != self.chat_id:
+                return
 
-            ev = assistant_events.AssistantDirectRequest(message=event.message, event_id=event.event_id, system=event.system)
-            await self.bus.emit(ev)
+            await self.messages.add_message(event.event_id, message, self.bus)
+            run = await self._check_conditions(message)
+            if run:
+                typing = event.typing
+                typing()
+
+                ev = assistant_events.AssistantDirectRequest(message=message, event_id=event.event_id, system=event.system)
+                await self.bus.emit(ev)
 
     async def _trigger_completion(self, event: assistant_events.AssistantDirectRequest):
         '''
@@ -235,54 +234,96 @@ class Assistant:
                         tool_args=tool_args,
                         event_id=event.event_id
                     )
-                    response: wrapper.MessageWrapper = await self.bus.wait(tool_event, assistant_events.AssistantToolResponse)
+                    tool_response: wrapper.Wrapper = await self.bus.wait(tool_event, assistant_events.AssistantToolResponse)
                     # only some events require notification
                     if tool_name == tools.Tool.CREATE_IMAGE:
-                        event = assistant_events.AssistantDirectRequest(response)
+                        event = assistant_events.AssistantDirectRequest(tool_response)
                         await self.bus.emit(event)
 
             else:
                 # For chat completions, content may be a list of blocks or a string
                 content = response_message.content
+
                 if isinstance(content, list):
                     # Concatenate all text blocks for message text, collect images for content_list
                     message_text = "".join([block.get('text', '') for block in content if block.get('type') == 'text'])
                     images = [block for block in content if block.get('type') == 'image_url']
+
                 else:
                     message_text = content or ''
-                    images = []
+                    images = [] # if it's not a list, no images
+
                 if not message_text.strip() and not images:
                     return
                 
+                # Replace random stuff that I don't like and is easier to change here rather than in the prompt
+                message_text = tools.Tool.replacers(message_text)
+                
+                wrapper_list = []
+
                 assistant_message = wrapper.MessageWrapper(
-                    chat_id=self.chat_id,
-                    message_id=str(response.id),
-                    role='assistant',
-                    user=tools.Tool.MIBO,
-                    message=message_text,
-                    ping=False,
+                    id=str(response.id), chat_id=self.chat_id, 
+                    role='assistant', user=tools.Tool.MIBO,
+                    message=message_text, ping=False,
                     datetime=dt.datetime.now(tz=dt.timezone.utc)
                 )
+                wrapper_list.append(assistant_message)
 
                 # Add images to content_list
                 for img in images:
                     if 'image_url' in img:
-                        assistant_message.add_content(wrapper.ImageWrapper(0, 0, '', img['image_url'].split(',')[-1]))
+                        incomplete_wrapper = wrapper.ImageWrapper(id=str(response.id), chat_id=self.chat_id, x=0, y=0, role='assistant', user=tools.Tool.MIBO)
+                        image = await self._download_image_url(img['image_url'], incomplete_wrapper=incomplete_wrapper, parent_event=event)
+                        wrapper_list.append(image)
 
-                # Add to window immediately (do not trigger completions)
-                await self.messages.add_message(event.event_id, assistant_message, self.bus)
+                # Add to window (do not trigger completions)
+                for w in wrapper_list:
+                    await self.messages.add_message(event.event_id, w, self.bus)
 
                 # Emit the assistant response
-                response_event = assistant_events.AssistantResponse(message=assistant_message, event_id=event.event_id)
+                response_event = assistant_events.AssistantResponse(messages=wrapper_list, event_id=event.event_id)
                 await self.bus.emit(response_event)
 
-                # Emit MessagePush for bot message so it is added to db (but not completion)
-                push_event = conductor_events.MessagePush(assistant_message, event_id=event.event_id)
+                # Emit WrapperPush for bot message so it is added to db (but not completion)
+                push_event = conductor_events.WrapperPush(wrapper_list, chat_id=self.chat_id, event_id=event.event_id)
                 await self.bus.emit(push_event)
 
         except Exception as e:
             _, _, tb = sys.exc_info()
             issue = system_events.ErrorEvent(error='Whoops! An unexpected error occurred.', e=e, tb=tb, event_id=event.event_id, chat_id=self.chat_id)
+            await self.bus.emit(issue)
+
+    async def _download_image_url(self, image_url: str, incomplete_wrapper: wrapper.ImageWrapper, parent_event: event.Event) -> wrapper.ImageWrapper:
+        '''
+        Downloads an image from a URL.
+        Returns None if the download fails.
+        '''
+        try:
+            async with aiohttp.ClientSession() as session:
+                async with session.get(image_url, timeout=30) as response:
+
+                    if response.status == 200:
+                        image_bytes: bytes = await response.read()
+                        incomplete_wrapper.image_bytes = image_bytes
+
+                        def sync_process(img_bytes):
+                            with Image.open(BytesIO(img_bytes)) as img:
+                                width, height = img.size
+                            return width, height
+
+                        width, height = await asyncio.to_thread(sync_process, image_bytes)
+                        incomplete_wrapper.x = width
+                        incomplete_wrapper.y = height
+
+                        return incomplete_wrapper
+
+                    else:
+                        issue = system_events.ErrorEvent(error='Error downloading an image.', e=None, tb=None, event_id=parent_event.event_id, chat_id=self.chat_id)
+                        await self.bus.emit(issue)
+                    
+        except Exception as e:
+            _, _, tb = sys.exc_info()
+            issue = system_events.ErrorEvent(error='Error downloading an image.', e=e, tb=tb, event_id=parent_event.event_id, chat_id=self.chat_id)
             await self.bus.emit(issue)
 
 class CatAssistant(Assistant):
@@ -328,30 +369,15 @@ class CatAssistant(Assistant):
         if interaction_type == tools.Tool.CREATE_IMAGE:
             ev = tool_events.ToolImageRequest(context=interaction_context, event_id=event.event_id)
             self.bus.emit(ev)
-
-        elif interaction_type == tools.Tool.CREATE_POLL:
-            ev = tool_events.ToolPollRequest(context=interaction_context, event_id=event.event_id)
-            self.bus.emit(ev)
-
-        elif interaction_type == tools.Tool.SEND_STICKER:
-            ev = tool_events.ToolStickerRequest(context=interaction_context, event_id=event.event_id)
-            self.bus.emit(ev)
-
-        elif interaction_type == tools.Tool.CHANGE_PROPERTY:
-            ev = tool_events.ToolPropertyChangeRequest(context=interaction_context, event_id=event.event_id)
-            self.bus.emit(ev)
-
-        elif interaction_type == tools.Tool.MEMORIZE_KEY_INFORMATION:
-            ev = tool_events.ToolMemorizeKeyInformationRequest(context=interaction_context, event_id=event.event_id)
-            self.bus.emit(ev)
         
         message = wrapper.MessageWrapper(
+            id=None,
             chat_id=self.chat_id,
-            role='assistant',
-            user=tools.Tool.CAT_ASSISTANT,
             message=tool_args.get('message', ''),
             ping=True,
-            datetime=dt.datetime.now(tz=dt.timezone.utc)
+            datetime=dt.datetime.now(tz=dt.timezone.utc),
+            role='assistant',
+            user=tools.Tool.CAT_ASSISTANT,
         )
 
         await self.messages.override(message)

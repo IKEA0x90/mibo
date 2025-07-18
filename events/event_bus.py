@@ -1,6 +1,6 @@
 import asyncio
 from contextlib import suppress
-from typing import Type, TypeVar
+from typing import List, Type, TypeVar
 
 from events import event as ev
 
@@ -95,3 +95,62 @@ class EventBus:
             if not future.done():
                 future.cancel()
             _remove_listener()
+
+    async def wait_for_all(self, requested_event: "ev.Event", response_classes: List[Type[ResponseType]], timeout: float | None = 60.0) -> List[ResponseType]:
+        '''
+        Same as wait, but waits for all response classes in *response_classes*.
+        '''
+        if not response_classes:
+            raise ValueError('response_classes must contain at least one class to wait for.')
+
+        loop = asyncio.get_running_loop()
+        all_done: asyncio.Future[List[ResponseType]] = loop.create_future()
+        original = requested_event.event_id
+
+        results: List = [None] * len(response_classes)
+        remaining = set(range(len(response_classes)))
+
+        resolvers: List = [None] * len(response_classes)
+
+        def _make_remove_listener(idx: int, cls: Type[ResponseType]):
+            def _remove_listener() -> None:
+                with suppress(ValueError):
+                    self._listeners.get(cls, []).remove(resolvers[idx])
+                if not self._listeners.get(cls):
+                    self._listeners.pop(cls, None)
+            return _remove_listener
+
+        remove_funcs = [None] * len(response_classes)
+
+        for i, cls in enumerate(response_classes):
+            remove_funcs[i] = _make_remove_listener(i, cls)
+
+            def _resolver(response_event: ResponseType, *, _i=i, _cls=cls) -> None:
+                if response_event.event_id != original:
+                    return
+
+                if results[_i] is not None:
+                    return
+
+                results[_i] = response_event
+                remove_funcs[_i]()
+
+                remaining.discard(_i)
+                if not remaining and not all_done.done():
+                    all_done.set_result(list(results))
+            resolvers[i] = _resolver
+            self.register(cls, _resolver)
+
+        await self.emit(requested_event)
+
+        try:
+            if timeout is None:
+                return await all_done
+            return await asyncio.wait_for(all_done, timeout)
+        finally:
+            if not all_done.done():
+                all_done.cancel()
+            for i, cls in enumerate(response_classes):
+                if resolvers[i] is not None:
+                    with suppress(Exception):
+                        remove_funcs[i]()

@@ -11,9 +11,6 @@ class Tool:
 
     CREATE_IMAGE = 'create_image'
     CREATE_POLL = 'create_poll'
-    SEND_STICKER = 'send_sticker'
-    CHANGE_PROPERTY = 'change_property'
-    MEMORIZE_KEY_INFORMATION = 'memorize_key_information'
 
     MIBO_ID = os.environ['MIBO_ID']
     CAT_ASSISTANT_ID = os.environ['CAT_ASSISTANT_ID']
@@ -41,8 +38,7 @@ class Tool:
 
     try:
         CHANCE = int(os.environ['CHANCE'])
-        MAX_CONTEXT_TOKENS = int(os.environ['MAX_CONTEXT_TOKENS'])
-        MAX_CONTENT_TOKENS = int(os.environ['MAX_CONTENT_TOKENS'])
+        MAX_TOKENS = int(os.environ['MAX_TOKENS'])
         MAX_RESPONSE_TOKENS = int(os.environ['MAX_RESPONSE_TOKENS'])
         FREQUENCY_PENALTY = float(os.environ['FREQUENCY_PENALTY'])
         PRESENCE_PENALTY = float(os.environ['PRESENCE_PENALTY'])
@@ -52,8 +48,6 @@ class Tool:
     
     IMAGE_ASSISTANT_EVENT = tool_events.ToolImageRequest
     POLL_ASSISTANT_EVENT = tool_events.ToolPollRequest
-    PROPERTY_ASSISTANT_EVENT = tool_events.ToolPropertyChangeRequest
-    MEMORY_ASSISTANT_EVENT = tool_events.ToolMemorizeKeyInformationRequest
 
     @staticmethod
     def get_event(assistant_type: str):
@@ -61,32 +55,14 @@ class Tool:
             return Tool.IMAGE_ASSISTANT_EVENT
         elif assistant_type == Tool.POLL_ASSISTANT:
             return Tool.POLL_ASSISTANT_EVENT
-        elif assistant_type == Tool.PROPERTY_ASSISTANT:
-            return Tool.PROPERTY_ASSISTANT_EVENT
-        elif assistant_type == Tool.MEMORY_ASSISTANT:
-            return Tool.MEMORY_ASSISTANT_EVENT
-        
+
     @staticmethod
-    async def create_image(prompt: str, ) -> str:
+    def replacers(original: str) -> str:
         '''
-        Create an image and given 
+        Custom defined replacers for a message.
+        Replaces random stuff that I don't like and is easier to change here rather than in the prompt.
+        (real homies hate em dashes)
         '''
-        moderation = 'low'
-        model="gpt-image-1"
-        pass
+        message = original.replace('—', ' - ') 
 
-    @staticmethod
-    async def create_poll(question: str, options: list, multiple_choice: bool = False):
-        pass
-
-    @staticmethod
-    async def send_sticker(key_emoji: str):
-        pass
-
-    @staticmethod
-    async def change_property(property_name: str, value):
-        pass
-
-    @staticmethod
-    async def memorize_key_information(key: str, information: str):
-        pass
+        return message

@@ -18,10 +18,6 @@ class MiboMessageResponse(event.Event):
     def __init__(self, chat_id: str, text: str, images: List[wrapper.ImageWrapper], **kwargs):
         super().__init__('mibo_message_response', chat_id=chat_id, text=text, images=images, **kwargs)
 
-class MiboStickerResponse(event.Event):
-    def __init__(self, chat_id: str, sticker: wrapper.StickerWrapper, **kwargs):
-        super().__init__('mibo_sticker_response', chat_id=chat_id, sticker=sticker, **kwargs)
-
 class MiboPollResponse(event.Event):
     def __init__(self, chat_id: str, poll: wrapper.PollWrapper, **kwargs):
         super().__init__('mibo_poll_response', chat_id=chat_id, poll=poll, **kwargs)
