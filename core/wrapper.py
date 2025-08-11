@@ -5,13 +5,12 @@ import re
 import datetime as dt
 from typing import Any, Dict, List, Optional
 
-from services import tools
+from services import variables
 
-# make a dictionary for all possible wrappers
 WRAPPER_REGISTRY = {}
 def register_wrapper(cls):
     type_name = cls.__name__.replace('Wrapper', '').lower() # type is the class name without 'Wrapper'
-    cls.type = type_name # this only assigns type to the class, not to the instance
+    cls.type = type_name # assign type to the class
     WRAPPER_REGISTRY[type_name] = cls
     return cls
 
@@ -20,12 +19,12 @@ class Wrapper():
     def __init__(self, id: str, chat_id: str, datetime: dt.datetime = None, **kwargs):
         self.id: str = str(id)
         self.chat_id: str = str(chat_id)
-        self.type = self.__class__.type # this assigns type to the instance
+        self.type = self.__class__.type # assign type to the instance
 
         self.tokens: int = kwargs.get('tokens', 0)
 
         self.role: str = kwargs.get('role', 'assistant')
-        self.user: str = kwargs.get('user', tools.Tool.MIBO)
+        self.user: str = kwargs.get('user', variables.Variables.MIBO)
 
         try:
             self.datetime: dt.datetime = datetime.astimezone(dt.timezone.utc)
@@ -56,7 +55,7 @@ class Wrapper():
             'datetime': combined_data.get('datetime'),
             'tokens': combined_data.get('tokens', 0),
             'role': combined_data.get('role', 'assistant'),
-            'user': combined_data.get('user', tools.Tool.MIBO),
+            'user': combined_data.get('user', variables.Variables.MIBO),
         }
     
         constructor_params.update(child_row)
@@ -91,17 +90,20 @@ class MessageWrapper(Wrapper):
         self.quote_start: int = kwargs.get('quote_start', None)
         self.quote_end: int = kwargs.get('quote_end', None)
 
+        self.think = kwargs.get('think', '')
+
     def to_child_dict(self):
         return {
             'message': self.message,
             'reply_id': self.reply_id,
             'quote_start': self.quote_start,
             'quote_end': self.quote_end,
+            'think': self.think,
         }
     
     @classmethod
     def get_child_fields(cls):
-        return ['message', 'reply_id', 'quote_start', 'quote_end']
+        return ['message', 'reply_id', 'quote_start', 'quote_end', 'think']
 
     def __str__(self):
         return f'{self.user}: {self._remove_prefix(self.message)}'
@@ -111,7 +113,7 @@ class MessageWrapper(Wrapper):
         '''
         Removes the prefixed name from the text if it exists
         '''
-        prefix = tools.Tool.MIBO_MESSAGE  # 'mibo:'
+        prefix = variables.Variables.MIBO_MESSAGE  # 'mibo:'
         pattern = rf'^(?:{prefix.rstrip()}\s+)+'
         text2 = text.strip()
 
@@ -227,11 +229,9 @@ class ChatWrapper():
         self.chat_name: str = name
 
         self.custom_instructions: str = kwargs.get('custom_instructions', '')
-        self.chance: int = kwargs.get('chance', tools.Tool.CHANCE)
-        self.max_tokens: int = kwargs.get('max_tokens', tools.Tool.MAX_TOKENS)
-        self.max_response_tokens: int = kwargs.get('max_response_tokens', tools.Tool.MAX_RESPONSE_TOKENS)
-        self.frequency_penalty: float = kwargs.get('frequency_penalty', tools.Tool.FREQUENCY_PENALTY)
-        self.presence_penalty: float = kwargs.get('presence_penalty', tools.Tool.PRESENCE_PENALTY)
+        self.chance: int = kwargs.get('chance', variables.Variables.CHANCE)
+        self.max_tokens: int = kwargs.get('max_tokens', variables.Variables.MAX_TOKENS)
+        self.max_response_tokens: int = kwargs.get('max_response_tokens', variables.Variables.MAX_RESPONSE_TOKENS)
 
     def to_dict(self):
         return {
@@ -239,8 +239,4 @@ class ChatWrapper():
             'chat_name': self.chat_name,
             'custom_instructions': self.custom_instructions,
             'chance': self.chance,
-            'max_tokens': self.max_tokens,
-            'max_response_tokens': self.max_response_tokens,
-            'frequency_penalty': self.frequency_penalty,
-            'presence_penalty': self.presence_penalty,
         }

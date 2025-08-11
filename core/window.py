@@ -68,6 +68,9 @@ class Window():
             return is_new and self.ready
 
     async def _insert_live_message(self, message: wrapper.Wrapper) -> None:
+        if self.contains(message):
+            return
+
         message_tokens = message.tokens or message.calculate_tokens()
         inserted = False
 

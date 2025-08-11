@@ -1,0 +1,18 @@
+{
+    "assistants": [
+        {
+            "id": "mibo",
+            "names": ["Mibo", "Мибо"],
+            "chat_events": {
+                "welcome": "default"
+            }
+        },
+        {
+            "id": "kibo",
+            "names": ["Kibo", "Кибо"],
+            "chat_events": {
+                "welcome": "default"
+            }
+        }
+    ]
+}

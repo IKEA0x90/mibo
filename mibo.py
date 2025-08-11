@@ -10,60 +10,49 @@ import uuid
 
 import datetime as dt
 from typing import List, Dict
-from telegram import Update, Chat, ChatMember, InputFile, InputMediaPhoto, Message, User
+from telegram import Update, Chat, ChatMember, InputMediaPhoto, Message, User
 from telegram.ext import Application, CallbackContext, CommandHandler, MessageHandler, ChatMemberHandler, filters
 from telegram.constants import ChatAction
 
 from events import event_bus, mibo_events, system_events, assistant_events, conductor_events
-from core import assistant, database, conductor, wrapper
-from services import tools, templates
+from core import assistant, conductor, wrapper, ref
+from services import templates, variables
 
 class Mibo:
-    def __init__(self, token: str, db_path: str = 'env'):
-        self.token = token
-        self.start_datetime = dt.datetime.now(dt.timezone.utc)
+    def __init__(self, token: str, db_path: str = 'memory', ref_path: str = 'references'):
+        self.token: str = token
+        self.start_datetime: dt.datetime = dt.datetime.now(dt.timezone.utc)
 
         # load the environment first to catch early errors
         try:
-            _ = tools.Tool()
+            _ = variables.Variables()
         except TypeError:
             exit(1)
 
-        self.bus = event_bus.EventBus()
-        self.db = database.Database(self.bus, db_path)
-        self.conductor = conductor.Conductor(self.bus)
+        self.clients: List[openai.OpenAI] = []
+        self.local_clients: List[openai.OpenAI] = []
 
-        self.key = tools.Tool.OPENAI_KEY
-        
-        self.client = None
-        self.assistants = {} 
-        self.app = None
+        self.bus: event_bus.EventBus = event_bus.EventBus()
+        self.ref: ref.Ref = ref.Ref(self.bus, db_path, ref_path)
+        self.conductor: conductor.Conductor = conductor.Conductor(self.bus, self.ref)
 
+        self.key: str = variables.Variables.OPENAI_KEY
+
+        self.app: Application = None
         self.typing_tasks: Dict[int, asyncio.Task] = {}
 
-        self._prepare(token)
+        self._prepare()
         print(f'Mibo is alive! It is {self.start_datetime.hour}:{self.start_datetime.minute}:{self.start_datetime.second} UTC.')
 
-    def _prepare(self, token: str):
+    def _prepare(self):
         '''
         Prepare the bot by loading the database, getting the openai client, and setting up signal handlers.
         '''
-        self.db.initialize_sync()
+        self.clients = [openai.OpenAI(api_key=self.key)]
+        self.local_clients = [openai.OpenAI(api_key=self.key, base_url=f"http://{variables.Variables.LOCAL_API_HOST}:{variables.Variables.LOCAL_API_PORT}/v1")] 
 
-        self.client = openai.OpenAI(api_key=self.key)
+        self.assistant = assistant.Assistant(self.clients, self.local_clients, self.bus, self.ref, self.start_datetime)
 
-        template_assistant = self.client.beta.assistants.retrieve(tools.Tool.MIBO_ID).to_dict()
-        cat_assistant = self.client.beta.assistants.retrieve(tools.Tool.CAT_ASSISTANT_ID).to_dict()
-        image_assistant = self.client.beta.assistants.retrieve(tools.Tool.IMAGE_ASSISTANT_ID).to_dict()
-        poll_assistant = self.client.beta.assistants.retrieve(tools.Tool.POLL_ASSISTANT_ID).to_dict()
-
-        self.templates = {'template': template_assistant,
-                    'cat_template': cat_assistant,
-                    'image_template': image_assistant,
-                    'poll_template': poll_assistant}
-
-        self.assistants = assistant.initialize_assistants(self.db, self.client, self.bus, self.templates, self.start_datetime)
-        
         # Register event listeners
         self._register()
 
@@ -76,18 +65,20 @@ class Mibo:
         self._system_signals()
 
     def _register(self):
+        '''
+        Register event listeners
+        '''
         self.bus.register(assistant_events.AssistantResponse, self._parse_message)
         self.bus.register(mibo_events.MiboMessageResponse, self._send_message)
         self.bus.register(mibo_events.MiboPollResponse, self._create_poll)
-        self.bus.register(conductor_events.NewChatPush, self._create_assistant)
         self.bus.register(system_events.ErrorEvent, self._handle_exception)
 
     async def run(self):
         '''
         Start the bot
         '''
-        # re-initialize for async cursor
-        await self.db.initialize()
+        # re-initialize for async
+        await self.ref.initialize()
         
         await self.app.initialize()
         await self.app.start()
@@ -130,36 +121,9 @@ class Mibo:
         await self.app.stop()
         await self.app.shutdown()
         await self.bus.close()
-        await self.db.close()
+        await self.ref.close()
 
         print('Shutdown complete.')
-
-    async def _create_assistant(self, event: conductor_events.NewChatPush):
-        try:
-            chat = event.chat
-            chat_id = chat.chat_id
-
-            if chat_id in self.assistants:
-                await self.bus.emit(mibo_events.AssistantCreated(chat_id=chat_id, event_id=event.event_id))
-                return
-
-            new_assistant = assistant.Assistant(
-                chat_id, 
-                self.client, 
-                self.bus, 
-                self.templates, 
-                self.start_datetime,
-                chat=chat,
-                assistant_type=tools.Tool.MIBO
-            )
-                
-            self.assistants[chat_id] = new_assistant
-            
-            await self.bus.emit(mibo_events.AssistantCreated(chat_id=chat_id, event_id=event.event_id))
-    
-        except Exception as e:
-            _, _, tb = sys.exc_info()
-            await self.bus.emit(system_events.ErrorEvent(error=f"Couldn't create Mibo instance for the new chat.", e=e, tb=tb, event_id=event.event_id, chat_id=event.chat.chat_id))
 
     async def _handle_message(self, update: Update, context: CallbackContext):
         '''
@@ -189,7 +153,7 @@ class Mibo:
             if chat_id not in self.typing_tasks or self.typing_tasks[chat_id].done():
                 self.typing_tasks[chat_id] = asyncio.create_task(self._simulate_typing(chat_id))
         
-        event = await self.bus.emit(mibo_events.MiboMessage(update, context, start_datetime=self.start_datetime, typing=typing))
+        event = await self.bus.emit(mibo_events.MiboMessage(update, context, typing=typing))
 
     async def _system_message(self, chat_id, chat_name, system_message):
         '''
@@ -209,7 +173,7 @@ class Mibo:
             text=system_message
         )
         update = Update(update_id=uuid.uuid4().int, message=message)
-        event = mibo_events.MiboMessage(update=update, context=None, start_datetime=self.start_datetime, typing=typing)
+        event = mibo_events.MiboMessage(update=update, context=None, typing=typing)
         event.system = True
         await self.bus.wait(event, assistant_events.AssistantResponse)
 
@@ -259,7 +223,7 @@ class Mibo:
         '''
         Parse the text for custom delimiters.
         '''
-        prefix = tools.Tool.MIBO_MESSAGE  # 'mibo:'
+        prefix = variables.Variables.MIBO_MESSAGE  # 'mibo:'
         pattern = rf'^(?:{prefix.rstrip()}\s+)+'
         text2 = text.strip()
 
@@ -268,7 +232,10 @@ class Mibo:
 
         text_list = text2.split('|n|')
 
-        return text_list
+        # remove empty strings and whitespace-only strings
+        filtered_list = [s for s in text_list if s.strip()]
+
+        return filtered_list
 
     async def _send_message(self, event: mibo_events.MiboMessageResponse) -> None:
         '''
@@ -343,7 +310,7 @@ class Mibo:
         '''
         Notify me about an event.
         '''
-        admin_chat = tools.Tool.SYSTEM_CHAT
+        admin_chat = variables.Variables.SYSTEM_CHAT
 
         try:
             if event := events.get('join'):
@@ -443,10 +410,11 @@ logging.basicConfig(
 logging.getLogger("telegram.ext").setLevel(logging.CRITICAL)
 
 async def main() -> None:
-    token = tools.Tool.TELEGRAM_KEY
-    db_path = tools.Tool.DB_PATH
+    token = variables.Variables.TELEGRAM_KEY
+    db_path = variables.Variables.DB_PATH
+    ref_path = variables.Variables.REF_PATH
 
-    bot = Mibo(token, db_path)
+    bot = Mibo(token, db_path, ref_path)
     await bot.run()
 
 if __name__ == '__main__':

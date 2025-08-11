@@ -9,17 +9,18 @@ from telegram import Update, Message, MessageEntity
 from telegram.ext import CallbackContext
 
 from events import event, event_bus, conductor_events, db_events, system_events, mibo_events
-from core import wrapper
-from services import tools
+from core import ref, wrapper
+from services import variables
 
 class Conductor:
     '''
     A layer between telegram and the services.
     Captures the raw event, parses it into a MessageWrapper, and adds it back to the bus.
     '''
-    def __init__(self, bus):
+    def __init__(self, bus, referrer: ref.Ref):
         self.bus: event_bus.EventBus = bus
-        self.username: str = tools.Tool.MIBO
+        self.ref: ref.Ref = referrer
+
         self._register()
 
     def _register(self):
@@ -34,11 +35,14 @@ class Conductor:
 
         try:
             update: Update = event.update
-            start_datetime: dt.datetime = event.start_datetime
             context: CallbackContext = event.context
 
             chat = update.effective_chat
             message: Message = update.message
+
+            if not chat or not message:
+                return
+
             user = update.message.from_user
             
             if not chat or not message or not user:
@@ -58,7 +62,7 @@ class Conductor:
         try:
             user = user.username or user.first_name
             if system_message:
-                role = 'developer'
+                role = 'system'
             else:
                 role = 'assistant' if user == self.username else 'user'
 
@@ -85,7 +89,7 @@ class Conductor:
                     entity = cast(MessageEntity, entity) # for type hinting
 
                     if entity.type == 'mention':
-                        if value.startswith('@') and value[1:] == tools.Tool.MIBO_PING:
+                        if value.startswith('@') and value[1:] == variables.Variables.NICKNAME:
                             ping = True
 
                     elif entity.type == 'url':
@@ -99,7 +103,9 @@ class Conductor:
             if reply_id and (reply_message.from_user.id == context.bot.id):
                 ping = True
 
-            if f'{tools.Tool.MIBO}' in message_text.lower() or f'{tools.Tool.MIBO_RU}' in message_text.lower():
+            # if any of string names is in the text
+            names = self.ref.get_assistant_names(chat_id)
+            if any(name in message_text for name in names):
                 ping = True
                 
             datetime: dt.datetime = message.date.astimezone(dt.timezone.utc)
@@ -114,13 +120,15 @@ class Conductor:
                 c.ping = ping
 
             wrappers = ([message_wrapper] if message_wrapper.message else []) + content
+
+            if not wrappers:
+                raise ValueError("Wrapper list is somehow empty. This probably shouldn't happen.")
+
             push_request = conductor_events.WrapperPush(wrappers, chat_id=chat_id, event_id=event.event_id)
             
             chat_response = await self.bus.wait(push_request, db_events.NewChatAck)
             chat_wrapper = chat_response.chat
-
-            push_request = conductor_events.NewChatPush(chat_wrapper, event_id=event.event_id)
-            await self.bus.wait(push_request, mibo_events.AssistantCreated)
+            self.chats[chat_id] = chat_wrapper
 
             await self.bus.emit(conductor_events.AssistantRequest(chat_id=chat_id, messages=wrappers, event_id=event.event_id, typing=event.typing, system=system_message))
 

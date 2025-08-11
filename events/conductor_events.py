@@ -11,7 +11,3 @@ class WrapperPush(event.Event):
 class AssistantRequest(event.Event):
     def __init__(self, chat_id: str, messages: List[wrapper.Wrapper], **kwargs):
         super().__init__('assistant_call', chat_id=chat_id, messages=messages, **kwargs)
-
-class NewChatPush(event.Event):
-    def __init__(self, chat: wrapper.ChatWrapper, **kwargs):
-        super().__init__('new_chat_created', chat=chat, **kwargs)

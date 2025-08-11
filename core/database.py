@@ -11,7 +11,7 @@ from uuid import uuid4
 from typing import List
 from events import event_bus, db_events, conductor_events, system_events
 from core import wrapper
-from services import tools
+from services import variables
 
 class Database:
     def __init__(self, bus: event_bus.EventBus, db_path: str):
@@ -44,11 +44,11 @@ class Database:
             
             conn.close()
             
-            return [wrapper.ChatWrapper(id=row['chat_id'], name=row['chat_name'],
-                                        custom_instructions=row['custom_instructions'], chance=row['chance'],
+            return {row['chat_id']: wrapper.ChatWrapper(id=row['chat_id'], name=row['chat_name'],
+                                        chance=row['chance'],
                                         max_tokens=row['max_tokens'], max_response_tokens=row['max_response_tokens'],
-                                        frequency_penalty=row['frequency_penalty'], presence_penalty=row['presence_penalty'])
-                    for row in rows]
+                                        assistant=row['assistant'], model=row['model'])
+                    for row in rows}
 
         except Exception as e:
             _, _, tb = sys.exc_info()
@@ -129,10 +129,10 @@ class Database:
     async def insert_chat(self, chat_id: str, chat_name: str, *,
         custom_instructions: str = "",
         chance: int = 5,
-        max_tokens: int = tools.Tool.MAX_TOKENS,
-        max_response_tokens: int = tools.Tool.MAX_RESPONSE_TOKENS,
-        frequency_penalty: float = tools.Tool.FREQUENCY_PENALTY,
-        presence_penalty: float = tools.Tool.PRESENCE_PENALTY) -> str:
+        max_tokens: int = 1000,
+        max_response_tokens: int = 500,
+        assistant: str = 'default',
+        model: str = 'default') -> str:
         """
         Inserts a new chat and returns the chat_id.
         """
@@ -142,14 +142,14 @@ class Database:
                 await cursor.execute(
                     """
                     INSERT OR IGNORE INTO chats
-                    (chat_id, chat_name, custom_instructions, chance, max_tokens, max_response_tokens, frequency_penalty, presence_penalty)
-                    VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+                    (chat_id, chat_name, chance, max_tokens, max_response_tokens, assistant, model)
+                    VALUES (?, ?, ?, ?, ?, ?, ?)
                     """,
                     (
                         str(effective_chat_id), chat_name,
-                        custom_instructions, chance,
+                        chance, 
                         max_tokens, max_response_tokens,
-                        frequency_penalty, presence_penalty
+                        assistant, model
                     ),
                 )
                 await self.conn.commit()
@@ -213,18 +213,24 @@ class Database:
             if not row:
                 await self.insert_chat(chat_id, chat_name)
                 chat = wrapper.ChatWrapper(
-                    id=chat_id, name=chat_name,
-                    custom_instructions='', chance=tools.Tool.CHANCE,
-                    max_tokens=tools.Tool.MAX_TOKENS, max_response_tokens=tools.Tool.MAX_RESPONSE_TOKENS,
-                    frequency_penalty=tools.Tool.FREQUENCY_PENALTY, presence_penalty=tools.Tool.PRESENCE_PENALTY
+                    id=chat_id, 
+                    name=chat_name,
+                    chance=5,
+                    max_tokens=1000,
+                    max_response_tokens=500,
+                    assistant='default',
+                    model='default'
                 )
 
             else:
                 chat = wrapper.ChatWrapper(
-                    id=row['chat_id'], name=row['chat_name'],
-                    custom_instructions=row['custom_instructions'], chance=row['chance'],
-                    max_tokens=row['max_tokens'], max_response_tokens=row['max_response_tokens'],
-                    frequency_penalty=row['frequency_penalty'], presence_penalty=row['presence_penalty'],
+                    id=row['chat_id'], 
+                    name=row['chat_name'],
+                    chance=row['chance'],
+                    max_tokens=row['max_tokens'],
+                    max_response_tokens=row['max_response_tokens'],
+                    assistant=row['assistant'],
+                    model=row['model']
                 )
 
             # pre-save images, assign paths before insert
@@ -254,11 +260,11 @@ class Database:
                 chat_id              TEXT PRIMARY KEY,
                 chat_name            TEXT NOT NULL DEFAULT '',
                 custom_instructions  TEXT NOT NULL DEFAULT '',
-                chance               INTEGER NOT NULL DEFAULT {tools.Tool.CHANCE},
-                max_tokens           INTEGER NOT NULL DEFAULT {tools.Tool.MAX_TOKENS},
-                max_response_tokens  INTEGER NOT NULL DEFAULT {tools.Tool.MAX_RESPONSE_TOKENS},
-                frequency_penalty    FLOAT NOT NULL DEFAULT {tools.Tool.FREQUENCY_PENALTY},
-                presence_penalty     FLOAT NOT NULL DEFAULT {tools.Tool.PRESENCE_PENALTY},
+                chance               INTEGER NOT NULL DEFAULT 5,
+                max_tokens           INTEGER NOT NULL DEFAULT 1000,
+                max_response_tokens   INTEGER NOT NULL DEFAULT 500,
+                assistant            TEXT NOT NULL DEFAULT 'default',
+                model                TEXT NOT NULL DEFAULT 'default',
                 timestamp            TIMESTAMP DEFAULT CURRENT_TIMESTAMP
             );
             ''',
@@ -284,6 +290,7 @@ class Database:
                 reply_id  INTEGER,
                 quote_start INTEGER,
                 quote_end INTEGER,
+                think     TEXT NOT NULL DEFAULT '',
                 FOREIGN KEY (sql_id) REFERENCES wrappers (sql_id) ON DELETE CASCADE
             );
             ''',
@@ -356,7 +363,7 @@ class Database:
             async with self.conn.cursor() as cursor:
                 await cursor.execute('SELECT max_tokens FROM chats WHERE chat_id = ?', (chat_id,))
                 row = await cursor.fetchone()
-            max_tokens = row['max_tokens'] if row else tools.Tool.MAX_TOKENS
+            max_tokens = row['max_tokens'] if row else variables.Variables.MAX_TOKENS
 
             # thanks chatgpt
             sql = '''

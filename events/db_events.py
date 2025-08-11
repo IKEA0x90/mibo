@@ -10,10 +10,6 @@ class MessageSaved(event.Event):
     def __init__(self, **kwargs):
         super().__init__('message_saved', **kwargs)
         
-class NewChatPush(event.Event):
-    def __init__(self, chat, **kwargs):
-        super().__init__('new_chat_created', chat=chat, **kwargs)
-
 class NewChatAck(event.Event):
     def __init__(self, chat: wrapper.ChatWrapper, **kwargs):
         super().__init__('new_chat_ack', chat=chat, **kwargs)

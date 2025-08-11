@@ -1,0 +1,21 @@
+{
+    "models": [
+        {
+            "id": "gpt-4.1",
+            "supported_fields": [],
+            "base_url": "default",
+            "local": false,
+            "temperature": 0.95,
+            "max_tokens": 1000,
+            "max_response_tokens": 500,
+            "penalty_disabled": false,
+            "frequency_penalty": 0.1,
+            "presence_penalty": 0.1,
+            "reasoning": false,
+            "reasoning_effort": "",
+            "think_token": "",
+            "disable_thinking_token": "/no_think",
+            "disable_thinking": false
+        }
+    ]
+}

@@ -11,60 +11,22 @@ from io import BytesIO
 from PIL import Image
 
 from events import event_bus, conductor_events, assistant_events, system_events, tool_events, db_events, event
-from core import database, window, wrapper
-from services import tools
-
-def initialize_assistants(db: database.Database, client: openai.OpenAI, bus: event_bus.EventBus, templates: Dict[str, Dict[str, str]], start_datetime: dt.datetime):
-    '''
-    Creates a dictionary of assistants for each chat in the database.
-    '''
-    assistants = {}
-
-    chats = db.get_all_chats()
-    chat: wrapper.ChatWrapper
-    for chat in chats:
-        chat_id = chat.chat_id
-        assistants[chat_id] = Assistant(chat_id, client, bus, templates, start_datetime, chat, tools.Tool.MIBO)
-
-    return assistants
+from core import ref, window, wrapper
+from services import templates, variables
 
 class Assistant:
-    def __init__(self, chat_id: str, client: openai.OpenAI, bus: event_bus.EventBus, templates: Dict[str, Dict[str, str]], 
-                 start_datetime: dt.datetime, chat: wrapper.ChatWrapper, assistant_type: str = tools.Tool.MIBO):
-        
-        self.chat_id: str = chat_id
-        self.client: openai.OpenAI = client
+    def __init__(self, clients: List[openai.OpenAI], local_clients: List[openai.OpenAI], bus: event_bus.EventBus, refferrer: ref.Ref, start_datetime: dt.datetime, **kwargs):
+
+        self.clients: List[openai.OpenAI] = clients
+        self.local_clients: List[openai.OpenAI] = local_clients
+
         self.bus: event_bus.EventBus = bus
-        self.system_message: str = ''
-        self.template: dict = templates.get('template', {})
-        self.chat: wrapper.ChatWrapper = chat
-        self.assistant_type: str = assistant_type
+        self.ref: ref.Ref = refferrer
         self.start_datetime: dt.datetime = start_datetime
 
-        # mibo only has the cat assistant
-        if assistant_type == tools.Tool.MIBO:
-            self.cat_assistant: CatAssistant = CatAssistant(chat_id, client, bus, templates, start_datetime, chat, tools.Tool.CAT_ASSISTANT)
-
-        # cat assistant has the other assistants
-        if assistant_type == tools.Tool.CAT_ASSISTANT:
-            image_template = templates.get('image_template', {})
-            poll_template = templates.get('poll_template', {})
-            property_template = templates.get('property_template', {})
-            memory_template = templates.get('memory_template', {})
-
-            self.image_assistant: CatAssistant = CatAssistant(chat_id, client, bus, {'template': image_template}, start_datetime, chat, tools.Tool.IMAGE_ASSISTANT)
-            self.poll_assistant: CatAssistant = CatAssistant(chat_id, client, bus, {'template': poll_template}, start_datetime, chat, tools.Tool.POLL_ASSISTANT)
-            self.property_assistant: CatAssistant = CatAssistant(chat_id, client, bus, {'template': property_template}, start_datetime, chat, tools.Tool.PROPERTY_ASSISTANT)
-            self.memory_assistant: CatAssistant = CatAssistant(chat_id, client, bus, {'template': memory_template}, start_datetime, chat, tools.Tool.MEMORY_ASSISTANT)
-
-        self.death_timer = -1
-        self.last_reply = -1
-        self.ready = False
+        self.windows: List[window.Window] = []
 
         self._load()
-
-        self.messages = window.Window(chat_id, start_datetime, self.template, self.max_tokens)
-
         self._register()
 
     def _load(self):
@@ -122,8 +84,7 @@ class Assistant:
                 continue
 
             # live messages that arrived before the window was ready
-            if not self.messages.contains(message):
-                await self.messages._insert_live_message(message)
+            await self.messages._insert_live_message(message)
 
         self.ready = True
 
@@ -195,13 +156,19 @@ class Assistant:
 
         if self.custom_instructions:
             messages.append({
-                'role': 'developer',
+                'role': 'system',
                 'content': [{'type': 'text', 'text': self.custom_instructions}]
+            })
+
+        if self.local_client and self.disable_think:
+            messages.append({
+                'role': 'system',
+                'content': [{'type': 'text', 'text': self.no_think}]
             })
 
         if (instr := assistant_template.get('instructions')):
             messages.append({
-                'role': 'developer',
+                'role': 'system',
                 'content': [{'type': 'text', 'text': instr}]
             })
         
@@ -212,8 +179,11 @@ class Assistant:
         request['messages'] = messages
 
         try:
-            response = await self.call_openai(self.client.chat.completions.create, **request, extra_body=self.extra_body)
-            
+            if self.local_client:
+                response = await self.call_openai(self.local_client.chat.completions.create, **request, extra_body=self.extra_body)
+            else:
+                response = await self.call_openai(self.client.chat.completions.create, **request, extra_body=self.extra_body)
+
             # Process the response
             response_message = response.choices[0].message
             
@@ -236,7 +206,7 @@ class Assistant:
                     )
                     tool_response: wrapper.Wrapper = await self.bus.wait(tool_event, assistant_events.AssistantToolResponse)
                     # only some events require notification
-                    if tool_name == tools.Tool.CREATE_IMAGE:
+                    if tool_name == variables.Variables.CREATE_IMAGE:
                         event = assistant_events.AssistantDirectRequest(tool_response)
                         await self.bus.emit(event)
 
@@ -257,13 +227,17 @@ class Assistant:
                     return
                 
                 # Replace random stuff that I don't like and is easier to change here rather than in the prompt
-                message_text = tools.Tool.replacers(message_text)
+                message_text = variables.Variables.replacers(message_text)
                 
+                if self.local_client:
+                    message_text = message_text.split(f'{self.think_end}', 1)[1]
+                    message_text = message_text.strip()
+
                 wrapper_list = []
 
                 assistant_message = wrapper.MessageWrapper(
                     id=str(response.id), chat_id=self.chat_id, 
-                    role='assistant', user=tools.Tool.MIBO,
+                    role='assistant', user=variables.Variables.MIBO,
                     message=message_text, ping=False,
                     datetime=dt.datetime.now(tz=dt.timezone.utc)
                 )
@@ -272,7 +246,7 @@ class Assistant:
                 # Add images to content_list
                 for img in images:
                     if 'image_url' in img:
-                        incomplete_wrapper = wrapper.ImageWrapper(id=str(response.id), chat_id=self.chat_id, x=0, y=0, role='assistant', user=tools.Tool.MIBO)
+                        incomplete_wrapper = wrapper.ImageWrapper(id=str(response.id), chat_id=self.chat_id, x=0, y=0, role='assistant', user=variables.Variables.MIBO)
                         image = await self._download_image_url(img['image_url'], incomplete_wrapper=incomplete_wrapper, parent_event=event)
                         wrapper_list.append(image)
 
@@ -339,11 +313,11 @@ class CatAssistant(Assistant):
         self.bus.unregister(conductor_events.AssistantRequest, self._add_message)
         self.bus.unregister(assistant_events.AssistantDirectRequest, self._trigger_completion)
         
-        if self.assistant_type == tools.Tool.CAT_ASSISTANT:
+        if self.assistant_type == variables.Variables.CAT_ASSISTANT:
             self.bus.register(assistant_events.AssistantToolRequest, self._tool_response)
 
-        elif self.assistant_type in [tools.Tool.IMAGE_ASSISTANT, tools.Tool.POLL_ASSISTANT, tools.Tool.PROPERTY_ASSISTANT, tools.Tool.MEMORY_ASSISTANT]:
-            self.bus.register(tools.Tool.get_event(self.assistant_type), self._tool_response)
+        elif self.assistant_type in [variables.Variables.IMAGE_ASSISTANT, variables.Variables.POLL_ASSISTANT, variables.Variables.PROPERTY_ASSISTANT, variables.Variables.MEMORY_ASSISTANT]:
+            self.bus.register(variables.Variables.get_event(self.assistant_type), self._tool_response)
 
     async def _tool_response(self, event: assistant_events.AssistantToolRequest):
         '''
@@ -357,7 +331,7 @@ class CatAssistant(Assistant):
         tool_name = event.tool_name
         tool_args = event.tool_args
 
-        if tool_name != tools.Tool.CAT_ASSISTANT:
+        if tool_name != variables.Variables.CAT_ASSISTANT:
             return
         
         interaction_type = tool_args.get('interaction_type', None)
@@ -366,8 +340,8 @@ class CatAssistant(Assistant):
         if not interaction_type or not interaction_context:
             return
         
-        if interaction_type == tools.Tool.CREATE_IMAGE:
-            ev = tool_events.ToolImageRequest(context=interaction_context, event_id=event.event_id)
+        if interaction_type == variables.Variables.CREATE_IMAGE:
+            ev = tool_events.VariablesImageRequest(context=interaction_context, event_id=event.event_id)
             self.bus.emit(ev)
         
         message = wrapper.MessageWrapper(
@@ -377,23 +351,23 @@ class CatAssistant(Assistant):
             ping=True,
             datetime=dt.datetime.now(tz=dt.timezone.utc),
             role='assistant',
-            user=tools.Tool.CAT_ASSISTANT,
+            user=variables.Variables.CAT_ASSISTANT,
         )
 
         await self.messages.override(message)
         event = assistant_events.AssistantDirectRequest(message=message, event_id=event.event_id)
         await self.bus.emit(event)
 
-    async def _use_tool(self, event: tool_events.ToolRequest):
+    async def _use_tool(self, event: tool_events.VariablesRequest):
         '''
         Processes a tool request.
         '''
         if event.chat_id != self.outer_id:
             return
         
-        if event.tool_name == tools.Tool.CAT_ASSISTANT:
+        if event.tool_name == variables.Variables.CAT_ASSISTANT:
             return
         
-        if event.tool_name == tools.Tool.CREATE_IMAGE:
+        if event.tool_name == variables.Variables.CREATE_IMAGE:
             prompt = ''
-            image = await tools.Tool.create_image(prompt)
+            image = await variables.Variables.create_image(prompt)
