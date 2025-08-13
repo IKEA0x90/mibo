@@ -118,7 +118,7 @@ class AssistantReference(Reference):
 
         self.names = kwargs.get('names', [self.id.title()])
         self.chat_events = kwargs.get('chat_events', default_chat_events)
-        self._prompt = ''
+        self.prompt = kwargs.get('prompt', '')
 
     def get_names(self):
         return self.names

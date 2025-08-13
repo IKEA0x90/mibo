@@ -118,39 +118,7 @@ class Database:
         self.bus.register(db_events.MemoryRequest, self._handle_memory_request)
         
         self._handlers_registered = True
-
-    async def get_prompt(self, path: str) -> str:
-        '''
-        Get the prompt from a path.
-        Path is relative to db_path.
-        Returns empty string on error.
-        '''
-        try:
-            full_path = Path(self.path) / path
-            
-            # ensure we're not trying to access files outside the database directory
-            if not str(full_path.resolve()).startswith(str(Path(self.path).resolve())):
-                await self.bus.emit(system_events.ErrorEvent(
-                    error=f'Security error: Attempted to access file outside database directory.'))
-                return ''
-            
-            if not full_path.exists() or not full_path.is_file():
-                await self.bus.emit(system_events.ErrorEvent(
-                    error=f'Prompt file not found: {path}'))
-                return ''
-                
-            async with aiofiles.open(full_path, 'r', encoding='utf-8') as f:
-                content = await f.read()
-                
-            return content
-            
-        except Exception as e:
-            _, _, tb = sys.exc_info()
-            await self.bus.emit(system_events.ErrorEvent(
-                error=f'Failed to read prompt file: {path}', e=e, tb=tb))
-            return ''
         
-
     async def insert_chat(self, chat_id: str, chat_name: str, *,
         custom_instructions: str = "",
         chance: int = 5,
@@ -178,7 +146,7 @@ class Database:
                 await self.conn.commit()
         return str(effective_chat_id)
 
-    async def _insert(self, content: wrapper.Wrapper) -> str:
+    async def _insert_wrapper(self, content: wrapper.Wrapper) -> str:
         '''
         Inserts a wrapper linked to an existing chat.
         Does so in a way that doesn't need any future changes.
@@ -259,7 +227,7 @@ class Database:
             for w in wrappers:
                 if isinstance(w, wrapper.Wrapper):
                     w.tokens = w.calculate_tokens()
-                    await self._insert(w)
+                    await self._insert_wrapper(w)
             
             # we're finished
             await self.bus.emit(db_events.NewChatAck(chat=chat, event_id=event.event_id))
@@ -269,7 +237,7 @@ class Database:
             await self.bus.emit(system_events.ErrorEvent(error=f'Failed to add a message to the database.', e=e, tb=tb, event_id=event.event_id, chat_id=chat_id))
     
     @staticmethod
-    def _generate_schemas():
+    def _generate_wrapper_schemas():
         return [
             f'''
             CREATE TABLE IF NOT EXISTS chats (
@@ -322,26 +290,18 @@ class Database:
             'CREATE INDEX IF NOT EXISTS idx_wrappers_chat_time ON wrappers (chat_id, datetime, sql_id)',
             'CREATE INDEX IF NOT EXISTS idx_wrappers_telegram ON wrappers (chat_id, telegram_id)',
             'CREATE INDEX IF NOT EXISTS idx_wrappers_type ON wrappers (wrapper_type)',
-
-            '''
-            CREATE TABLE IF NOT EXISTS models (
-                
-            );
-            ''',
-
-            '''
-            CREATE TABLE IF NOT EXISTS assistants (
-
-            );
-            ''',
         ]
+    
+    @staticmethod
+    def _generate_reference_schemas():
+        pass
 
     async def create_tables(self, cursor) -> None: # Accepts cursor
         '''
         Create the tables asynchronously.
         '''
         try:
-            schemas = self._generate_schemas()
+            schemas = self._generate_wrapper_schemas()
             for schema in schemas:
                 await cursor.execute(schema)
             await self.conn.commit()
@@ -356,7 +316,7 @@ class Database:
         Synchronous version of create_tables for use with sqlite3.
         '''
         try:
-            schemas = self._generate_schemas()
+            schemas = self._generate_wrapper_schemas()
             for schema in schemas:
                 cursor.execute(schema)
             cursor.connection.commit()
