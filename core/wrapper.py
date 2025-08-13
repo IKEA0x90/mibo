@@ -6,6 +6,7 @@ import datetime as dt
 from typing import Any, Dict, List, Optional
 
 from services import variables
+from core import ref
 
 WRAPPER_REGISTRY = {}
 def register_wrapper(cls):
@@ -228,15 +229,12 @@ class ChatWrapper():
         self.name = str(name)
         self.chat_name: str = name
 
-        self.custom_instructions: str = kwargs.get('custom_instructions', '')
-        self.chance: int = kwargs.get('chance', variables.Variables.CHANCE)
-        self.max_tokens: int = kwargs.get('max_tokens', variables.Variables.MAX_TOKENS)
-        self.max_response_tokens: int = kwargs.get('max_response_tokens', variables.Variables.MAX_RESPONSE_TOKENS)
+        self.chance: int = kwargs.get('chance', 5)
+        self.assistant: 
 
     def to_dict(self):
         return {
             'id': self.chat_id,
             'chat_name': self.chat_name,
-            'custom_instructions': self.custom_instructions,
             'chance': self.chance,
         }

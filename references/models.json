@@ -1,7 +1,6 @@
 {
-    "models": [
-        {
-            "id": "gpt-4.1",
+    "models": {
+        "gpt-4.1": {
             "supported_fields": [],
             "base_url": "default",
             "local": false,
@@ -17,5 +16,5 @@
             "disable_thinking_token": "/no_think",
             "disable_thinking": false
         }
-    ]
+    }
 }

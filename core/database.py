@@ -27,33 +27,26 @@ class Database:
         self._init_done = False
         self._lock = asyncio.Lock()  # Add lock to prevent race conditions
 
-    def get_all_chats(self) -> List[wrapper.ChatWrapper]:
+    def get_chat(self, chat_id: str) -> wrapper.ChatWrapper:
         '''
-        Returns all chat IDs and their custom instructions from the database.
-        Synchronous method for use during initialization.
+        Get a chat by its ID.
         '''
         try:
-            # Use synchronous SQLite connection for initial data fetch
-
             conn = sqlite3.connect(self.db_path)
             conn.row_factory = sqlite3.Row
             cursor = conn.cursor()
 
-            cursor.execute('SELECT * FROM chats')
-            rows = cursor.fetchall()
-            
-            conn.close()
-            
-            return {row['chat_id']: wrapper.ChatWrapper(id=row['chat_id'], name=row['chat_name'],
-                                        chance=row['chance'],
-                                        max_tokens=row['max_tokens'], max_response_tokens=row['max_response_tokens'],
-                                        assistant=row['assistant'], model=row['model'])
-                    for row in rows}
+            cursor.execute('SELECT * FROM chats WHERE chat_id = ?', (chat_id,))
+            row = cursor.fetchone()
+
+            if row:
+                return wrapper.ChatWrapper(id=row['chat_id'], name=row['chat_name'],
+                                            chance=row['chance'], assistant=row['assistant'], model=row['model'])
 
         except Exception as e:
             _, _, tb = sys.exc_info()
             self.bus.emit_sync(system_events.ErrorEvent(error="Hmm.. Can't read your group chats from the database.", e=e, tb=tb))
-            return []
+            return None
 
     async def initialize(self):
         '''
@@ -126,6 +119,38 @@ class Database:
         
         self._handlers_registered = True
 
+    async def get_prompt(self, path: str) -> str:
+        '''
+        Get the prompt from a path.
+        Path is relative to db_path.
+        Returns empty string on error.
+        '''
+        try:
+            full_path = Path(self.path) / path
+            
+            # ensure we're not trying to access files outside the database directory
+            if not str(full_path.resolve()).startswith(str(Path(self.path).resolve())):
+                await self.bus.emit(system_events.ErrorEvent(
+                    error=f'Security error: Attempted to access file outside database directory.'))
+                return ''
+            
+            if not full_path.exists() or not full_path.is_file():
+                await self.bus.emit(system_events.ErrorEvent(
+                    error=f'Prompt file not found: {path}'))
+                return ''
+                
+            async with aiofiles.open(full_path, 'r', encoding='utf-8') as f:
+                content = await f.read()
+                
+            return content
+            
+        except Exception as e:
+            _, _, tb = sys.exc_info()
+            await self.bus.emit(system_events.ErrorEvent(
+                error=f'Failed to read prompt file: {path}', e=e, tb=tb))
+            return ''
+        
+
     async def insert_chat(self, chat_id: str, chat_name: str, *,
         custom_instructions: str = "",
         chance: int = 5,
@@ -142,14 +167,12 @@ class Database:
                 await cursor.execute(
                     """
                     INSERT OR IGNORE INTO chats
-                    (chat_id, chat_name, chance, max_tokens, max_response_tokens, assistant, model)
-                    VALUES (?, ?, ?, ?, ?, ?, ?)
+                    (chat_id, chat_name, chance, assistant, model)
+                    VALUES (?, ?, ?, ?, ?)
                     """,
                     (
                         str(effective_chat_id), chat_name,
-                        chance, 
-                        max_tokens, max_response_tokens,
-                        assistant, model
+                        chance, assistant, model
                     ),
                 )
                 await self.conn.commit()
@@ -210,28 +233,21 @@ class Database:
                 await cursor.execute('SELECT * FROM chats WHERE chat_id = ?', (chat_id,))
                 row = await cursor.fetchone()
 
-            if not row:
-                await self.insert_chat(chat_id, chat_name)
-                chat = wrapper.ChatWrapper(
-                    id=chat_id, 
-                    name=chat_name,
-                    chance=5,
-                    max_tokens=1000,
-                    max_response_tokens=500,
-                    assistant='default',
-                    model='default'
-                )
-
+            if row:
+                id=row['chat_id'], 
+                name=row['chat_name'],
+                chance=row['chance'],
+                assistant=row['assistant'],
+                model=row['model']
             else:
-                chat = wrapper.ChatWrapper(
-                    id=row['chat_id'], 
-                    name=row['chat_name'],
-                    chance=row['chance'],
-                    max_tokens=row['max_tokens'],
-                    max_response_tokens=row['max_response_tokens'],
-                    assistant=row['assistant'],
-                    model=row['model']
-                )
+                await self.insert_chat(chat_id, chat_name)
+                id=chat_id, 
+                name=chat_name,
+                chance=5,
+                assistant='default',
+                model='default'
+
+            chat = wrapper.ChatWrapper(id=id, name=name, chance=chance, assistant=assistant, model=model)
 
             # pre-save images, assign paths before insert
             for w in wrappers:
@@ -259,10 +275,7 @@ class Database:
             CREATE TABLE IF NOT EXISTS chats (
                 chat_id              TEXT PRIMARY KEY,
                 chat_name            TEXT NOT NULL DEFAULT '',
-                custom_instructions  TEXT NOT NULL DEFAULT '',
                 chance               INTEGER NOT NULL DEFAULT 5,
-                max_tokens           INTEGER NOT NULL DEFAULT 1000,
-                max_response_tokens   INTEGER NOT NULL DEFAULT 500,
                 assistant            TEXT NOT NULL DEFAULT 'default',
                 model                TEXT NOT NULL DEFAULT 'default',
                 timestamp            TIMESTAMP DEFAULT CURRENT_TIMESTAMP
@@ -309,6 +322,18 @@ class Database:
             'CREATE INDEX IF NOT EXISTS idx_wrappers_chat_time ON wrappers (chat_id, datetime, sql_id)',
             'CREATE INDEX IF NOT EXISTS idx_wrappers_telegram ON wrappers (chat_id, telegram_id)',
             'CREATE INDEX IF NOT EXISTS idx_wrappers_type ON wrappers (wrapper_type)',
+
+            '''
+            CREATE TABLE IF NOT EXISTS models (
+                
+            );
+            ''',
+
+            '''
+            CREATE TABLE IF NOT EXISTS assistants (
+
+            );
+            ''',
         ]
 
     async def create_tables(self, cursor) -> None: # Accepts cursor

@@ -20,6 +20,9 @@ class Variables:
     LOCAL_API_PORT = os.environ['LOCAL_API_PORT']
     LOCAL_API_HOST = os.environ['LOCAL_API_HOST']
 
+    DEFAULT_ASSISTANT = os.environ['DEFAULT_ASSISTANT']
+    DEFAULT_MODEL = os.environ['DEFAULT_MODEL']
+
     @staticmethod
     def replacers(original: str) -> str:
         '''

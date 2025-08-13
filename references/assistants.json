@@ -1,18 +1,16 @@
 {
-    "assistants": [
-        {
-            "id": "mibo",
+    "assistants": {
+        "mibo": {
             "names": ["Mibo", "Мибо"],
             "chat_events": {
-                "welcome": "default"
+                "welcome": "default_system_prompts/welcome.md"
             }
         },
-        {
-            "id": "kibo",
+        "kibo": {
             "names": ["Kibo", "Кибо"],
             "chat_events": {
-                "welcome": "default"
+                "welcome": "default_system_prompts/welcome.md"
             }
         }
-    ]
+    }
 }

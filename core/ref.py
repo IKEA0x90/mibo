@@ -5,7 +5,7 @@ import inspect
 import asyncio
 
 from core import database, wrapper
-from events import event_bus
+from events import db_events, event_bus
 
 default_chat_events = {
     "welcome": "default"
@@ -39,24 +39,22 @@ class Reference:
             if callable(attribute_value):
                 continue
                 
+            # skip id and type since id becomes the key and type is determined from filename
+            if attribute_name in ('id', 'type'):
+                continue
+                
             serialized_data[attribute_name] = attribute_value
         
-        # always include type for deserialization
-        serialized_data['type'] = self.__class__.type
         return serialized_data
     
     @staticmethod
-    def from_dict(reference_data):
+    def from_dict(reference_data, reference_type):
         '''
         Create a reference instance from a dictionary. Thanks Copilot for this one.
         '''
 
         if not isinstance(reference_data, dict):
             raise ValueError('from_dict expects a dictionary')
-
-        reference_type = reference_data.get('type')
-        if not reference_type:
-            raise ValueError("Missing 'type' field in reference dictionary")
 
         # look up the reference class by type name
         reference_class = REFERENCE_REGISTRY.get(reference_type)
@@ -102,11 +100,12 @@ class ModelReference(Reference):
         self.max_tokens = kwargs.get('max_tokens', 1000)
         self.max_response_tokens = kwargs.get('max_response_tokens', 500)
 
-        self.penalty_disabled = kwargs.get('penalty_disabled', False)
+        self.penalty_supported = kwargs.get('penalty_supported', True)
         self.frequency_penalty = kwargs.get('frequency_penalty', 0.1)
         self.presence_penalty = kwargs.get('presence_penalty', 0.1)
 
         self.reasoning = kwargs.get('reasoning', False)
+        self.reasoning_supported = kwargs.get('reasoning_supported', True)
         self.reasoning_effort = kwargs.get('reasoning_effort', 'medium')
 
         self.think_token = kwargs.get('think_token', '</think>')
@@ -118,8 +117,8 @@ class AssistantReference(Reference):
         super().__init__(id=id, **kwargs)
 
         self.names = kwargs.get('names', [self.id.title()])
-
         self.chat_events = kwargs.get('chat_events', default_chat_events)
+        self._prompt = ''
 
     def get_names(self):
         return self.names
@@ -135,8 +134,6 @@ class Ref:
         self.assistants: Dict[str, AssistantReference] = {}
         self.models: Dict[str, ModelReference] = {}
 
-        self.system_assistants: Dict[str, AssistantReference] = {}
-
         self._prepare()
 
     def _prepare(self):
@@ -144,11 +141,29 @@ class Ref:
         Prepare the ref.
         '''
         self.db.initialize_sync()
-
-        self.chats = self.db.get_all_chats()
         self.load_sync()
 
-        self._register()
+    def _register(self):
+        '''
+        Register bus events
+        '''
+        self.bus.register(db_events.NewChatAck, self._add_chat)   
+
+    def _add_chat(self, event: db_events.NewChatAck):
+        chat = event.chat
+        if chat and isinstance(chat, wrapper.ChatWrapper):
+            chat_id = chat.id
+            self.chats[chat_id] = chat
+
+    def _get_assistant(self, chat_id: str) -> AssistantReference:
+        '''
+        Gets an AssistantReference object for the given chat id. 
+        '''
+        chat = self.chats.get(chat_id)
+        if not chat:
+            return None
+        
+
 
     def get_assistant_names(self, chat_id: str) -> List[str]:
         assistant: str = self.chats.get(chat_id)
@@ -160,13 +175,18 @@ class Ref:
             return assistant.get_names()
 
         return []
+    
+    def get_assistant_prompt(self, chat_id: str) -> str:
+        assistant: str = self.chats.get(chat_id)
+
+
 
     def save_sync(self):
         '''
         Save all reference collections to JSON files in the references directory.
         Each reference type gets its own file: {type_name}s.json
         Example: 'model' references are saved to 'models.json'
-        References are saved as arrays with a root key matching the plural type name.
+        References are saved as dictionaries id : reference format under a root key matching the plural type name.
         '''
         os.makedirs(self.ref_path, exist_ok=True)
 
@@ -185,10 +205,10 @@ class Ref:
             if not isinstance(reference_collection, dict):
                 continue
 
-            serialized_references = []
+            serialized_references = {}
             for reference_id, reference_object in reference_collection.items():
                 if isinstance(reference_object, Reference):
-                    serialized_references.append(reference_object.to_dict())
+                    serialized_references[reference_id] = reference_object.to_dict()
 
             # wrap in object with plural type name as key
             output_data = {collection_attribute_name: serialized_references}
@@ -203,7 +223,8 @@ class Ref:
         Each reference type is loaded from its corresponding file: {type_name}s.json
         If files don't exist, they are created with empty collections.
         Corrupted files are automatically reset to empty collections.
-        References are expected to be in arrays with a root key matching the plural type name.
+        References is a dictionary of id : reference
+        Type is determined from filename.
         '''
 
         os.makedirs(self.ref_path, exist_ok=True)
@@ -217,7 +238,7 @@ class Ref:
             expected_file_path = os.path.join(self.ref_path, f"{reference_type}s.json")
             if not os.path.exists(expected_file_path):
                 with open(expected_file_path, 'w', encoding='utf-8') as new_file:
-                    json.dump({collection_attribute_name: []}, new_file)
+                    json.dump({collection_attribute_name: {}}, new_file)
 
         for filename in os.listdir(self.ref_path):
             if not filename.endswith('.json'):
@@ -242,32 +263,29 @@ class Ref:
                 with open(file_path, 'r', encoding='utf-8') as input_file:
                     raw_data = json.load(input_file)
             except json.JSONDecodeError:
-                raw_data = {collection_attribute_name: []}
+                raw_data = {collection_attribute_name: {}}
                 with open(file_path, 'w', encoding='utf-8') as reset_file:
                     json.dump(raw_data, reset_file)
 
             if not isinstance(raw_data, dict):
-                raw_data = {collection_attribute_name: []}
+                raw_data = {collection_attribute_name: {}}
 
-            # get the array of references from the root key
-            references_array = raw_data.get(collection_attribute_name, [])
-            if not isinstance(references_array, list):
-                references_array = []
-
+            # get the references from the root key
+            references_data = raw_data.get(collection_attribute_name, {})
+            
             loaded_references = {}
-            for reference_dict in references_array:
-                if not isinstance(reference_dict, dict):
-                    continue
+            
+            if isinstance(references_data, dict):
+                for reference_id, reference_dict in references_data.items():
+                    if not isinstance(reference_dict, dict):
+                        continue
                     
-                # ensure the reference has the correct type field
-                if 'type' not in reference_dict:
-                    reference_dict = {**reference_dict, 'type': reference_type}
-                
-                try:
-                    reference_instance = Reference.from_dict(reference_dict)
-                    loaded_references[str(reference_instance.id)] = reference_instance
-                except (ValueError, TypeError):
-                    continue
+                    try:
+                        reference_instance = Reference.from_dict(reference_dict, reference_type)
+                        loaded_references[str(reference_instance.id)] = reference_instance
+
+                    except (ValueError, TypeError):
+                        continue
 
             setattr(self, collection_attribute_name, loaded_references)
 

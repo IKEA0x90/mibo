@@ -10,9 +10,9 @@ from typing import List, Dict
 from io import BytesIO
 from PIL import Image
 
-from events import event_bus, conductor_events, assistant_events, system_events, tool_events, db_events, event
+from events import event_bus, conductor_events, assistant_events, system_events, db_events, event
 from core import ref, window, wrapper
-from services import templates, variables
+from services import variables
 
 class Assistant:
     def __init__(self, clients: List[openai.OpenAI], local_clients: List[openai.OpenAI], bus: event_bus.EventBus, refferrer: ref.Ref, start_datetime: dt.datetime, **kwargs):
@@ -24,7 +24,7 @@ class Assistant:
         self.ref: ref.Ref = refferrer
         self.start_datetime: dt.datetime = start_datetime
 
-        self.windows: List[window.Window] = []
+        self.windows: Dict[str, window.Window] = {}
 
         self._load()
         self._register()
