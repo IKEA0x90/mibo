@@ -1,12 +1,6 @@
-from typing import List
-
 from events import event
-from core import wrapper
+from core import window
 
-class WrapperPush(event.Event):
-    def __init__(self, wrapper_list: List[wrapper.Wrapper], chat_id: str, **kwargs):
-        super().__init__('wrapper_push', wrapper_list=wrapper_list, chat_id=chat_id, **kwargs)
-
-class AssistantRequest(event.Event):
-    def __init__(self, chat_id: str, messages: List[wrapper.Wrapper], **kwargs):
-        super().__init__('assistant_call', chat_id=chat_id, messages=messages, **kwargs)
+class CompletionRequest(event.Event):
+    def __init__(self, wdw: window.Window, **kwargs):
+        super().__init__('completion_request', wdw, **kwargs)

@@ -24,69 +24,10 @@ class Assistant:
         self.ref: ref.Ref = refferrer
         self.start_datetime: dt.datetime = start_datetime
 
-        self.windows: Dict[str, window.Window] = {}
-
-        self._load()
         self._register()
 
-    def _load(self):
-        self.system_message = self.template.get('instructions', '')
-        self.model = self.template.get('model', 'gpt-4.1')
-        self.temperature = self.template.get('temperature', 0.95)
-        
-        self.tools = self.template.get('tools', [])
-
-        self.custom_instructions = self.chat.custom_instructions
-        self.chance = self.chat.chance
-        self.max_tokens = self.chat.max_tokens
-        self.max_response_tokens = self.chat.max_response_tokens
-
-        self.frequency_penalty = self.chat.frequency_penalty
-        self.presence_penalty = self.chat.presence_penalty
-
-        self.assistant_object = {
-            'model': self.model,
-            'temperature': self.temperature,
-            'max_output_tokens': self.max_response_tokens,
-            'tools': self.tools,
-            'instructions': self.system_message,
-            'store': False,
-            'tool_choice': 'auto',
-            'truncation': 'auto',
-        }
-
-        self.extra_body = {
-            'frequency_penalty': self.frequency_penalty,
-            'presence_penalty': self.presence_penalty,
-        }
-
     def _register(self):
-        self.bus.register(conductor_events.AssistantRequest, self._add_message)
-        self.bus.register(assistant_events.AssistantDirectRequest, self._trigger_completion)
-        self.bus.register(conductor_events.WrapperPush, self._prepare)
-
-    async def _prepare(self, event: conductor_events.WrapperPush):
-        '''
-        Prepare the window without triggering completions.
-        '''
-        if event.chat_id != self.chat_id or self.ready:
-            return
-
-        memory_request = db_events.MemoryRequest(chat_id=self.chat_id)
-        memory_response = await self.bus.wait(memory_request, db_events.MemoryResponse)
-
-        message: wrapper.Wrapper = None
-
-        for message in memory_response.messages:
-            if message.datetime < self.start_datetime:
-                # backlog – include for context, no completion later
-                await self.messages._insert_live_message(message)
-                continue
-
-            # live messages that arrived before the window was ready
-            await self.messages._insert_live_message(message)
-
-        self.ready = True
+        self.bus.register(conductor_events.CompletionRequest, self._trigger_completion)
 
     @staticmethod
     async def call_openai(sync_func, *args, **kwargs):
@@ -96,62 +37,13 @@ class Assistant:
         loop = asyncio.get_running_loop()
         return await loop.run_in_executor(None, lambda: sync_func(*args, **kwargs))
 
-    async def _check_conditions(self, message: wrapper.MessageWrapper) -> bool:
+    async def _trigger_completion(self, event: conductor_events.CompletionRequest):
         '''
-        First, checks if the window is ready.
-        If not, return False. Othewise:
-        If a message is a ping, a reply is guaranteed - return True.
-        Otherwise, self.chance % chance to reply.
-        When a reply happens, call _reply().
+        Trigger a chat completion and return the response message. 
         '''
-        if not self.messages.ready:
-            return False
+        wdw: window.Window = event.wdw
 
-        if hasattr(message, 'ping') and message.ping:
-            return True
-        chance = random.randint(1, 100)
-        if chance <= self.chance:
-            return True
-        return False
-
-    async def _add_message(self, event: conductor_events.AssistantRequest):
-        '''
-        Process an assistant request event.
-        Adds the message to the window.
-        Triggers _trigger_completion().
-        '''
-        for message in event.messages:
-            if event.chat_id != self.chat_id:
-                return
-
-            await self.messages.add_message(event.event_id, message, self.bus)
-            run = await self._check_conditions(message)
-            if run:
-                typing = event.typing
-                typing()
-
-                ev = assistant_events.AssistantDirectRequest(message=message, event_id=event.event_id, system=event.system)
-                await self.bus.emit(ev)
-
-    async def _trigger_completion(self, event: assistant_events.AssistantDirectRequest):
-        '''
-        Makes a json request from self.window.transform_messages()
-        Checks if messages requires a reply.
-        If so, make a copy of self.assistant_object and add the message to it.
-        Then, call openai with the json request.
-        If the response contains tool calls, create a ToolRequest and emit it.
-        Otherwise, create a message wrapper from the response and emit an assistant response.
-        '''
-        message = event.message
-        if message.chat_id != self.chat_id:
-            return
-        
-        if not self.messages.ready:
-            return
-        
-        assistant_template = copy(self.assistant_object)
-
-        user_messages: List[Dict] = await self.messages.transform_messages()
+        user_messages: List[Dict] = await wdw.transform_messages()
         messages: List[Dict] = []
 
         if self.custom_instructions:

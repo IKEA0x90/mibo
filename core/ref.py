@@ -1,4 +1,4 @@
-from typing import Dict, List
+from typing import Dict, List, Callable, Tuple
 import asyncio
 import time
 
@@ -6,7 +6,7 @@ import datetime as dt
 
 from core import database, window, wrapper
 from events import ref_events, event_bus, system_events
-from services import variables, prompt_enum
+from services import tokenizers, variables, prompt_enum
 
 REFERENCE_REGISTRY = {}
 def register_reference(cls):
@@ -97,6 +97,30 @@ class ModelReference(Reference):
         self.disable_thinking_token: str = kwargs.get('disable_thinking_token', '/no_think')
         self.disable_thinking: bool = kwargs.get('disable_thinking', False)
 
+    def get_request(self) -> Dict:
+        request = {
+            'model': self.model,
+            'temperature': self.temperature,
+            'max_output_tokens': self.max_response_tokens,
+            'tools': self.tools,
+            'store': False,
+            'tool_choice': 'auto',
+            'truncation': 'auto',
+        }
+
+        if self.penalty_supported:
+            request['frequency_penalty'] = self.frequency_penalty
+            request['presence_penalty'] = self.presence_penalty
+
+        return request
+
+    def count_tokens(self, text: str) -> int:
+        '''
+        Count tokens in the given text using the tokenizer for this model.
+        For now assumes everything is gpt-4o
+        '''
+        return tokenizers.Tokenizer.gpt(text, model='gpt-4o')
+
 @register_reference
 class AssistantReference(Reference):
     ASSISTANT_PROPERTIES = ['chat_event_prompt_idx']
@@ -105,10 +129,14 @@ class AssistantReference(Reference):
         super().__init__(id=id, **kwargs)
 
         self.names: List[str] = kwargs.get('names', [self.id.title()])
-        self.chat_event_prompt_idx: Dict[prompt_enum.PromptEnum, PromptReference] = kwargs.get('chat_event_prompt_idx', {})
+        self.chat_event_prompt_idx: Dict[prompt_enum.PromptEnum, str] = kwargs.get('chat_event_prompt_idx', {})
 
     def get_names(self):
         return self.names
+    
+    def get_prompt_id(self, prompt_enumeration: prompt_enum.PromptEnum) -> str:
+        prompt_id = self.chat_event_prompt_idx.get(prompt_enumeration, '')
+        return prompt_id
 
 class PromptReference(Reference):
     def __init__(self, id: str, **kwargs):
@@ -145,18 +173,29 @@ class Ref:
         self.db.initialize_sync()
         self._load()
 
-    async def add_message(self, chat_id, wrappers):
+    async def add_message(self, chat_id, wrappers, **kwargs) -> window.Window:
+        '''
+        Add a message to a chat window, returning the window
+        '''
         try:
-            wdw: window.Window = self.get_window(chat_id)
+            wdw: window.Window = self.get_window(chat_id, **kwargs)
         except ValueError as e:
             self.bus.emit(system_events.ErrorEvent(error="Can't load chat window", e=e))
             return
 
-        pass
+        # add to window
+        for wrapper in wrappers:
+            await wdw.add_message(wrapper)
 
-    async def get_window(self, chat_id: str) -> window.Window:
+        # send signal to add to database
+        new_message_event = ref_events.NewMessage(chat_id=chat_id, wrappers=wrappers)
+        await self.bus.emit(new_message_event)
+
+        return wdw
+
+    async def get_window(self, chat_id: str, **kwargs) -> window.Window:
         # we don't want to load a window without loading the chat
-        chat: wrapper.ChatWrapper = await self.get_chat(chat_id)
+        chat: wrapper.ChatWrapper = await self.get_chat(chat_id, **kwargs)
 
         chat_model: str = chat.model_id or variables.Variables.DEFAULT_MODEL
         model: ModelReference = self.models.get(chat_model)
@@ -209,10 +248,38 @@ class Ref:
         return assistant_ref
 
     async def get_assistant_names(self, chat_id: str) -> List[str]:
-        assistant_ref = await self._get_assistant(chat_id)
-        if assistant_ref:
-            return assistant_ref.get_names()
+        assistant = await self._get_assistant(chat_id)
+        if assistant:
+            return assistant.get_names()
         return []
+    
+    async def get_prompt(self, chat_id: str, prompt_enumeration: prompt_enum.PromptEnum) -> str:
+        assistant = await self._get_assistant(chat_id)
+        if not assistant:
+            return ''
+        
+        prompt_id = assistant.get_prompt_id(prompt_enumeration)
+        prompt = self.prompts.get(prompt_id, '')
+        return prompt
+
+    async def get_chance(self, chat_id: str) -> int:
+        chat = await self.get_chat(chat_id)
+        if chat:
+            return chat.chance
+        return 0
+    
+    async def get_request(self, chat_id: str) -> Dict:
+        '''
+        Gets the main and extra request bodies for the assistant.
+        '''
+        chat = await self.get_chat(chat_id)
+        if not chat:
+            return {}
+
+        model: ModelReference = self.models.get(chat.model_id or variables.Variables.DEFAULT_MODEL)
+        request = model.get_request()
+
+        return request
 
     def _load(self):
         '''

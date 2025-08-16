@@ -29,7 +29,8 @@ class Wrapper():
         try:
             self.datetime: dt.datetime = datetime.astimezone(dt.timezone.utc)
         except Exception:
-            self.datetime = dt.datetime.now(tz=dt.timezone.utc)
+            # if no datetime is provided, assign the oldest possible datetime so ready checks are failed
+            self.start_datetime: dt.datetime = dt.datetime.min.replace(tzinfo=dt.timezone.utc)
 
     def to_parent_dict(self) -> Dict[str, Any]:
         '''
@@ -55,7 +56,7 @@ class Wrapper():
             'datetime': combined_data.get('datetime'),
             'tokens': combined_data.get('tokens', 0),
             'role': combined_data.get('role', 'assistant'),
-            'user': combined_data.get('user', variables.Variables.MIBO),
+            'user': combined_data.get('user', variables.Variables.NICKNAME),
         }
     
         constructor_params.update(child_row)
@@ -220,8 +221,7 @@ class ChatWrapper():
         self.id: str = str(id)
         self.chat_id = self.id
 
-        self.name: str = kwargs.get('name', '')
-        self.name: str = kwargs.get('chat_name', self.name)
+        self.chat_name: str = kwargs.get('chat_name', self.name)
 
         self.chance: int = kwargs.get('chance', 5)
 
@@ -234,7 +234,7 @@ class ChatWrapper():
     def to_dict(self):
         return {
             'id': self.chat_id,
-            'chat_name': self.name,
+            'chat_name': self.chat_name,
             'chance': self.chance,
             'assistant_id': self.assistant_id,
             'model_id': self.model_id,

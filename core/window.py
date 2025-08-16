@@ -45,7 +45,7 @@ class Window():
 
             await self._insert_live_message(message)
 
-    async def add_message(self, event_id: str, message: wrapper.Wrapper, bus: event_bus.EventBus) -> bool:
+    async def add_message(self, message: wrapper.Wrapper) -> bool:
         '''
         Adds a message to the window. 
         returns True if the window now contains the latest context.
@@ -53,7 +53,7 @@ class Window():
         async with self._lock:
             is_new = message.datetime >= self.start_datetime
 
-            # always keep the message for context
+            # add message
             await self._insert_live_message(message)
 
             # if this is the first non-stale message after startup
@@ -71,7 +71,7 @@ class Window():
         message_tokens = message.tokens or message.calculate_tokens()
         inserted = False
 
-        # Assume messages arrive mostly in order
+        # assume messages arrive mostly in order
         if not self.messages or message.datetime >= self.messages[-1].datetime:
             self.messages.append(message)
             inserted = True
@@ -99,37 +99,47 @@ class Window():
         '''
         Transforms the context messages into a json compatible with OpenAI chat completions API.
         Preserves both text and images as content blocks.
+        Groups messages with the same group_id.
         '''
+        grouped_content = {}
         messages = []
-        message: wrapper.Wrapper
-
+        
         for message in self.messages:
-            content = []
-
+            group_id = message.id
+            
+            if group_id not in grouped_content:
+                grouped_content[group_id] = {
+                    "role": message.role,
+                    "content": [],
+                    "datetime": message.datetime
+                }
+            
             if isinstance(message, wrapper.MessageWrapper):
-                message: wrapper.MessageWrapper
-
-                if not message.message:
-                    continue
-
-                text = message.message if message.role == 'assistant' else str(message)
-                if text:
-                    content.append({"type": "text", "text": text})
-
+                if message.message:
+                    text = message.message if message.role == 'assistant' else str(message)
+                    if text:
+                        grouped_content[group_id]["content"].append({"type": "text", "text": text})
+            
             elif isinstance(message, wrapper.ImageWrapper):
-                message: wrapper.ImageWrapper
                 base64 = message.get_base64()
                 detail = message.detail
                 
                 if base64:
-                    content.append({"type": "image_url", "image_url": {'url': f"data:image/jpeg;base64,{base64}", 'detail': detail}})
+                    grouped_content[group_id]["content"].append(
+                        {"type": "image_url", "image_url": {'url': f"data:image/jpeg;base64,{base64}", 'detail': detail}}
+                    )
                 else:
-                    content.append({"type": "text", "text": f"|IMAGE|{message.image_summary or '|IMAGE|Image content not available.'}"})
-
-            # For OpenAI chat completions, each message is a dict with 'role' and 'content'
-
-            m = {"role": message.role, "content": content}
-            
-            messages.append(m)
-
+                    grouped_content[group_id]["content"].append(
+                        {"type": "text", "text": f"|IMAGE|{message.image_summary or '|IMAGE|Image content not available.'}"}
+                    )
+        
+        sorted_groups = sorted(grouped_content.values(), key=lambda x: x["datetime"])
+        
+        for group in sorted_groups:
+            if group["content"]:
+                messages.append({
+                    "role": group["role"],
+                    "content": group["content"]
+                })
+        
         return messages

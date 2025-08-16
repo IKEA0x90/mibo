@@ -11,8 +11,8 @@ import datetime as dt
 from pathlib import Path
 from uuid import uuid4
 from typing import List
-from events import event_bus, db_events, conductor_events, ref_events, system_events
-from core import wrapper
+from events import event_bus, ref_events, system_events
+from core import window, wrapper
 from services import variables
 
 class Database:
@@ -96,10 +96,8 @@ class Database:
             return
             
         self.bus.register(ref_events.NewChat, self._insert_chat)
+        self.bus.register(ref_events.NewMessage, self._add_message)
 
-        self.bus.register(conductor_events.WrapperPush, self._add_wrapper)   
-        self.bus.register(db_events.MemoryRequest, self._handle_memory_request)
-        
         self._handlers_registered = True
     
     async def get_chat(self, chat_id: str) -> wrapper.ChatWrapper:
@@ -155,6 +153,25 @@ class Database:
                 )
                 await self.conn.commit()
 
+    async def get_window(self, chat_id: str, model) -> window.Window:
+        '''
+        Get a chat window, inserting messages up to max_tokens.
+        '''
+        from core import ref
+        wdw: window.Window = window.Window(self.start_datetime)
+        model: ref.ModelReference = model
+
+        try:
+            # TODO actually count tokens for different models instead of assuming everything is openai
+            messages = self._get_messages_old(chat_id)
+            for msg in messages:
+                wdw._insert_live_message(msg) # use this instead of add_message since it doesn't flip the ready switch
+
+        except Exception as e:
+            _, _, tb = sys.exc_info()
+            await self.bus.emit(system_events.ErrorEvent(error="Can't load chat window", e=e, tb=tb))
+
+
     async def _insert_wrapper(self, content: wrapper.Wrapper) -> str:
         '''
         Inserts a wrapper linked to an existing chat.
@@ -191,40 +208,15 @@ class Database:
 
         return content.id
     
-    async def _add_wrapper(self, event: conductor_events.WrapperPush):
+    async def _add_message(self, event: ref_events.NewMessage):
         '''
         Add a wrapper to the database
         '''
-        chat_id: str = ''
         try:
-            wrappers: List[wrapper.Wrapper] = event.wrapper_list
-            if not wrappers:
+            chat_id: str = event.chat_id
+            wrappers: List[wrapper.Wrapper] = event.wrappers
+            if not chat_id or not wrappers:
                 return
-
-            message = wrappers[0]
-            chat_id = message.chat_id
-            chat_name = getattr(message, 'chat_name', '') or ''
-
-            # ensure chat exists
-            async with self.conn.cursor() as cursor:
-                await cursor.execute('SELECT * FROM chats WHERE chat_id = ?', (chat_id,))
-                row = await cursor.fetchone()
-
-            if row:
-                id=row['chat_id'], 
-                name=row['chat_name'],
-                chance=row['chance'],
-                assistant=row['assistant'],
-                model=row['model']
-            else:
-                await self.insert_chat(chat_id, chat_name)
-                id=chat_id, 
-                name=chat_name,
-                chance=5,
-                assistant='default',
-                model='default'
-
-            chat = wrapper.ChatWrapper(id=id, name=name, chance=chance, assistant=assistant, model=model)
 
             # pre-save images, assign paths before insert
             for w in wrappers:
@@ -237,9 +229,6 @@ class Database:
                 if isinstance(w, wrapper.Wrapper):
                     w.tokens = w.calculate_tokens()
                     await self._insert_wrapper(w)
-            
-            # we're finished
-            await self.bus.emit(db_events.NewChatAck(chat=chat, event_id=event.event_id))
 
         except Exception as e:
             _, _, tb = sys.exc_info()
@@ -266,7 +255,6 @@ class Database:
                 chat_id       TEXT NOT NULL,
                 wrapper_type  TEXT NOT NULL,
                 datetime      TIMESTAMP NOT NULL,
-                tokens        INTEGER NOT NULL DEFAULT 0,
                 role          TEXT NOT NULL,
                 user          TEXT NOT NULL,
                 FOREIGN KEY (chat_id) REFERENCES chats (chat_id) ON DELETE CASCADE
@@ -425,14 +413,13 @@ class Database:
             self.conn = None
             # self.cursor = None # Removed shared cursor
 
-    async def _handle_memory_request(self, event: db_events.MemoryRequest):
+    async def _get_messages_old(self, chat_id: str):
         '''
         Responds with a MemoryResponse containing wrappers for chat_id
         starting from the most recent entries,
         ordered oldest to newest,
         capped by max_tokens.
         '''
-        chat_id = event.chat_id
         messages = []
 
         try:
@@ -472,9 +459,7 @@ class Database:
                 parent_rows = await cursor.fetchall()
 
             if not parent_rows:
-                response = db_events.MemoryResponse(chat_id=chat_id, messages=messages, event_id=event.event_id)
-                await self.bus.emit(response)
-                return
+                return []
 
             sql_ids = {}
             for r in parent_rows:
@@ -543,12 +528,11 @@ class Database:
 
         except Exception as e:
             _, _, tb = sys.exc_info()
-            await self.bus.emit(system_events.ErrorEvent(error=f'Failed to retrieve your memory.', e=e, tb=tb, event_id=event.event_id, chat_id=chat_id))
+            await self.bus.emit(system_events.ErrorEvent(error=f'Failed to retrieve your memory.', e=e, tb=tb))
             messages = []
 
         finally:
-            response = db_events.MemoryResponse(chat_id=chat_id, messages=messages, event_id=event.event_id)
-            await self.bus.emit(response)
+            return messages
 
     async def _load_image(self, image_path: str) -> bytes:
         '''

@@ -1,4 +1,5 @@
 import asyncio
+import random
 import sys
 import datetime as dt
 
@@ -8,8 +9,8 @@ from typing import cast
 from telegram import Chat, Update, Message, MessageEntity, User
 from telegram.ext import CallbackContext
 
-from events import event, event_bus, conductor_events, db_events, mibo_events, system_events
-from core import ref, wrapper
+from events import event, event_bus, conductor_events, mibo_events, system_events
+from core import ref, window, wrapper
 from services import variables
 
 class Conductor:
@@ -125,15 +126,16 @@ class Conductor:
             if not wrappers:
                 raise ValueError("Wrapper list is somehow empty. This probably shouldn't happen.")
             
-            await self.ref.add_message(chat_id, wrappers)
-
-            push_request = conductor_events.WrapperPush(wrappers, chat_id=chat_id, event_id=event.event_id)
+            wdw: window.Window = await self.ref.add_message(chat_id, wrappers, chat_name=chat_name)
             
-            chat_response = await self.bus.wait(push_request, db_events.NewChatAck)
-            chat_wrapper = chat_response.chat
-            self.chats[chat_id] = chat_wrapper
+            chance: int = await self.ref.get_chance(chat_id)
+            random_chance = random.randint(1, 100)
 
-            await self.bus.emit(conductor_events.AssistantRequest(chat_id=chat_id, messages=wrappers, event_id=event.event_id, typing=event.typing, system=system_message))
+            respond = wdw.ready and ((random_chance <= chance) or ping) and not message_caption
+
+            if respond:
+                new_message_event = conductor_events.CompletionRequest(wdw=wdw)
+                await self.bus.emit(new_message_event)
 
         except Exception as e:
             _, _, tb = sys.exc_info()
