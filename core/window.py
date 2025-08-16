@@ -8,16 +8,13 @@ from core import wrapper
 from events import event_bus
 
 class Window():
-    def __init__(self, chat_id: str, start_datetime: dt.datetime, template: dict, max_tokens: int):
-        self.chat_id: str = chat_id
+    def __init__(self, start_datetime: dt.datetime):
         self.start_datetime: dt.datetime = start_datetime
 
         self.tokens: int = 0
 
         self._lock = asyncio.Lock()
         self._stale_buffer: Deque[wrapper.Wrapper] = deque()
-
-        self.max_tokens: int = max_tokens
         
         self.messages: Deque[wrapper.Wrapper] = deque()
         self.ready: bool = False

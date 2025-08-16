@@ -1,4 +1,3 @@
-from telegram import Message
 from typing import List
 
 from events import event

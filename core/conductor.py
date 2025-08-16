@@ -5,10 +5,10 @@ import datetime as dt
 from io import BytesIO
 from PIL import Image
 from typing import cast
-from telegram import Update, Message, MessageEntity
+from telegram import Chat, Update, Message, MessageEntity, User
 from telegram.ext import CallbackContext
 
-from events import event, event_bus, conductor_events, db_events, system_events, mibo_events
+from events import event, event_bus, conductor_events, db_events, mibo_events, system_events
 from core import ref, wrapper
 from services import variables
 
@@ -24,68 +24,64 @@ class Conductor:
         self._register()
 
     def _register(self):
-        self.bus.register(mibo_events.MiboMessage, self._capture_message)
+        self.bus.register(mibo_events.NewMessageArrived, self._capture_message)
 
-    async def _capture_message(self, event: mibo_events.MiboMessage):
+    async def _capture_message(self, event: mibo_events.NewMessageArrived):
         '''
         Listens to new messages sent to chats and processes them into Wrappers.
         Then, calls Mibo.
         ''' 
-        system_message = hasattr(event, 'system')
+        update: Update = event.update
+        context: CallbackContext = event.context
 
         try:
-            update: Update = event.update
-            context: CallbackContext = event.context
-
-            chat = update.effective_chat
-            message: Message = update.message
+            chat: Chat = update.effective_chat
+            message: Message = update.effective_message
 
             if not chat or not message:
-                return
+                return {}
 
-            user = update.message.from_user
+            user: User = message.from_user
+            if not user:
+                return {}
             
-            if not chat or not message or not user:
-                return
-
-            chat_id = chat.id
-            message_id = message.message_id
-            chat_name = chat.effective_name or ''
+            chat_id: str = chat.id
+            message_id: str = message.message_id
+            chat_name: str = chat.effective_name or ''
 
             if not chat_id or not message_id:
-                return
-        
-        except Exception as e:
-            _, _, tb = sys.exc_info()
-            await self.bus.emit(system_events.ErrorEvent(error="Woah! Somehow, this telegram message can't be parsed.", e=e, tb=tb, event_id=event.event_id))
+                return {}
 
-        try:
-            user = user.username or user.first_name
+            chat_id = message.chat.id
+            chat_type = message.chat.type
+            chat_name = message.chat.effective_name or ''
+
+            message_id = message.message_id
+            message_text = message.text
+            message_caption = message.caption
+
+            user = message.from_user
+            user_id = user.id
+            username = user.username or user.first_name
+
+            entities = message.parse_entities()
+            caption_entities = message.parse_caption_entities()
+
+            ping = False
+            system_message = hasattr(event, 'system')
+
             if system_message:
                 role = 'system'
             else:
                 role = 'assistant' if user == self.username else 'user'
 
-            message_text = message.text or message.caption or ''
-            
-            entities = message.parse_entities(types=[
-                'mention',
-                'url'
-            ])
+            message_text = message_text or message_caption or ''
 
-            if not entities:
-                entities = message.parse_caption_entities(types=[
-                    'mention',
-                    'url'
-                ])
-
-            ping = False
-
-            if chat.type == chat.PRIVATE or system_message:
+            if chat_type == Chat.PRIVATE or system_message:
                 ping = True 
 
-            if entities:
-                for entity, value in entities.items():
+            if entities or caption_entities:
+                for entity, value in {**entities.items(), **caption_entities.items()}:
                     entity = cast(MessageEntity, entity) # for type hinting
 
                     if entity.type == 'mention':
@@ -97,8 +93,10 @@ class Conductor:
                         pass
             
             reply_message = message.reply_to_message
-
             reply_id = reply_message.message_id if reply_message else None
+
+            quote = reply_message.quote if reply_message else None
+            quote_text = quote.text if quote else None
 
             if reply_id and (reply_message.from_user.id == context.bot.id):
                 ping = True
@@ -110,7 +108,10 @@ class Conductor:
                 
             datetime: dt.datetime = message.date.astimezone(dt.timezone.utc)
 
-            message_wrapper = wrapper.MessageWrapper(id=message_id, chat_id=chat_id, message=message_text, ping=ping, reply_id=reply_id, datetime=datetime, chat_name=chat_name, role=role, user=user)
+            message_wrapper = wrapper.MessageWrapper(id=message_id, chat_id=chat_id, message=message_text, ping=ping, 
+                                                     reply_id=reply_id, quote=quote_text,
+                                                     datetime=datetime, role=role, user=user)
+            
             content = await self._look_for_content(update, context, event)
 
             c: wrapper.Wrapper
@@ -123,6 +124,8 @@ class Conductor:
 
             if not wrappers:
                 raise ValueError("Wrapper list is somehow empty. This probably shouldn't happen.")
+            
+            await self.ref.add_message(chat_id, wrappers)
 
             push_request = conductor_events.WrapperPush(wrappers, chat_id=chat_id, event_id=event.event_id)
             

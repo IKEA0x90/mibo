@@ -1,15 +1,12 @@
 from typing import Dict, List
-import os
-import json
-import inspect
 import asyncio
+import time
 
-from core import database, wrapper
-from events import db_events, event_bus
+import datetime as dt
 
-default_chat_events = {
-    "welcome": "default"
-}
+from core import database, window, wrapper
+from events import ref_events, event_bus, system_events
+from services import variables, prompt_enum
 
 REFERENCE_REGISTRY = {}
 def register_reference(cls):
@@ -32,107 +29,112 @@ class Reference:
         
         # include all public instance attributes
         for attribute_name, attribute_value in self.__dict__.items():
-            if attribute_name.startswith('_'):
+
+            # skip hidden properties, methods, and special properties
+            if attribute_name.startswith('_') or callable(attribute_value) or attribute_name == 'type':
                 continue
-            
-            # skip methods and callable objects
-            if callable(attribute_value):
-                continue
-                
-            # skip id and type since id becomes the key and type is determined from filename
-            if attribute_name in ('id', 'type'):
-                continue
-                
-            serialized_data[attribute_name] = attribute_value
+
+            # handle prompts in a special way
+            if hasattr(self, 'ASSISTANT_PROPERTIES') and attribute_name in self.ASSISTANT_PROPERTIES:
+                # k: prompt_enum.PromptEnum
+                # v: PromptReference
+                serialized_data[attribute_name] = {str(k): v.id for k, v in attribute_value.items()}
+            else:
+                serialized_data[attribute_name] = attribute_value
         
         return serialized_data
     
     @staticmethod
     def from_dict(reference_data, reference_type):
         '''
-        Create a reference instance from a dictionary. Thanks Copilot for this one.
+        Create a reference instance from a dictionary.
         '''
 
         if not isinstance(reference_data, dict):
-            raise ValueError('from_dict expects a dictionary')
+            raise ValueError('Reference from_dict expects a dictionary.')
 
-        # look up the reference class by type name
         reference_class = REFERENCE_REGISTRY.get(reference_type)
         if reference_class is None:
             raise ValueError(f"Unknown reference type: {reference_type}")
 
-        # determine which parameters are required by the class constructor
-        constructor_signature = inspect.signature(reference_class.__init__)
-        required_parameters = []
-        
-        for parameter_name, parameter_info in constructor_signature.parameters.items():
-            # skip 'self' and variadic parameters
-            if parameter_name in ('self',):
-                continue
-            if parameter_info.kind in (inspect.Parameter.VAR_KEYWORD, inspect.Parameter.VAR_POSITIONAL):
-                continue
-            
-            # parameter is required if it has no default value
-            if parameter_info.default is inspect._empty:
-                required_parameters.append(parameter_name)
+        if reference_data.get('id') is None:
+            raise ValueError('Reference id missing.')
 
-        # prepare constructor arguments, excluding the 'type' field
         constructor_kwargs = {key: value for key, value in reference_data.items() if key != 'type'}
 
-        # verify all required parameters are present
-        missing_parameters = [param for param in required_parameters if param not in constructor_kwargs]
-        if missing_parameters:
-            raise ValueError(f"Missing required fields for type '{reference_type}': {', '.join(missing_parameters)}")
+        # handle special deserialization for assistant properties
+        if reference_type == 'assistant' and hasattr(reference_class, 'ASSISTANT_PROPERTIES'):
+            for field in reference_class.ASSISTANT_PROPERTIES:
+                if field in constructor_kwargs and isinstance(constructor_kwargs[field], dict):
+                    constructor_kwargs[field] = {
+                        prompt_enum.PromptEnum(k): v for k, v in constructor_kwargs[field].items()
+                    }
 
         return reference_class(**constructor_kwargs)
-
+    
+@register_reference
 class ModelReference(Reference):
-    def __init__(self, id: str, supported_fields: List[str], **kwargs):
-        super().__init__(id=id, **kwargs)
-
-        self.supported_fields = supported_fields
-
-        self.base_url = kwargs.get('base_url', '')
-        self.local = kwargs.get('local', False)
-
-        self.temperature = kwargs.get('temperature', 1)
-
-        self.max_tokens = kwargs.get('max_tokens', 1000)
-        self.max_response_tokens = kwargs.get('max_response_tokens', 500)
-
-        self.penalty_supported = kwargs.get('penalty_supported', True)
-        self.frequency_penalty = kwargs.get('frequency_penalty', 0.1)
-        self.presence_penalty = kwargs.get('presence_penalty', 0.1)
-
-        self.reasoning = kwargs.get('reasoning', False)
-        self.reasoning_supported = kwargs.get('reasoning_supported', True)
-        self.reasoning_effort = kwargs.get('reasoning_effort', 'medium')
-
-        self.think_token = kwargs.get('think_token', '</think>')
-        self.disable_thinking_token = kwargs.get('disable_thinking_token', '/no_think')
-        self.disable_thinking = kwargs.get('disable_thinking', False)
-
-class AssistantReference(Reference):
     def __init__(self, id: str, **kwargs):
         super().__init__(id=id, **kwargs)
 
-        self.names = kwargs.get('names', [self.id.title()])
-        self.chat_events = kwargs.get('chat_events', default_chat_events)
-        self.prompt = kwargs.get('prompt', '')
+        self.base_url: str = kwargs.get('base_url', '')
+        self.local: bool = kwargs.get('local', False)
+
+        self.temperature: float = kwargs.get('temperature', 1)
+
+        self.max_tokens: int = kwargs.get('max_tokens', 1000)
+        self.max_response_tokens: int = kwargs.get('max_response_tokens', 500)
+
+        self.penalty_supported: bool = kwargs.get('penalty_supported', True)
+        self.frequency_penalty: float = kwargs.get('frequency_penalty', 0.1)
+        self.presence_penalty: float = kwargs.get('presence_penalty', 0.1)
+
+        self.reasoning: bool = kwargs.get('reasoning', False)
+        self.reasoning_effort_supported: bool = kwargs.get('reasoning_effort_supported', True)
+        self.reasoning_effort: str = kwargs.get('reasoning_effort', 'medium')
+
+        self.think_token: str = kwargs.get('think_token', '</think>')
+        self.disable_thinking_token: str = kwargs.get('disable_thinking_token', '/no_think')
+        self.disable_thinking: bool = kwargs.get('disable_thinking', False)
+
+@register_reference
+class AssistantReference(Reference):
+    ASSISTANT_PROPERTIES = ['chat_event_prompt_idx']
+
+    def __init__(self, id: str, **kwargs):
+        super().__init__(id=id, **kwargs)
+
+        self.names: List[str] = kwargs.get('names', [self.id.title()])
+        self.chat_event_prompt_idx: Dict[prompt_enum.PromptEnum, PromptReference] = kwargs.get('chat_event_prompt_idx', {})
 
     def get_names(self):
         return self.names
 
+class PromptReference(Reference):
+    def __init__(self, id: str, **kwargs):
+        super().__init__(id=id, **kwargs)
+
+        # this is present here but not in other classes due to the confusing nature of prompt reference and prompt enum
+        try:
+            self.prompt: str = str(kwargs.get('prompt', ''))
+        except Exception:
+            self.prompt: str = ''
+
+    def __str__(self):
+        return self.prompt
+
 class Ref:
-    def __init__(self, bus: event_bus.EventBus, db_path: str = 'memory', ref_path: str = 'references'):
+    def __init__(self, bus: event_bus.EventBus, db_path: str = 'memory', start_datetime: dt.datetime = None):
         self.bus: event_bus.EventBus = bus
         self.db: database.Database = database.Database(self.bus, db_path)
-        self.ref_path: str = ref_path
+        self.start_datetime: dt.datetime = start_datetime or dt.datetime.now(dt.timezone.utc)
 
         self.chats: Dict[str, wrapper.ChatWrapper] = {}
+        self.windows: Dict[str, window.Window] = {}
 
         self.assistants: Dict[str, AssistantReference] = {}
         self.models: Dict[str, ModelReference] = {}
+        self.prompts: Dict[str, PromptReference] = {}
 
         self._prepare()
 
@@ -141,168 +143,149 @@ class Ref:
         Prepare the ref.
         '''
         self.db.initialize_sync()
-        self.load_sync()
+        self._load()
 
-    def _register(self):
-        '''
-        Register bus events
-        '''
-        self.bus.register(db_events.NewChatAck, self._add_chat)   
+    async def add_message(self, chat_id, wrappers):
+        try:
+            wdw: window.Window = self.get_window(chat_id)
+        except ValueError as e:
+            self.bus.emit(system_events.ErrorEvent(error="Can't load chat window", e=e))
+            return
 
-    def _add_chat(self, event: db_events.NewChatAck):
-        chat = event.chat
-        if chat and isinstance(chat, wrapper.ChatWrapper):
-            chat_id = chat.id
+        pass
+
+    async def get_window(self, chat_id: str) -> window.Window:
+        # we don't want to load a window without loading the chat
+        chat: wrapper.ChatWrapper = await self.get_chat(chat_id)
+
+        chat_model: str = chat.model_id or variables.Variables.DEFAULT_MODEL
+        model: ModelReference = self.models.get(chat_model)
+        if not model:
+            raise ValueError(f"Default model doesn't exist")
+
+        # same loading as chat
+        wdw = self.windows.get(chat_id)
+        if not wdw:
+            wdw = await self.db.get_window(chat_id, model.max_tokens)
+            if not wdw:
+                # create a new window
+                wdw = window.Window(self.start_datetime)
+                self.windows[chat_id] = wdw
+
+        return wdw
+
+    async def get_chat(self, chat_id: str, **kwargs) -> wrapper.ChatWrapper:
+        # from memory
+        chat = self.chats.get(chat_id)
+        if not chat:
+            # from database
+            chat = await self.db.get_chat(chat_id)
+            if not chat:
+                # create it
+                chat = wrapper.ChatWrapper(chat_id, **kwargs)
+                await self.bus.emit(ref_events.NewChat(chat))
+            
+            # add to memory
             self.chats[chat_id] = chat
 
-    def _get_assistant(self, chat_id: str) -> AssistantReference:
+        chat.last_active = time.time()
+        chat.in_use = True
+        
+        return chat
+
+    async def _get_assistant(self, chat_id: str) -> AssistantReference:
         '''
         Gets an AssistantReference object for the given chat id. 
         '''
-        chat = self.chats.get(chat_id)
+        chat: wrapper.ChatWrapper = self.chats.get(chat_id)
         if not chat:
             return None
-        
 
+        assistant_id: str = chat.assistant
+        if not assistant_id:
+            assistant_id = variables.Variables.DEFAULT_ASSISTANT
 
-    def get_assistant_names(self, chat_id: str) -> List[str]:
-        assistant: str = self.chats.get(chat_id)
+        assistant_ref: AssistantReference = self.assistants.get(assistant_id)
+        return assistant_ref
 
-        if assistant:
-            assistant: AssistantReference = self.assistants.get(assistant)
-
-        if assistant:
-            return assistant.get_names()
-
+    async def get_assistant_names(self, chat_id: str) -> List[str]:
+        assistant_ref = await self._get_assistant(chat_id)
+        if assistant_ref:
+            return assistant_ref.get_names()
         return []
-    
-    def get_assistant_prompt(self, chat_id: str) -> str:
-        assistant: str = self.chats.get(chat_id)
 
-
-
-    def save_sync(self):
+    def _load(self):
         '''
-        Save all reference collections to JSON files in the references directory.
-        Each reference type gets its own file: {type_name}s.json
-        Example: 'model' references are saved to 'models.json'
-        References are saved as dictionaries id : reference format under a root key matching the plural type name.
-        '''
-        os.makedirs(self.ref_path, exist_ok=True)
+        Load all reference collections from the database.
+        '''     
+        try:
+            references_data = self.db.get_references()
 
-        for reference_type, reference_class in REFERENCE_REGISTRY.items():
-            # skip base Reference class
-            if reference_class is Reference or not reference_type:
-                continue
+            for reference_id, (reference_type, reference_data) in references_data.items():
+                if reference_type == 'reference':
+                    continue
+                elif reference_type not in REFERENCE_REGISTRY:
+                    continue
 
-            collection_attribute_name = f"{reference_type}s"
-            reference_collection = getattr(self, collection_attribute_name, None)
-            
-            if reference_collection is None:
-                setattr(self, collection_attribute_name, {})
-                reference_collection = {}
+                elif reference_type == 'assistant':
+                    reference_object = AssistantReference.from_dict(reference_data, reference_type)
+                    self.assistants[reference_id] = reference_object
 
-            if not isinstance(reference_collection, dict):
-                continue
+                elif reference_type == 'model':
+                    reference_object = ModelReference.from_dict(reference_data, reference_type)
+                    self.models[reference_id] = reference_object
 
-            serialized_references = {}
-            for reference_id, reference_object in reference_collection.items():
-                if isinstance(reference_object, Reference):
-                    serialized_references[reference_id] = reference_object.to_dict()
+                elif reference_type == 'prompt':
+                    reference_object = PromptReference.from_dict(reference_data, reference_type)
+                    self.prompts[reference_id] = reference_object
 
-            # wrap in object with plural type name as key
-            output_data = {collection_attribute_name: serialized_references}
-
-            output_file_path = os.path.join(self.ref_path, f"{reference_type}s.json")
-            with open(output_file_path, 'w', encoding='utf-8') as output_file:
-                json.dump(output_data, output_file, indent=2, ensure_ascii=False)
-
-    def load_sync(self):
-        '''
-        Load all reference collections from JSON files in the references directory.
-        Each reference type is loaded from its corresponding file: {type_name}s.json
-        If files don't exist, they are created with empty collections.
-        Corrupted files are automatically reset to empty collections.
-        References is a dictionary of id : reference
-        Type is determined from filename.
-        '''
-
-        os.makedirs(self.ref_path, exist_ok=True)
-
-        # create empty JSON files for any missing reference types
-        for reference_type, reference_class in REFERENCE_REGISTRY.items():
-            if reference_class is Reference or not reference_type:
-                continue
-                
-            collection_attribute_name = f"{reference_type}s"
-            expected_file_path = os.path.join(self.ref_path, f"{reference_type}s.json")
-            if not os.path.exists(expected_file_path):
-                with open(expected_file_path, 'w', encoding='utf-8') as new_file:
-                    json.dump({collection_attribute_name: {}}, new_file)
-
-        for filename in os.listdir(self.ref_path):
-            if not filename.endswith('.json'):
-                continue
-                
-            # extract reference type from filename (e.g., 'models.json' -> 'model')
-            plural_type_name = filename[:-5]  # remove '.json'
-            if not plural_type_name.endswith('s'):
-                continue
-
-            reference_type = plural_type_name[:-1]  # remove trailing 's'
-            collection_attribute_name = f"{reference_type}s"
-
-            # verify this is a known reference type
-            reference_class = REFERENCE_REGISTRY.get(reference_type)
-            if reference_class is None or reference_class is Reference:
-                continue
-
-            file_path = os.path.join(self.ref_path, filename)
-            
-            try:
-                with open(file_path, 'r', encoding='utf-8') as input_file:
-                    raw_data = json.load(input_file)
-            except json.JSONDecodeError:
-                raw_data = {collection_attribute_name: {}}
-                with open(file_path, 'w', encoding='utf-8') as reset_file:
-                    json.dump(raw_data, reset_file)
-
-            if not isinstance(raw_data, dict):
-                raw_data = {collection_attribute_name: {}}
-
-            # get the references from the root key
-            references_data = raw_data.get(collection_attribute_name, {})
-            
-            loaded_references = {}
-            
-            if isinstance(references_data, dict):
-                for reference_id, reference_dict in references_data.items():
-                    if not isinstance(reference_dict, dict):
-                        continue
-                    
-                    try:
-                        reference_instance = Reference.from_dict(reference_dict, reference_type)
-                        loaded_references[str(reference_instance.id)] = reference_instance
-
-                    except (ValueError, TypeError):
-                        continue
-
-            setattr(self, collection_attribute_name, loaded_references)
-
-    async def save(self):
-        await asyncio.to_thread(self.save_sync)
-
-    async def load(self):
-        await asyncio.to_thread(self.load_sync)
-
+        except Exception as e:
+            self.bus.emit_sync(system_events.ErrorEvent(
+                error='Failed to load references from database.',
+                e=e
+            ))
+        
     async def initialize(self):
         '''
         Re-initialize the ref after the app starts.
+        This performs full async initialization and loading from the database.
         '''
         await self.db.initialize()
+        await self._load_async()
+        self._register()
+        
+        self._cleanup_task = asyncio.create_task(self._cleanup())
+
+    async def _cleanup(self):
+        while True:
+            now = time.time()
+            to_delete = []
+
+            for cid, chat in list(self.chats.items()):
+                if (now - chat.last_active) > (variables.CHAT_TTL * 60 / 2):
+
+                    if not chat.in_use:
+                        to_delete.append(cid)
+                    else:
+                        chat.in_use = False
+
+            for cid in to_delete:
+                del self.chats[cid]
+
+            try:
+                await asyncio.sleep(30)
+            except asyncio.CancelledError:
+                break
 
     async def close(self):
         '''
-        Close the database connection.
+        Close the database connection and cancel cleanup task.
         '''
+        if hasattr(self, '_cleanup_task') and not self._cleanup_task.done():
+            self._cleanup_task.cancel()
+            try:
+                await self._cleanup_task
+            except asyncio.CancelledError:
+                pass
+        
         await self.db.close()

@@ -19,7 +19,7 @@ from core import assistant, conductor, wrapper, ref
 from services import templates, variables
 
 class Mibo:
-    def __init__(self, token: str, db_path: str = 'memory', ref_path: str = 'references'):
+    def __init__(self, token: str, db_path: str = 'memory'):
         self.token: str = token
         self.start_datetime: dt.datetime = dt.datetime.now(dt.timezone.utc)
 
@@ -33,7 +33,7 @@ class Mibo:
         self.local_clients: List[openai.OpenAI] = []
 
         self.bus: event_bus.EventBus = event_bus.EventBus()
-        self.ref: ref.Ref = ref.Ref(self.bus, db_path, ref_path)
+        self.ref: ref.Ref = ref.Ref(self.bus, db_path, self.start_datetime)
         self.conductor: conductor.Conductor = conductor.Conductor(self.bus, self.ref)
 
         self.key: str = variables.Variables.OPENAI_KEY
@@ -68,8 +68,9 @@ class Mibo:
         '''
         Register event listeners
         '''
+        self.bus.register(mibo_events.NewMessageArrived, self._send_message)
+
         self.bus.register(assistant_events.AssistantResponse, self._parse_message)
-        self.bus.register(mibo_events.MiboMessageResponse, self._send_message)
         self.bus.register(mibo_events.MiboPollResponse, self._create_poll)
         self.bus.register(system_events.ErrorEvent, self._handle_exception)
 
@@ -153,9 +154,9 @@ class Mibo:
             if chat_id not in self.typing_tasks or self.typing_tasks[chat_id].done():
                 self.typing_tasks[chat_id] = asyncio.create_task(self._simulate_typing(chat_id))
         
-        event = await self.bus.emit(mibo_events.MiboMessage(update, context, typing=typing))
+        event = await self.bus.emit(mibo_events.NewMessageArrived(update, context, typing=typing))
 
-    async def _system_message(self, chat_id, chat_name, system_message):
+    async def _system_message(self, chat_id, system_message, **kwargs):
         '''
         Forces the bot to send a message to a chat, possibly appending a system message to the prompt.
         '''
@@ -165,6 +166,7 @@ class Mibo:
 
         user = User(id=0, first_name="System", is_bot=True)
         chat = Chat(id=chat_id, type=Chat.PRIVATE, title=chat_name)
+
         message = Message(
             message_id=uuid.uuid4().int,
             date=dt.datetime.now(dt.timezone.utc),
@@ -172,6 +174,7 @@ class Mibo:
             from_user=user,
             text=system_message
         )
+
         update = Update(update_id=uuid.uuid4().int, message=message)
         event = mibo_events.MiboMessage(update=update, context=None, typing=typing)
         event.system = True
@@ -412,9 +415,8 @@ logging.getLogger("telegram.ext").setLevel(logging.CRITICAL)
 async def main() -> None:
     token = variables.Variables.TELEGRAM_KEY
     db_path = variables.Variables.DB_PATH
-    ref_path = variables.Variables.REF_PATH
 
-    bot = Mibo(token, db_path, ref_path)
+    bot = Mibo(token, db_path)
     await bot.run()
 
 if __name__ == '__main__':

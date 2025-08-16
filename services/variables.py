@@ -8,20 +8,21 @@ class Variables:
     env_path = os.path.join(os.path.dirname(os.path.dirname(__file__)), ".env", ".env")
     load_dotenv(dotenv_path=env_path, override=True)
 
-    TELEGRAM_KEY = os.environ['TELEGRAM_KEY']
-    OPENAI_KEY = os.environ['OPENAI_KEY']
+    TELEGRAM_KEY = os.environ['TELEGRAM_KEY'] # Telegram bot key
+    OPENAI_KEY = os.environ['OPENAI_KEY'] # OpenAI API key
 
-    DB_PATH = os.environ['DB_PATH']
-    REF_PATH = os.environ['REF_PATH']
+    DB_PATH = os.environ['DB_PATH'] # relative path to the database file
 
-    NICKNAME = os.environ['NICKNAME']
-    SYSTEM_CHAT = os.environ['SYSTEM_CHAT']
+    NICKNAME = os.environ['NICKNAME'] # telegram nickname of the bot
+    SYSTEM_CHAT = os.environ['SYSTEM_CHAT'] # id of the system chat where all possible notifications are sent to #TODO change to system_user
 
-    LOCAL_API_PORT = os.environ['LOCAL_API_PORT']
-    LOCAL_API_HOST = os.environ['LOCAL_API_HOST']
+    LOCAL_API_HOST = os.environ['LOCAL_API_HOST'] # ip of the local ollama host
+    LOCAL_API_PORT = os.environ['LOCAL_API_PORT'] # port of the local ollama host
 
-    DEFAULT_ASSISTANT = os.environ['DEFAULT_ASSISTANT']
-    DEFAULT_MODEL = os.environ['DEFAULT_MODEL']
+    DEFAULT_ASSISTANT = os.environ['DEFAULT_ASSISTANT'] # id of the default assistant, assumed to exist in assistant references
+    DEFAULT_MODEL = os.environ['DEFAULT_MODEL'] # id (name) of the default model. assumed to exist in model references
+
+    CHAT_TTL = os.environ['CHAT_TTL'] # time it takes for a chat to unload from memory, in minutes
 
     @staticmethod
     def replacers(original: str) -> str:

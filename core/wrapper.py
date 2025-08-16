@@ -6,7 +6,6 @@ import datetime as dt
 from typing import Any, Dict, List, Optional
 
 from services import variables
-from core import ref
 
 WRAPPER_REGISTRY = {}
 def register_wrapper(cls):
@@ -78,18 +77,14 @@ class Wrapper():
 class MessageWrapper(Wrapper):
     def __init__(self, id: str, chat_id: str, message: str = '', ping: bool = True, **kwargs):
         super().__init__(id, chat_id, **kwargs)
-        
-        self.chat_name: str = kwargs.get('chat_name', '')
-
-        self.reactions: List[str] = kwargs.get('reactions', [])
 
         self.message: str = message or ''
-
         self.ping: bool = ping
+        
+        self.reactions: List[str] = kwargs.get('reactions', [])
 
         self.reply_id: str = kwargs.get('reply_id', None)
-        self.quote_start: int = kwargs.get('quote_start', None)
-        self.quote_end: int = kwargs.get('quote_end', None)
+        self.quote: str = kwargs.get('quote', None)
 
         self.think = kwargs.get('think', '')
 
@@ -97,14 +92,13 @@ class MessageWrapper(Wrapper):
         return {
             'message': self.message,
             'reply_id': self.reply_id,
-            'quote_start': self.quote_start,
-            'quote_end': self.quote_end,
+            'quote': self.quote,
             'think': self.think,
         }
     
     @classmethod
     def get_child_fields(cls):
-        return ['message', 'reply_id', 'quote_start', 'quote_end', 'think']
+        return ['message', 'reply_id', 'quote', 'think']
 
     def __str__(self):
         return f'{self.user}: {self._remove_prefix(self.message)}'
@@ -222,19 +216,26 @@ class PollWrapper(Wrapper):
         return rstr
     
 class ChatWrapper():
-    def __init__(self, id: str, name: str, **kwargs):
+    def __init__(self, id: str, **kwargs):
         self.id: str = str(id)
         self.chat_id = self.id
 
-        self.name = str(name)
-        self.chat_name: str = name
+        self.name: str = kwargs.get('name', '')
+        self.name: str = kwargs.get('chat_name', self.name)
 
         self.chance: int = kwargs.get('chance', 5)
-        self.assistant: 
+
+        self.assistant_id: str = kwargs.get('assistant_id', 'default')
+        self.model_id: str = kwargs.get('model_id', 'default')
+
+        self.last_active: float = 0
+        self.in_use: bool = False
 
     def to_dict(self):
         return {
             'id': self.chat_id,
-            'chat_name': self.chat_name,
+            'chat_name': self.name,
             'chance': self.chance,
+            'assistant_id': self.assistant_id,
+            'model_id': self.model_id,
         }

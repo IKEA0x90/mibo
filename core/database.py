@@ -3,13 +3,15 @@ import asyncio
 import aiosqlite
 import sqlite3
 import sys
+import json
+from services import variables
 import aiofiles
 import datetime as dt
 
 from pathlib import Path
 from uuid import uuid4
 from typing import List
-from events import event_bus, db_events, conductor_events, system_events
+from events import event_bus, db_events, conductor_events, ref_events, system_events
 from core import wrapper
 from services import variables
 
@@ -26,27 +28,6 @@ class Database:
         self.conn = None 
         self._init_done = False
         self._lock = asyncio.Lock()  # Add lock to prevent race conditions
-
-    def get_chat(self, chat_id: str) -> wrapper.ChatWrapper:
-        '''
-        Get a chat by its ID.
-        '''
-        try:
-            conn = sqlite3.connect(self.db_path)
-            conn.row_factory = sqlite3.Row
-            cursor = conn.cursor()
-
-            cursor.execute('SELECT * FROM chats WHERE chat_id = ?', (chat_id,))
-            row = cursor.fetchone()
-
-            if row:
-                return wrapper.ChatWrapper(id=row['chat_id'], name=row['chat_name'],
-                                            chance=row['chance'], assistant=row['assistant'], model=row['model'])
-
-        except Exception as e:
-            _, _, tb = sys.exc_info()
-            self.bus.emit_sync(system_events.ErrorEvent(error="Hmm.. Can't read your group chats from the database.", e=e, tb=tb))
-            return None
 
     async def initialize(self):
         '''
@@ -114,22 +95,51 @@ class Database:
         if hasattr(self, '_handlers_registered') and self._handlers_registered:
             return
             
+        self.bus.register(ref_events.NewChat, self._insert_chat)
+
         self.bus.register(conductor_events.WrapperPush, self._add_wrapper)   
         self.bus.register(db_events.MemoryRequest, self._handle_memory_request)
         
         self._handlers_registered = True
-        
-    async def insert_chat(self, chat_id: str, chat_name: str, *,
-        custom_instructions: str = "",
-        chance: int = 5,
-        max_tokens: int = 1000,
-        max_response_tokens: int = 500,
-        assistant: str = 'default',
-        model: str = 'default') -> str:
-        """
+    
+    async def get_chat(self, chat_id: str) -> wrapper.ChatWrapper:
+        '''
+        Get a chat by its ID.
+        '''
+        try:
+            async with self.conn.cursor() as cursor:
+                await cursor.execute('SELECT * FROM chats WHERE chat_id = ?', (chat_id,))
+                row = await cursor.fetchone()
+
+            if row:
+                return wrapper.ChatWrapper(id=row['chat_id'], name=row['chat_name'],
+                                            chance=row['chance'], assistant=row['assistant'], model=row['model'])
+
+        except Exception as e:
+            _, _, tb = sys.exc_info()
+            await self.bus.emit(system_events.ErrorEvent(error="Hmm.. Can't read your group chats from the database.", e=e, tb=tb))
+            return None
+
+    async def _insert_chat(self, event: ref_events.NewChat):
+        '''
         Inserts a new chat and returns the chat_id.
-        """
-        effective_chat_id = chat_id or str(uuid4())
+        Uses default assistant and model from environment variables if not specified.
+        '''
+        chat: wrapper.ChatWrapper = event.chat
+        if chat is None or not isinstance(chat, wrapper.ChatWrapper):
+            return
+
+        if chat.assistant is None:
+            chat.assistant = variables.Variables.DEFAULT_ASSISTANT
+        if chat.model is None:
+            chat.model = variables.Variables.DEFAULT_MODEL
+
+        effective_chat_id = chat.chat_id or str(uuid4())
+        chat_name = chat.name
+        chance = chat.chance
+        assistant = chat.assistant
+        model = chat.model
+
         async with self._lock:
             async with self.conn.cursor() as cursor:
                 await cursor.execute(
@@ -144,7 +154,6 @@ class Database:
                     ),
                 )
                 await self.conn.commit()
-        return str(effective_chat_id)
 
     async def _insert_wrapper(self, content: wrapper.Wrapper) -> str:
         '''
@@ -180,11 +189,11 @@ class Database:
                     await self.conn.rollback()
                     raise
 
-        return content.id 
+        return content.id
     
     async def _add_wrapper(self, event: conductor_events.WrapperPush):
         '''
-        Add a wrapper to the database.
+        Add a wrapper to the database
         '''
         chat_id: str = ''
         try:
@@ -269,9 +278,8 @@ class Database:
                 sql_id    INTEGER PRIMARY KEY,
                 message   TEXT NOT NULL,
                 reply_id  INTEGER,
-                quote_start INTEGER,
-                quote_end INTEGER,
-                think     TEXT NOT NULL DEFAULT '',
+                quote     TEXT,
+                think     TEXT,
                 FOREIGN KEY (sql_id) REFERENCES wrappers (sql_id) ON DELETE CASCADE
             );
             ''',
@@ -282,7 +290,7 @@ class Database:
                 x              INTEGER NOT NULL,
                 y              INTEGER NOT NULL,
                 image_path     TEXT NOT NULL,
-                image_summary  TEXT NOT NULL DEFAULT '',
+                image_summary  TEXT,
                 FOREIGN KEY (sql_id) REFERENCES wrappers (sql_id) ON DELETE CASCADE
             );
             ''',
@@ -294,14 +302,27 @@ class Database:
     
     @staticmethod
     def _generate_reference_schemas():
-        pass
+        return [
+            '''
+            CREATE TABLE IF NOT EXISTS references (
+                sql_id        INTEGER PRIMARY KEY AUTOINCREMENT,
+                reference_id  TEXT NOT NULL,
+                reference_type TEXT NOT NULL,
+                data          TEXT NOT NULL,
+                timestamp     TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+            );
+            ''',
+            
+            'CREATE UNIQUE INDEX IF NOT EXISTS idx_references_id_type ON references (reference_id, reference_type)',
+            'CREATE INDEX IF NOT EXISTS idx_references_type ON references (reference_type)'
+        ]
 
     async def create_tables(self, cursor) -> None: # Accepts cursor
         '''
         Create the tables asynchronously.
         '''
         try:
-            schemas = self._generate_wrapper_schemas()
+            schemas = self._generate_wrapper_schemas() + self._generate_reference_schemas()
             for schema in schemas:
                 await cursor.execute(schema)
             await self.conn.commit()
@@ -316,7 +337,7 @@ class Database:
         Synchronous version of create_tables for use with sqlite3.
         '''
         try:
-            schemas = self._generate_wrapper_schemas()
+            schemas = self._generate_wrapper_schemas() + self._generate_reference_schemas()
             for schema in schemas:
                 cursor.execute(schema)
             cursor.connection.commit()
@@ -325,6 +346,76 @@ class Database:
             _, _, tb = sys.exc_info()
             self.bus.emit_sync(system_events.ErrorEvent(error='Failed to create database tables.', e=e, tb=tb))
 
+    async def insert_reference(self, reference) -> str:
+        '''
+        Inserts a reference into the database.
+        Stores the reference ID, type, and serialized data.
+        ''' 
+        reference_id = reference.id
+        reference_type = reference.type
+        data = json.dumps(reference.to_dict())
+        
+        sql = '''
+        INSERT OR REPLACE INTO references
+        (reference_id, reference_type, data)
+        VALUES (?, ?, ?)
+        '''
+        
+        async with self._lock:
+            async with self.conn.cursor() as cursor:
+                await cursor.execute('BEGIN')
+                try:
+                    await cursor.execute(sql, (reference_id, reference_type, data))
+                    await self.conn.commit()
+                except Exception:
+                    await self.conn.rollback()
+                    raise
+                    
+        return reference_id
+        
+    def get_references(self):
+        '''
+        Get all references from the database synchronously.
+        Returns a dictionary of {id: (type, data_dict)}
+        '''
+        sql = 'SELECT reference_id, reference_type, data FROM references'
+        
+        references = {}
+        try:
+            conn = sqlite3.connect(self.db_path)
+            conn.row_factory = sqlite3.Row
+            cursor = conn.cursor()
+            
+            cursor.execute(sql)
+            rows = cursor.fetchall()
+            
+            for row in rows:
+                reference_id = row['reference_id']
+                reference_type = row['reference_type']
+
+                try:
+                    reference_data = json.loads(row['data'])
+                    references[reference_id] = (reference_type, reference_data)
+
+                except json.JSONDecodeError as e:
+                    self.bus.emit_sync(system_events.ErrorEvent(
+                        error=f'Failed to parse JSON for reference {reference_id}',
+                        e=e
+                    ))
+            
+            cursor.close()
+            conn.close()
+            
+        except Exception as e:
+            _, _, tb = sys.exc_info()
+            self.bus.emit_sync(system_events.ErrorEvent(
+                error=f'Failed to get references from database',
+                e=e,
+                tb=tb
+            ))
+        
+        return references
+        
     async def close(self):
         '''
         Closes the async database connection if it exists.

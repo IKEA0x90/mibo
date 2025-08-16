@@ -1,14 +1,13 @@
 from telegram import Update
 from telegram.ext import CallbackContext
 from typing import List
-from datetime import datetime
 
 from events import event
 from core import wrapper
 
-class MiboMessage(event.Event):
+class NewMessageArrived(event.Event):
     def __init__(self, update: Update, context: CallbackContext, typing, **kwargs):
-        super().__init__('mibo_message', update=update, context=context, typing=typing, **kwargs)
+        super().__init__('new_message_arrived', update=update, context=context, typing=typing, **kwargs)
 
 class MiboMessageResponse(event.Event):
     def __init__(self, chat_id: str, text: str, images: List[wrapper.ImageWrapper], **kwargs):
