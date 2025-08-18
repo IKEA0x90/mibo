@@ -5,4 +5,4 @@ from services import prompt_enum
 
 class CompletionRequest(event.Event):
     def __init__(self, wdw: window.Window, request: Dict, prompts: Dict[prompt_enum.PromptEnum, str], special_fields: Dict, **kwargs):
-        super().__init__('completion_request', wdw, **kwargs)
+        super().__init__('completion_request', wdw=wdw, request=request, prompts=prompts, special_fields=special_fields, **kwargs)

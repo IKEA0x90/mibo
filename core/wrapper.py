@@ -24,7 +24,7 @@ class Wrapper():
         self.tokens: int = kwargs.get('tokens', 0)
 
         self.role: str = kwargs.get('role', 'assistant')
-        self.user: str = kwargs.get('user', variables.Variables.NICKNAME)
+        self.user: str = kwargs.get('user', variables.Variables.USERNAME)
         
         self.safety_identifier: str = hash(kwargs.get('safety_identifier', self.user))
 
@@ -59,7 +59,7 @@ class Wrapper():
             'datetime': combined_data.get('datetime'),
             'tokens': combined_data.get('tokens', 0),
             'role': combined_data.get('role', 'assistant'),
-            'user': combined_data.get('user', variables.Variables.NICKNAME),
+            'user': combined_data.get('user', variables.Variables.USERNAME),
         }
     
         constructor_params.update(child_row)
@@ -228,12 +228,12 @@ class ChatWrapper():
         self.id: str = str(id)
         self.chat_id = self.id
 
-        self.chat_name: str = kwargs.get('chat_name', self.name)
+        self.chat_name: str = kwargs.get('chat_name', '')
 
         self.chance: int = kwargs.get('chance', 5)
 
-        self.assistant_id: str = kwargs.get('assistant_id', 'default')
-        self.model_id: str = kwargs.get('model_id', 'default')
+        self.assistant_id: str = kwargs.get('assistant_id', variables.Variables.DEFAULT_ASSISTANT)
+        self.model_id: str = kwargs.get('model_id', variables.Variables.DEFAULT_MODEL)
 
         self.last_active: float = 0
         self.in_use: bool = False

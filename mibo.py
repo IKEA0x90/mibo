@@ -14,9 +14,9 @@ from telegram import Update, Chat, ChatMember, InputMediaPhoto, Message, User
 from telegram.ext import Application, CallbackContext, CommandHandler, MessageHandler, ChatMemberHandler, filters
 from telegram.constants import ChatAction
 
-from events import event_bus, mibo_events, system_events, assistant_events, conductor_events
+from events import event_bus, mibo_events, system_events, assistant_events
 from core import assistant, conductor, wrapper, ref
-from services import templates, variables
+from services import variables
 
 class Mibo:
     def __init__(self, token: str, db_path: str = 'memory'):
@@ -70,10 +70,7 @@ class Mibo:
         '''
         Register event listeners
         '''
-        self.bus.register(mibo_events.NewMessageArrived, self._send_message)
-
         self.bus.register(assistant_events.AssistantResponse, self._parse_message)
-        self.bus.register(mibo_events.MiboPollResponse, self._create_poll)
         self.bus.register(system_events.ErrorEvent, self._handle_exception)
 
     async def run(self):
@@ -99,7 +96,7 @@ class Mibo:
         '''
         self.app.add_handler(CommandHandler('debug', self._debug))
         self.app.add_handler(MessageHandler(filters.ALL & (~filters.COMMAND), self._handle_message))
-        self.app.add_handler(ChatMemberHandler(self._welcome, ChatMemberHandler.MY_CHAT_MEMBER))
+        #self.app.add_handler(ChatMemberHandler(self._welcome, ChatMemberHandler.MY_CHAT_MEMBER))
 
     def _system_signals(self):
         '''

@@ -13,7 +13,7 @@ class Variables:
 
     DB_PATH = os.environ['DB_PATH'] # relative path to the database file
 
-    NICKNAME = os.environ['NICKNAME'] # telegram nickname of the bot
+    USERNAME = os.environ['USERNAME'] # telegram USERNAME of the bot
     SYSTEM_CHAT = os.environ['SYSTEM_CHAT'] # id of the system chat where all possible notifications are sent to #TODO change to system_user
 
     LOCAL_API_HOST = os.environ['LOCAL_API_HOST'] # ip of the local ollama host
@@ -22,7 +22,11 @@ class Variables:
     DEFAULT_ASSISTANT = os.environ['DEFAULT_ASSISTANT'] # id of the default assistant, assumed to exist in assistant references
     DEFAULT_MODEL = os.environ['DEFAULT_MODEL'] # id (name) of the default model. assumed to exist in model references
 
-    CHAT_TTL = os.environ['CHAT_TTL'] # time it takes for a chat to unload from memory, in minutes
+    try:
+        CHAT_TTL = os.environ['CHAT_TTL'] # time it takes for a chat to unload from memory, in minutes
+        CHAT_TTL = int(CHAT_TTL)
+    except ValueError:
+        CHAT_TTL = 3600
 
     @staticmethod
     def replacers(original: str) -> str:

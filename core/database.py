@@ -56,7 +56,7 @@ class Database:
 
                 cursor = await self.conn.cursor()
                 try:
-                    await self.create_tables(cursor)
+                    await self._create_tables(cursor)
                 finally:
                     await cursor.close()
 
@@ -73,7 +73,7 @@ class Database:
             conn.row_factory = sqlite3.Row
             cursor = conn.cursor()
             
-            self.create_tables_sync(cursor)
+            self._create_tables_sync(cursor)
             
             conn.commit()
             cursor.close()
@@ -111,7 +111,7 @@ class Database:
 
             if row:
                 return wrapper.ChatWrapper(id=row['chat_id'], name=row['chat_name'],
-                                            chance=row['chance'], assistant=row['assistant'], model=row['model'])
+                                            chance=row['chance'], assistant_id=row['assistant_id'], model_id=row['model_id'])
 
         except Exception as e:
             _, _, tb = sys.exc_info()
@@ -127,28 +127,28 @@ class Database:
         if chat is None or not isinstance(chat, wrapper.ChatWrapper):
             return
 
-        if chat.assistant is None:
-            chat.assistant = variables.Variables.DEFAULT_ASSISTANT
-        if chat.model is None:
-            chat.model = variables.Variables.DEFAULT_MODEL
+        if chat.assistant_id is None:
+            chat.assistant_id = variables.Variables.DEFAULT_ASSISTANT
+        if chat.model_id is None:
+            chat.model_id = variables.Variables.DEFAULT_MODEL
 
         effective_chat_id = chat.chat_id or str(uuid4())
-        chat_name = chat.name
+        chat_name = chat.chat_name
         chance = chat.chance
-        assistant = chat.assistant
-        model = chat.model
+        assistant_id = chat.assistant_id
+        model_id = chat.model_id
 
         async with self._lock:
             async with self.conn.cursor() as cursor:
                 await cursor.execute(
                     """
                     INSERT OR IGNORE INTO chats
-                    (chat_id, chat_name, chance, assistant, model)
+                    (chat_id, chat_name, chance, assistant_id, model_id)
                     VALUES (?, ?, ?, ?, ?)
                     """,
                     (
                         str(effective_chat_id), chat_name,
-                        chance, assistant, model
+                        chance, assistant_id, model_id
                     ),
                 )
                 await self.conn.commit()
@@ -237,7 +237,38 @@ class Database:
         except Exception as e:
             _, _, tb = sys.exc_info()
             await self.bus.emit(system_events.ErrorEvent(error=f'Failed to add a message to the database.', e=e, tb=tb, event_id=event.event_id, chat_id=chat_id))
-    
+
+    @staticmethod
+    def _populate_defaults():
+        return [
+            '''
+            INSERT INTO "references" (reference_id, reference_type, data) VALUES
+            ('gpt-4.1', 'model', 
+                '{
+                "model_provider": "openai",
+                "temperature": 0.95,
+                "max_tokens": 700,
+                "max_response_tokens": 500,
+
+                "penalty_disabled": false,
+                "frequency_penalty": 0.1,
+                "presence_penalty": 0.1,
+
+                "reasoning": false,
+                "reasoning_effort_supported": false,
+                "reasoning_effort": "",
+
+                "think_token": "",
+                "disable_thinking_token": "",
+                "disable_thinking": false,
+
+                "verbosity_supported": false,
+                "verbosity": "minimal"
+                }'
+            )
+            '''
+        ]
+
     @staticmethod
     def _generate_wrapper_schemas():
         return [
@@ -246,8 +277,8 @@ class Database:
                 chat_id              TEXT PRIMARY KEY,
                 chat_name            TEXT NOT NULL DEFAULT '',
                 chance               INTEGER NOT NULL DEFAULT 5,
-                assistant            TEXT NOT NULL DEFAULT 'default',
-                model                TEXT NOT NULL DEFAULT 'default',
+                assistant_id         TEXT NOT NULL DEFAULT '{variables.Variables.DEFAULT_ASSISTANT}',
+                model_id             TEXT NOT NULL DEFAULT '{variables.Variables.DEFAULT_MODEL}',
                 timestamp            TIMESTAMP DEFAULT CURRENT_TIMESTAMP
             );
             ''',
@@ -297,7 +328,7 @@ class Database:
     def _generate_reference_schemas():
         return [
             '''
-            CREATE TABLE IF NOT EXISTS references (
+            CREATE TABLE IF NOT EXISTS "references" (
                 sql_id        INTEGER PRIMARY KEY AUTOINCREMENT,
                 reference_id  TEXT NOT NULL,
                 reference_type TEXT NOT NULL,
@@ -305,12 +336,12 @@ class Database:
                 timestamp     TIMESTAMP DEFAULT CURRENT_TIMESTAMP
             );
             ''',
-            
-            'CREATE UNIQUE INDEX IF NOT EXISTS idx_references_id_type ON references (reference_id, reference_type)',
-            'CREATE INDEX IF NOT EXISTS idx_references_type ON references (reference_type)'
+
+            'CREATE UNIQUE INDEX IF NOT EXISTS idx_references_id_type ON "references" (reference_id, reference_type)',
+            'CREATE INDEX IF NOT EXISTS idx_references_type ON "references" (reference_type)'
         ]
 
-    async def create_tables(self, cursor) -> None: # Accepts cursor
+    async def _create_tables(self, cursor) -> None: # Accepts cursor
         '''
         Create the tables asynchronously.
         '''
@@ -325,7 +356,7 @@ class Database:
             _, _, tb = sys.exc_info()
             self.bus.emit(system_events.ErrorEvent(error='Failed to create database tables.', e=e, tb=tb))
 
-    def create_tables_sync(self, cursor): # Accepts cursor
+    def _create_tables_sync(self, cursor): # Accepts cursor
         '''
         Synchronous version of create_tables for use with sqlite3.
         '''
@@ -349,7 +380,7 @@ class Database:
         data = json.dumps(reference.to_dict())
         
         sql = '''
-        INSERT OR REPLACE INTO references
+        INSERT OR REPLACE INTO "references"
         (reference_id, reference_type, data)
         VALUES (?, ?, ?)
         '''
@@ -371,7 +402,7 @@ class Database:
         Get all references from the database synchronously.
         Returns a dictionary of {id: (type, data_dict)}
         '''
-        sql = 'SELECT reference_id, reference_type, data FROM references'
+        sql = 'SELECT reference_id, reference_type, data FROM "references"'
         
         references = {}
         try:

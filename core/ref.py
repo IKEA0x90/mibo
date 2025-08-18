@@ -77,12 +77,8 @@ class ModelReference(Reference):
     def __init__(self, id: str, **kwargs):
         super().__init__(id=id, **kwargs)
 
-        self.base_url: str = kwargs.get('base_url', '')
-        self.local: bool = kwargs.get('local', False)
         self.model_provider: str = kwargs.get('model_provider', 'openai')
-
         self.temperature: float = kwargs.get('temperature', 1)
-
         self.max_tokens: int = kwargs.get('max_tokens', 1000)
         self.max_response_tokens: int = kwargs.get('max_response_tokens', 500)
 
@@ -202,9 +198,9 @@ class Ref:
         Add a message to a chat window, returning the window
         '''
         try:
-            wdw: window.Window = self.get_window(chat_id, **kwargs)
+            wdw: window.Window = await self.get_window(chat_id, **kwargs)
         except ValueError as e:
-            self.bus.emit(system_events.ErrorEvent(error="Can't load chat window", e=e))
+            self.bus.emit(system_events.ErrorEvent(error="Can't load chat window", e=e, tb=None))
             return
 
         # add to window
@@ -366,8 +362,7 @@ class Ref:
         This performs full async initialization and loading from the database.
         '''
         await self.db.initialize()
-        await self._load_async()
-        self._register()
+        self._load()
         
         self._cleanup_task = asyncio.create_task(self._cleanup())
 

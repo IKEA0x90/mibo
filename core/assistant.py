@@ -5,12 +5,11 @@ import sys
 import asyncio
 import aiohttp
 
-from copy import copy
 from typing import List, Dict
 from io import BytesIO
 from PIL import Image
 
-from events import event_bus, conductor_events, assistant_events, system_events, db_events, event
+from events import event_bus, conductor_events, assistant_events, system_events, event
 from core import ref, window, wrapper
 from services import prompt_enum, variables
 
@@ -100,7 +99,7 @@ class Assistant:
 
             assistant_message = wrapper.MessageWrapper(
                 id=str(response.id), chat_id=chat_id, 
-                role='assistant', user=variables.Variables.NICKNAME,
+                role='assistant', user=variables.Variables.USERNAME,
                 message=message_text, ping=False,
                 datetime=dt.datetime.now(tz=dt.timezone.utc)
             )
@@ -108,7 +107,7 @@ class Assistant:
 
             for img in images:
                 if 'image_url' in img:
-                    incomplete_wrapper = wrapper.ImageWrapper(id=str(response.id), chat_id=self.chat_id, x=0, y=0, role='assistant', user=variables.Variables.NICKNAME)
+                    incomplete_wrapper = wrapper.ImageWrapper(id=str(response.id), chat_id=self.chat_id, x=0, y=0, role='assistant', user=variables.Variables.USERNAME)
                     image = await self._download_image_url(img['image_url'], incomplete_wrapper=incomplete_wrapper, parent_event=event)
                     wrapper_list.append(image)
 

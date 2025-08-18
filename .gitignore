@@ -3,9 +3,7 @@
 
 # Ignore my files but keep examples
 memory/*
-
-!memory/default_system_prompts/
-!memory/prompts/readme.md
+references/*
 
 # Byte-compiled / optimized / DLL files
 __pycache__/

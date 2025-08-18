@@ -74,7 +74,7 @@ class Conductor:
             if system_message:
                 role = 'system'
             else:
-                role = 'assistant' if user == self.username else 'user'
+                role = 'assistant' if user == variables.Variables.USERNAME else 'user'
 
             message_text = message_text or message_caption or ''
 
@@ -86,7 +86,7 @@ class Conductor:
                     entity = cast(MessageEntity, entity) # for type hinting
 
                     if entity.type == 'mention':
-                        if value.startswith('@') and value[1:] == variables.Variables.NICKNAME:
+                        if value.startswith('@') and value[1:] == variables.Variables.USERNAME:
                             ping = True
 
                     elif entity.type == 'url':
@@ -103,7 +103,7 @@ class Conductor:
                 ping = True
 
             # if any of string names is in the text
-            names = self.ref.get_assistant_names(chat_id)
+            names = await self.ref.get_assistant_names(chat_id)
             if any(name in message_text for name in names):
                 ping = True
                 
