@@ -108,16 +108,20 @@ class MessageWrapper(Wrapper):
         return f'{self.user}: {self._remove_prefix(self.message)}'
 
     @staticmethod
-    def _remove_prefix(text: str) -> str:
+    def _remove_prefixes(text: str, prefixes: List[str]) -> str:
         '''
         Removes the prefixed name from the text if it exists
         '''
-        prefix = variables.Variables.MIBO_MESSAGE  # 'mibo:'
-        pattern = rf'^(?:{prefix.rstrip()}\s+)+'
         text2 = text.strip()
-
-        if re.match(pattern, text, flags=re.IGNORECASE):
-            text2 = re.sub(pattern, '', text, flags=re.IGNORECASE)
+        
+        # Create a pattern that matches any prefix from the list
+        if prefixes:
+            # Escape special regex characters and join with OR
+            escaped_prefixes = [re.escape(prefix.rstrip()) for prefix in prefixes]
+            pattern = rf'^(?:(?:{"|".join(escaped_prefixes)})\s+)+'
+            
+            if re.match(pattern, text2, flags=re.IGNORECASE):
+                text2 = re.sub(pattern, '', text2, flags=re.IGNORECASE)
 
         return text2
     

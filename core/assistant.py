@@ -89,7 +89,7 @@ class Assistant:
             if not message_text.strip() and not images:
                 return
             
-            # Replace random stuff that I don't like and is easier to change here rather than in the prompt
+            # replace random stuff that I don't like and is easier to change here rather than in the prompt
             message_text = variables.Variables.replacers(message_text)
             
             if think_token := special_fields.get('think_token', ''):
@@ -106,24 +106,16 @@ class Assistant:
             )
             wrapper_list.append(assistant_message)
 
-            # Add images to content_list
             for img in images:
                 if 'image_url' in img:
                     incomplete_wrapper = wrapper.ImageWrapper(id=str(response.id), chat_id=self.chat_id, x=0, y=0, role='assistant', user=variables.Variables.NICKNAME)
                     image = await self._download_image_url(img['image_url'], incomplete_wrapper=incomplete_wrapper, parent_event=event)
                     wrapper_list.append(image)
 
-            # Add to window (do not trigger completions)
-            for w in wrapper_list:
-                await self.messages.add_message(event.event_id, w, self.bus)
+            await self.ref.add_message(chat_id, wrapper_list, False)
 
-            # Emit the assistant response
             response_event = assistant_events.AssistantResponse(messages=wrapper_list, event_id=event.event_id)
             await self.bus.emit(response_event)
-
-            # Emit WrapperPush for bot message so it is added to db (but not completion)
-            push_event = conductor_events.WrapperPush(wrapper_list, chat_id=self.chat_id, event_id=event.event_id)
-            await self.bus.emit(push_event)
 
         except Exception as e:
             _, _, tb = sys.exc_info()

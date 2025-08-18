@@ -158,13 +158,15 @@ class Mibo:
         
         event = await self.bus.emit(mibo_events.NewMessageArrived(update, context, typing=typing))
 
-    async def _system_message(self, chat_id, system_message, **kwargs):
+    async def _system_message(self, chat_id: str, system_message: str, **kwargs):
         '''
         Forces the bot to send a message to a chat, possibly appending a system message to the prompt.
         '''
         def typing():
             if chat_id not in self.typing_tasks or self.typing_tasks[chat_id].done():
                 self.typing_tasks[chat_id] = asyncio.create_task(self._simulate_typing(chat_id))
+
+        chat_name: str = kwargs.get('chat_name', '')
 
         user = User(id=0, first_name="System", is_bot=True)
         chat = Chat(id=chat_id, type=Chat.PRIVATE, title=chat_name)
@@ -178,17 +180,8 @@ class Mibo:
         )
 
         update = Update(update_id=uuid.uuid4().int, message=message)
-        event = mibo_events.MiboMessage(update=update, context=None, typing=typing)
+        event = mibo_events.NewMessageArrived(update=update, context=None, typing=typing)
         event.system = True
-        await self.bus.wait(event, assistant_events.AssistantResponse)
-
-        old_task = self.typing_tasks.pop(chat_id, None)
-        if old_task and not old_task.done():
-            old_task.cancel()
-            try:
-                await old_task
-            except asyncio.CancelledError:
-                pass
 
     async def _parse_message(self, event: assistant_events.AssistantResponse):
         '''
@@ -214,45 +207,34 @@ class Mibo:
 
         for message in messages:
             if isinstance(message, wrapper.MessageWrapper):
-                message_text: str = message._remove_prefix(message.message)
+                message_text: str = message._remove_prefix(message.message, self.ref.get_assistant_names(chat_id))
 
             if isinstance(message, wrapper.ImageWrapper):
                 message_images.append(message)
 
         if message_text or message_images:
-            response = mibo_events.MiboMessageResponse(chat_id, message_text, message_images)
-            await self.bus.emit(response)
-        
+            await self._send_message(chat_id, message_text, message_images)
+
     @staticmethod
     def parse_text(text: str) -> List[str]:
         '''
         Parse the text for custom delimiters.
         '''
-        prefix = variables.Variables.MIBO_MESSAGE  # 'mibo:'
-        pattern = rf'^(?:{prefix.rstrip()}\s+)+'
-        text2 = text.strip()
-
-        if re.match(pattern, text, flags=re.IGNORECASE):
-            text2 = re.sub(pattern, '', text, flags=re.IGNORECASE)
-
-        text_list = text2.split('|n|')
+        text = text.strip()
+        text_list = text.split('|n|')
 
         # remove empty strings and whitespace-only strings
         filtered_list = [s for s in text_list if s.strip()]
 
         return filtered_list
 
-    async def _send_message(self, event: mibo_events.MiboMessageResponse) -> None:
+    async def _send_message(self, chat_id: str, text: str, images: List[wrapper.ImageWrapper]) -> None:
         '''
         Send the text and images from the response message.
         Text and/or images may be empty - in that case, only the non-empty item is sent.
         If both are empty, nothing is sent.
         If images are sent, they are combined into an album and the message is sent appended to the first image (like users do).
         '''
-        chat_id: str = event.chat_id
-        text: str = event.text
-        images: List[wrapper.ImageWrapper] = event.images
-
         if not text and not images:
             return
         
@@ -311,58 +293,13 @@ class Mibo:
         if tb:
             traceback.print_exception(type(e), e, tb)
 
-    async def _notify_creator(self, events: Dict) -> None:
-        '''
-        Notify me about an event.
-        '''
-        admin_chat = variables.Variables.SYSTEM_CHAT
-
-        try:
-            if event := events.get('join'):
-                group_name = event.get('group_name', 'Unknown Group')
-                admin = event.get('admin', False)
-
-                message = templates.WelcomeNotification(group_name=group_name, admin=admin)
-
-                # Send the notification to the creator
-                await self._system_message(admin_chat, "Admin Notifications", str(message))
-
-            # Cancel the typing simulation for the creator notification
-            old_task = self.typing_tasks.pop(admin_chat, None)
-            if old_task and not old_task.done():
-                old_task.cancel()
-                try:
-                    await old_task
-                except asyncio.CancelledError:
-                    pass
-
-        except Exception as e:
-            _, _, tb = sys.exc_info()
-            await self.bus.emit(system_events.ErrorEvent(error="Creator unreachable.", e=e, tb=tb))
-
-    async def _create_poll(self, event: mibo_events.MiboPollResponse) -> None:
-        '''
-        Make a poll.
-        Property verification is done elsewhere - it is assumed that the poll is valid here.
-        '''
-        chat_id: str = event.chat_id
-        poll: wrapper.PollWrapper = event.poll
-
-        await self.app.bot.send_poll(
-            chat_id=chat_id,
-            question=poll.question,
-            options=poll.options,
-            allows_multiple_answers=poll.multiple_choice,
-            correct_option_id=poll.correct_option_idx if poll.correct_option_idx != -1 else None,
-            explanation=poll.explanation if poll.explanation else None
-        )
-
     async def _debug(self, update: Update, context: CallbackContext):
         '''
         Sends a debug message.
         '''
         await context.bot.send_message(update.effective_chat.id, 'Debug OK')
 
+    """
     async def _welcome(self, update: Update, context: CallbackContext):
         '''
         Sends a message to the group when the bot joins or leaves.
@@ -407,6 +344,7 @@ class Mibo:
                 await asyncio.sleep(4)
         except asyncio.CancelledError:
             pass
+    """
 
 logging.basicConfig(
     format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
