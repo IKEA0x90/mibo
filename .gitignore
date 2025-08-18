@@ -1,6 +1,5 @@
 .env/.env
 
-
 # Ignore my files but keep examples
 memory/*
 references/*
