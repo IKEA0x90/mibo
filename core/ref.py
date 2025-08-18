@@ -348,7 +348,7 @@ class Ref:
         try:
             references_data = self.db.get_references()
 
-            for reference_id, (reference_type, reference_data) in references_data.items():
+            for (reference_id, reference_type), reference_data in references_data.items():
                 if reference_type == 'reference':
                     continue
                 elif reference_type not in REFERENCE_REGISTRY:

@@ -137,7 +137,7 @@ class Conductor:
             respond = wdw.ready and ((random_chance <= chance) or ping) and not message_caption
 
             if respond:
-                new_message_event = conductor_events.CompletionRequest(wdw=wdw, request=request, prompts=prompts, special_fields=special_fields)
+                new_message_event = conductor_events.CompletionRequest(wdw=wdw, request=request, prompts=prompts, special_fields=special_fields, typing=event.typing)
                 await self.bus.emit(new_message_event)
 
         except Exception as e:

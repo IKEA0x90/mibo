@@ -69,6 +69,9 @@ class Assistant:
         request['safety_identifier'] = str(hash(chat_id))
 
         try:
+            typing = event.typing
+            typing()
+
             client = self.clients.get(model_provider)
             response = await self.call_openai(client.chat.completions.create, messages=messages, model=model, extra_body=request)
 

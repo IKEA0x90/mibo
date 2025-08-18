@@ -10,7 +10,7 @@ import datetime as dt
 
 from pathlib import Path
 from uuid import uuid4
-from typing import List
+from typing import Dict, List, Tuple
 from events import event_bus, ref_events, system_events
 from core import window, wrapper
 from services import variables
@@ -277,16 +277,16 @@ class Database:
         }
         
         return [
-            f'''INSERT OR REPLACE INTO "references" (reference_id, reference_type, data) 
+            f'''INSERT OR IGNORE INTO "references" (reference_id, reference_type, data) 
                VALUES ('{variables.Variables.DEFAULT_MODEL}', 'model', '{json.dumps(model_data)}')''',
             
-            f'''INSERT OR REPLACE INTO "references" (reference_id, reference_type, data) 
+            f'''INSERT OR IGNORE INTO "references" (reference_id, reference_type, data) 
                VALUES ('{variables.Variables.DEFAULT_ASSISTANT}', 'assistant', '{json.dumps(assistant_data)}')''',
 
-            f'''INSERT OR REPLACE INTO "references" (reference_id, reference_type, data) 
+            f'''INSERT OR IGNORE INTO "references" (reference_id, reference_type, data) 
                VALUES ('default', 'prompt', '{json.dumps(default_prompt_data)}')''',
-            
-            f'''INSERT OR REPLACE INTO "references" (reference_id, reference_type, data) 
+
+            f'''INSERT OR IGNORE INTO "references" (reference_id, reference_type, data) 
                VALUES ('welcome_default', 'prompt', '{json.dumps(welcome_prompt_data)}')'''
         ]
 
@@ -417,7 +417,7 @@ class Database:
                     
         return reference_id
         
-    def get_references(self):
+    def get_references(self) -> Dict[Tuple[str, str], Dict]:
         '''
         Get all references from the database synchronously.
         Returns a dictionary of {id: (type, data_dict)}
@@ -439,7 +439,7 @@ class Database:
 
                 try:
                     reference_data = json.loads(row['data'])
-                    references[reference_id] = (reference_type, reference_data)
+                    references[(reference_id, reference_type)] = reference_data
 
                 except json.JSONDecodeError as e:
                     self.bus.emit_sync(system_events.ErrorEvent(

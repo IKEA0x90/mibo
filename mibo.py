@@ -333,6 +333,7 @@ class Mibo:
             elif old_status in [ChatMember.MEMBER, ChatMember.ADMINISTRATOR] and new_status in [ChatMember.LEFT, ChatMember.BANNED]:
                 # Log or handle cleanup if needed
                 pass
+    """        
         
     async def _simulate_typing(self, chat_id: int):
         try:
@@ -341,7 +342,6 @@ class Mibo:
                 await asyncio.sleep(4)
         except asyncio.CancelledError:
             pass
-    """
 
 logging.basicConfig(
     format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
