@@ -5,13 +5,12 @@ import re
 import datetime as dt
 from typing import Any, Dict, List, Optional
 
-from services import tools
+from services import variables
 
-# make a dictionary for all possible wrappers
 WRAPPER_REGISTRY = {}
 def register_wrapper(cls):
     type_name = cls.__name__.replace('Wrapper', '').lower() # type is the class name without 'Wrapper'
-    cls.type = type_name # this only assigns type to the class, not to the instance
+    cls.type = type_name # assign type to the class
     WRAPPER_REGISTRY[type_name] = cls
     return cls
 
@@ -20,17 +19,18 @@ class Wrapper():
     def __init__(self, id: str, chat_id: str, datetime: dt.datetime = None, **kwargs):
         self.id: str = str(id)
         self.chat_id: str = str(chat_id)
-        self.type = self.__class__.type # this assigns type to the instance
+        self.type = self.__class__.type # assign type to the instance
 
         self.tokens: int = kwargs.get('tokens', 0)
 
         self.role: str = kwargs.get('role', 'assistant')
-        self.user: str = kwargs.get('user', tools.Tool.MIBO)
+        self.user: str = kwargs.get('user', variables.Variables.USERNAME)
 
         try:
             self.datetime: dt.datetime = datetime.astimezone(dt.timezone.utc)
         except Exception:
-            self.datetime = dt.datetime.now(tz=dt.timezone.utc)
+            # if no datetime is provided, assign the oldest possible datetime so ready checks are failed
+            self.start_datetime: dt.datetime = dt.datetime.min.replace(tzinfo=dt.timezone.utc)
 
     def to_parent_dict(self) -> Dict[str, Any]:
         '''
@@ -41,7 +41,6 @@ class Wrapper():
             'chat_id': self.chat_id,
             'wrapper_type': self.type,
             'datetime': self.datetime,
-            'tokens': self.tokens,
             'role': self.role,
             'user': self.user,
         }
@@ -54,9 +53,8 @@ class Wrapper():
             'id': combined_data.get('telegram_id'),
             'chat_id': combined_data.get('chat_id'),
             'datetime': combined_data.get('datetime'),
-            'tokens': combined_data.get('tokens', 0),
             'role': combined_data.get('role', 'assistant'),
-            'user': combined_data.get('user', tools.Tool.MIBO),
+            'user': combined_data.get('user', variables.Variables.USERNAME),
         }
     
         constructor_params.update(child_row)
@@ -78,45 +76,47 @@ class Wrapper():
 class MessageWrapper(Wrapper):
     def __init__(self, id: str, chat_id: str, message: str = '', ping: bool = True, **kwargs):
         super().__init__(id, chat_id, **kwargs)
-        
-        self.chat_name: str = kwargs.get('chat_name', '')
-
-        self.reactions: List[str] = kwargs.get('reactions', [])
 
         self.message: str = message or ''
-
         self.ping: bool = ping
+        
+        self.reactions: List[str] = kwargs.get('reactions', [])
 
         self.reply_id: str = kwargs.get('reply_id', None)
-        self.quote_start: int = kwargs.get('quote_start', None)
-        self.quote_end: int = kwargs.get('quote_end', None)
+        self.quote: str = kwargs.get('quote', None)
+
+        self.think = kwargs.get('think', '')
 
     def to_child_dict(self):
         return {
             'message': self.message,
             'reply_id': self.reply_id,
-            'quote_start': self.quote_start,
-            'quote_end': self.quote_end,
+            'quote': self.quote,
+            'think': self.think,
         }
     
     @classmethod
     def get_child_fields(cls):
-        return ['message', 'reply_id', 'quote_start', 'quote_end']
+        return ['message', 'reply_id', 'quote', 'think']
 
     def __str__(self):
-        return f'{self.user}: {self._remove_prefix(self.message)}'
+        return f'{self.user}: {self.message}'
 
     @staticmethod
-    def _remove_prefix(text: str) -> str:
+    def _remove_prefixes(text: str, prefixes: List[str]) -> str:
         '''
         Removes the prefixed name from the text if it exists
         '''
-        prefix = tools.Tool.MIBO_MESSAGE  # 'mibo:'
-        pattern = rf'^(?:{prefix.rstrip()}\s+)+'
         text2 = text.strip()
-
-        if re.match(pattern, text, flags=re.IGNORECASE):
-            text2 = re.sub(pattern, '', text, flags=re.IGNORECASE)
+        
+        # Create a pattern that matches any prefix from the list
+        if prefixes:
+            # Escape special regex characters and join with OR
+            escaped_prefixes = [re.escape(prefix.rstrip()) for prefix in prefixes]
+            pattern = rf'^(?:(?:{"|".join(escaped_prefixes)})\s+)+'
+            
+            if re.match(pattern, text2, flags=re.IGNORECASE):
+                text2 = re.sub(pattern, '', text2, flags=re.IGNORECASE)
 
         return text2
     
@@ -219,28 +219,25 @@ class PollWrapper(Wrapper):
         return rstr
     
 class ChatWrapper():
-    def __init__(self, id: str, name: str, **kwargs):
+    def __init__(self, id: str, **kwargs):
         self.id: str = str(id)
         self.chat_id = self.id
 
-        self.name = str(name)
-        self.chat_name: str = name
+        self.chat_name: str = kwargs.get('chat_name', '')
 
-        self.custom_instructions: str = kwargs.get('custom_instructions', '')
-        self.chance: int = kwargs.get('chance', tools.Tool.CHANCE)
-        self.max_tokens: int = kwargs.get('max_tokens', tools.Tool.MAX_TOKENS)
-        self.max_response_tokens: int = kwargs.get('max_response_tokens', tools.Tool.MAX_RESPONSE_TOKENS)
-        self.frequency_penalty: float = kwargs.get('frequency_penalty', tools.Tool.FREQUENCY_PENALTY)
-        self.presence_penalty: float = kwargs.get('presence_penalty', tools.Tool.PRESENCE_PENALTY)
+        self.chance: int = kwargs.get('chance', 5)
+
+        self.assistant_id: str = kwargs.get('assistant_id', variables.Variables.DEFAULT_ASSISTANT)
+        self.model_id: str = kwargs.get('model_id', variables.Variables.DEFAULT_MODEL)
+
+        self.last_active: float = 0
+        self.in_use: bool = False
 
     def to_dict(self):
         return {
             'id': self.chat_id,
             'chat_name': self.chat_name,
-            'custom_instructions': self.custom_instructions,
             'chance': self.chance,
-            'max_tokens': self.max_tokens,
-            'max_response_tokens': self.max_response_tokens,
-            'frequency_penalty': self.frequency_penalty,
-            'presence_penalty': self.presence_penalty,
+            'assistant_id': self.assistant_id,
+            'model_id': self.model_id,
         }

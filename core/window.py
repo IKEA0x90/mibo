@@ -5,22 +5,23 @@ from typing import List, Dict, Deque
 from collections import deque
 
 from core import wrapper
-from events import event_bus
 
 class Window():
-    def __init__(self, chat_id: str, start_datetime: dt.datetime, template: dict, max_tokens: int):
+    def __init__(self, chat_id: str, start_datetime: dt.datetime):
         self.chat_id: str = chat_id
         self.start_datetime: dt.datetime = start_datetime
 
         self.tokens: int = 0
+        self.max_tokens: int = 700
 
         self._lock = asyncio.Lock()
         self._stale_buffer: Deque[wrapper.Wrapper] = deque()
-
-        self.max_tokens: int = max_tokens
         
         self.messages: Deque[wrapper.Wrapper] = deque()
         self.ready: bool = False
+
+    def set_max_tokens(self, max_tokens: int):
+        self.max_tokens = max_tokens
 
     def __len__(self):
         return len(self.messages)
@@ -35,7 +36,7 @@ class Window():
         '''
         Checks if the window contains a message with the same id.
         '''
-        return any(msg.id == message.id for msg in self.messages)
+        return any((msg.id == message.id and msg.type == message.type) for msg in self.messages)
 
     async def override(self, message: wrapper.Wrapper) -> None:
         '''
@@ -46,9 +47,9 @@ class Window():
             self.tokens = 0
             self.ready = True
 
-            await self._insert_live_message(message)
+            await self._insert_live_message(message, True)
 
-    async def add_message(self, event_id: str, message: wrapper.Wrapper, bus: event_bus.EventBus) -> bool:
+    async def add_message(self, message: wrapper.Wrapper, set_ready: bool = True) -> bool:
         '''
         Adds a message to the window. 
         returns True if the window now contains the latest context.
@@ -56,22 +57,25 @@ class Window():
         async with self._lock:
             is_new = message.datetime >= self.start_datetime
 
-            # always keep the message for context
+            # add message
             await self._insert_live_message(message)
 
             # if this is the first non-stale message after startup
             # mark the window ready and broadcast.
-            if not self.ready and is_new:
+            if not self.ready and is_new and set_ready:
                 self.ready = True
 
             # assistant should respond only for new messages *after* ready.
             return is_new and self.ready
 
     async def _insert_live_message(self, message: wrapper.Wrapper) -> None:
+        if self.contains(message):
+            return
+
         message_tokens = message.tokens or message.calculate_tokens()
         inserted = False
 
-        # Assume messages arrive mostly in order
+        # assume messages arrive mostly in order
         if not self.messages or message.datetime >= self.messages[-1].datetime:
             self.messages.append(message)
             inserted = True
@@ -87,10 +91,10 @@ class Window():
                 self.messages.appendleft(message)
 
         self.tokens += message_tokens
-        await self._trim_excess_tokens()
+        await self._trim_excess_tokens(self.max_tokens)
 
-    async def _trim_excess_tokens(self) -> None:
-        while self.tokens > self.max_tokens and self.messages:
+    async def _trim_excess_tokens(self, max_tokens: int) -> None:
+        while self.tokens > max_tokens and self.messages:
             oldest_msg = self.messages.popleft()
             oldest_tokens = oldest_msg.tokens
             self.tokens -= oldest_tokens
@@ -99,37 +103,47 @@ class Window():
         '''
         Transforms the context messages into a json compatible with OpenAI chat completions API.
         Preserves both text and images as content blocks.
+        Groups messages with the same group_id.
         '''
+        grouped_content = {}
         messages = []
-        message: wrapper.Wrapper
-
+        
         for message in self.messages:
-            content = []
-
+            group_id = message.id
+            
+            if group_id not in grouped_content:
+                grouped_content[group_id] = {
+                    "role": message.role,
+                    "content": [],
+                    "datetime": message.datetime
+                }
+            
             if isinstance(message, wrapper.MessageWrapper):
-                message: wrapper.MessageWrapper
-
-                if not message.message:
-                    continue
-
-                text = message.message if message.role == 'assistant' else str(message)
-                if text:
-                    content.append({"type": "text", "text": text})
-
+                if message.message:
+                    text = message.message if message.role == 'assistant' else str(message)
+                    if text:
+                        grouped_content[group_id]["content"].append({"type": "text", "text": text})
+            
             elif isinstance(message, wrapper.ImageWrapper):
-                message: wrapper.ImageWrapper
                 base64 = message.get_base64()
                 detail = message.detail
                 
                 if base64:
-                    content.append({"type": "image_url", "image_url": {'url': f"data:image/jpeg;base64,{base64}", 'detail': detail}})
+                    grouped_content[group_id]["content"].append(
+                        {"type": "image_url", "image_url": {'url': f"data:image/jpeg;base64,{base64}", 'detail': detail}}
+                    )
                 else:
-                    content.append({"type": "text", "text": f"|IMAGE|{message.image_summary or '|IMAGE|Image content not available.'}"})
-
-            # For OpenAI chat completions, each message is a dict with 'role' and 'content'
-
-            m = {"role": message.role, "content": content}
-            
-            messages.append(m)
-
+                    grouped_content[group_id]["content"].append(
+                        {"type": "text", "text": f"|IMAGE|{message.image_summary or '|IMAGE|Image content not available.'}"}
+                    )
+        
+        sorted_groups = sorted(grouped_content.values(), key=lambda x: x["datetime"])
+        
+        for group in sorted_groups:
+            if group["content"]:
+                messages.append({
+                    "role": group["role"],
+                    "content": group["content"]
+                })
+        
         return messages

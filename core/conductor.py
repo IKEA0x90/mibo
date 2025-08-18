@@ -1,91 +1,92 @@
 import asyncio
+import random
 import sys
 import datetime as dt
 
 from io import BytesIO
 from PIL import Image
-from typing import cast
-from telegram import Update, Message, MessageEntity
+from typing import Dict, cast
+from telegram import Chat, Update, Message, MessageEntity, User
 from telegram.ext import CallbackContext
 
-from events import event, event_bus, conductor_events, db_events, system_events, mibo_events
-from core import wrapper
-from services import tools
+from events import event, event_bus, conductor_events, mibo_events, system_events
+from core import ref, window, wrapper
+from services import prompt_enum, variables
 
 class Conductor:
     '''
     A layer between telegram and the services.
     Captures the raw event, parses it into a MessageWrapper, and adds it back to the bus.
     '''
-    def __init__(self, bus):
+    def __init__(self, bus, referrer: ref.Ref):
         self.bus: event_bus.EventBus = bus
-        self.username: str = tools.Tool.MIBO
+        self.ref: ref.Ref = referrer
+
         self._register()
 
     def _register(self):
-        self.bus.register(mibo_events.MiboMessage, self._capture_message)
+        self.bus.register(mibo_events.NewMessageArrived, self._capture_message)
 
-    async def _capture_message(self, event: mibo_events.MiboMessage):
+    async def _capture_message(self, event: mibo_events.NewMessageArrived):
         '''
         Listens to new messages sent to chats and processes them into Wrappers.
         Then, calls Mibo.
         ''' 
-        system_message = hasattr(event, 'system')
+        update: Update = event.update
+        context: CallbackContext = event.context
 
         try:
-            update: Update = event.update
-            start_datetime: dt.datetime = event.start_datetime
-            context: CallbackContext = event.context
+            chat: Chat = update.effective_chat
+            message: Message = update.effective_message
 
-            chat = update.effective_chat
-            message: Message = update.message
-            user = update.message.from_user
+            if not chat or not message:
+                return {}
+
+            user: User = message.from_user
+            if not user:
+                return {}
             
-            if not chat or not message or not user:
-                return
-
-            chat_id = chat.id
-            message_id = message.message_id
-            chat_name = chat.effective_name or ''
+            chat_id: str = chat.id
+            message_id: str = message.message_id
+            chat_name: str = chat.effective_name or ''
 
             if not chat_id or not message_id:
-                return
-        
-        except Exception as e:
-            _, _, tb = sys.exc_info()
-            await self.bus.emit(system_events.ErrorEvent(error="Woah! Somehow, this telegram message can't be parsed.", e=e, tb=tb, event_id=event.event_id))
+                return {}
 
-        try:
-            user = user.username or user.first_name
-            if system_message:
-                role = 'developer'
-            else:
-                role = 'assistant' if user == self.username else 'user'
+            chat_id = message.chat.id
+            chat_type = message.chat.type
+            chat_name = message.chat.effective_name or ''
 
-            message_text = message.text or message.caption or ''
-            
-            entities = message.parse_entities(types=[
-                'mention',
-                'url'
-            ])
+            message_id = message.message_id
+            message_text = message.text
+            message_caption = message.caption
 
-            if not entities:
-                entities = message.parse_caption_entities(types=[
-                    'mention',
-                    'url'
-                ])
+            user = message.from_user
+            user_id = user.id
+            username = user.username or user.first_name
+
+            entities = message.parse_entities()
+            caption_entities = message.parse_caption_entities()
 
             ping = False
+            system_message = hasattr(event, 'system')
 
-            if chat.type == chat.PRIVATE or system_message:
+            if system_message:
+                role = 'system'
+            else:
+                role = 'assistant' if user == variables.Variables.USERNAME else 'user'
+
+            message_text = message_text or message_caption or ''
+
+            if chat_type == Chat.PRIVATE or system_message:
                 ping = True 
 
-            if entities:
-                for entity, value in entities.items():
+            if entities or caption_entities:
+                for entity, value in {**entities.items(), **caption_entities.items()}:
                     entity = cast(MessageEntity, entity) # for type hinting
 
                     if entity.type == 'mention':
-                        if value.startswith('@') and value[1:] == tools.Tool.MIBO_PING:
+                        if value.startswith('@') and value[1:] == variables.Variables.USERNAME:
                             ping = True
 
                     elif entity.type == 'url':
@@ -93,36 +94,52 @@ class Conductor:
                         pass
             
             reply_message = message.reply_to_message
-
             reply_id = reply_message.message_id if reply_message else None
+
+            quote = reply_message.quote if reply_message else None
+            quote_text = quote.text if quote else None
 
             if reply_id and (reply_message.from_user.id == context.bot.id):
                 ping = True
 
-            if f'{tools.Tool.MIBO}' in message_text.lower() or f'{tools.Tool.MIBO_RU}' in message_text.lower():
+            # if any of string names is in the text
+            names = await self.ref.get_assistant_names(chat_id)
+            if any(name in message_text for name in names):
                 ping = True
                 
             datetime: dt.datetime = message.date.astimezone(dt.timezone.utc)
 
-            message_wrapper = wrapper.MessageWrapper(id=message_id, chat_id=chat_id, message=message_text, ping=ping, reply_id=reply_id, datetime=datetime, chat_name=chat_name, role=role, user=user)
+            message_wrapper = wrapper.MessageWrapper(id=message_id, chat_id=chat_id, message=message_text, ping=ping, 
+                                                     reply_id=reply_id, quote=quote_text,
+                                                     datetime=datetime, role=role, user=username)
+            
             content = await self._look_for_content(update, context, event)
 
             c: wrapper.Wrapper
             for c in content:
                 c.role = role
-                c.user = user
+                c.user = username
                 c.ping = ping
+                c.datetime = datetime
 
             wrappers = ([message_wrapper] if message_wrapper.message else []) + content
-            push_request = conductor_events.WrapperPush(wrappers, chat_id=chat_id, event_id=event.event_id)
+
+            if not wrappers:
+                raise ValueError("Wrapper list is somehow empty. This probably shouldn't happen.")
             
-            chat_response = await self.bus.wait(push_request, db_events.NewChatAck)
-            chat_wrapper = chat_response.chat
+            wdw: window.Window = await self.ref.add_message(chat_id, wrappers, chat_name=chat_name)
+            request: Dict = await self.ref.get_request(chat_id)
+            prompts: Dict[prompt_enum.PromptEnum, str] = await self.ref.get_prompts(chat_id)
+            special_fields: Dict = await self.ref.get_special_fields(chat_id)
 
-            push_request = conductor_events.NewChatPush(chat_wrapper, event_id=event.event_id)
-            await self.bus.wait(push_request, mibo_events.AssistantCreated)
+            chance: int = await self.ref.get_chance(chat_id)
+            random_chance = random.randint(1, 100)
 
-            await self.bus.emit(conductor_events.AssistantRequest(chat_id=chat_id, messages=wrappers, event_id=event.event_id, typing=event.typing, system=system_message))
+            respond = wdw.ready and ((random_chance <= chance) or ping)
+
+            if respond:
+                new_message_event = conductor_events.CompletionRequest(wdw=wdw, request=request, prompts=prompts, special_fields=special_fields, typing=event.typing)
+                await self.bus.emit(new_message_event)
 
         except Exception as e:
             _, _, tb = sys.exc_info()

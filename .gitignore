@@ -1,5 +1,8 @@
 .env/.env
-memory/
+
+# Ignore my files but keep examples
+memory/*
+references/*
 
 # Byte-compiled / optimized / DLL files
 __pycache__/

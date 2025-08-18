@@ -60,7 +60,7 @@ class EventBus:
             # No running event loop
             asyncio.run_coroutine_threadsafe(self.emit(event), asyncio.get_event_loop())
 
-    async def wait(self, requested_event: ev.Event, response_class: Type[ResponseType], timeout: float | None = 60.0) -> ResponseType:
+    async def wait(self, requested_event: ev.Event, response_class: Type[ResponseType], timeout: float | None = 360.0) -> ResponseType:
         '''
         Emit *requested_event*, then block until a response of class *response_class*
         with the same event_id arrives, or until *timeout*.
@@ -96,7 +96,7 @@ class EventBus:
                 future.cancel()
             _remove_listener()
 
-    async def wait_for_all(self, requested_event: "ev.Event", response_classes: List[Type[ResponseType]], timeout: float | None = 60.0) -> List[ResponseType]:
+    async def wait_for_all(self, requested_event: "ev.Event", response_classes: List[Type[ResponseType]], timeout: float | None = 360.0) -> List[ResponseType]:
         '''
         Same as wait, but waits for all response classes in *response_classes*.
         '''
