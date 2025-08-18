@@ -120,6 +120,7 @@ class Conductor:
                 c.role = role
                 c.user = username
                 c.ping = ping
+                c.datetime = datetime
 
             wrappers = ([message_wrapper] if message_wrapper.message else []) + content
 
@@ -134,7 +135,7 @@ class Conductor:
             chance: int = await self.ref.get_chance(chat_id)
             random_chance = random.randint(1, 100)
 
-            respond = wdw.ready and ((random_chance <= chance) or ping) and not message_caption
+            respond = wdw.ready and ((random_chance <= chance) or ping)
 
             if respond:
                 new_message_event = conductor_events.CompletionRequest(wdw=wdw, request=request, prompts=prompts, special_fields=special_fields, typing=event.typing)

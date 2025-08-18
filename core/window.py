@@ -36,7 +36,7 @@ class Window():
         '''
         Checks if the window contains a message with the same id.
         '''
-        return any(msg.id == message.id for msg in self.messages)
+        return any((msg.id == message.id and msg.type == message.type) for msg in self.messages)
 
     async def override(self, message: wrapper.Wrapper) -> None:
         '''
