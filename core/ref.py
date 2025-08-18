@@ -388,7 +388,7 @@ class Ref:
             to_delete = []
 
             for cid, chat in list(self.chats.items()):
-                if (now - chat.last_active) > (variables.CHAT_TTL * 60 / 2):
+                if (now - chat.last_active) > (variables.Variables.CHAT_TTL * 60 / 2):
 
                     if not chat.in_use:
                         to_delete.append(cid)

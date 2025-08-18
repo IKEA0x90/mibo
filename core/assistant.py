@@ -14,12 +14,12 @@ from core import ref, window, wrapper
 from services import prompt_enum, variables
 
 class Assistant:
-    def __init__(self, clients: Dict[str, openai.OpenAI], bus: event_bus.EventBus, refferrer: ref.Ref, start_datetime: dt.datetime, **kwargs):
+    def __init__(self, clients: Dict[str, openai.OpenAI], bus: event_bus.EventBus, referrer: ref.Ref, start_datetime: dt.datetime, **kwargs):
 
         self.clients: Dict[str, openai.OpenAI] = clients
 
         self.bus: event_bus.EventBus = bus
-        self.ref: ref.Ref = refferrer
+        self.ref: ref.Ref = referrer
         self.start_datetime: dt.datetime = start_datetime
 
         self._register()
