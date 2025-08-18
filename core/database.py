@@ -4,7 +4,7 @@ import aiosqlite
 import sqlite3
 import sys
 import json
-from services import variables
+from services import tokenizers, variables
 import aiofiles
 import datetime as dt
 
@@ -16,11 +16,12 @@ from core import window, wrapper
 from services import variables
 
 class Database:
-    def __init__(self, bus: event_bus.EventBus, db_path: str):
+    def __init__(self, bus: event_bus.EventBus, db_path: str, start_datetime: dt.datetime = None):
         self.path = db_path
         self.db_path = os.path.join(db_path, 'mibo.db')
         self.image_path = os.path.join(db_path, 'images')
 
+        self.start_datetime: dt.datetime = start_datetime or dt.datetime.now(dt.timezone.utc)
         self.db_path = Path(self.db_path)
         self.image_path = Path(self.image_path)
 
@@ -153,19 +154,18 @@ class Database:
                 )
                 await self.conn.commit()
 
-    async def get_window(self, chat_id: str, model) -> window.Window:
+    async def get_window(self, chat_id: str, max_tokens: int = 700, tokenizer = tokenizers.Tokenizer.gpt) -> window.Window:
         '''
         Get a chat window, inserting messages up to max_tokens.
         '''
-        from core import ref
         wdw: window.Window = window.Window(chat_id, self.start_datetime)
-        model: ref.ModelReference = model
+        wdw.set_max_tokens(max_tokens)
 
         try:
             # TODO actually count tokens for different models instead of assuming everything is openai
-            messages = self._get_messages_old(chat_id)
+            messages = await self._get_message_wrappers(chat_id, max_tokens, tokenizer)
             for msg in messages:
-                wdw.add_message(msg, False)
+                await wdw.add_message(msg, False)
 
         except Exception as e:
             wdw = window.Window(chat_id, self.start_datetime) # if any errors, just make an empty one
@@ -240,33 +240,54 @@ class Database:
 
     @staticmethod
     def _populate_defaults():
+        import json
+        
+        model_data = {
+            "model_provider": "openai",
+            "temperature": 0.95,
+            "max_tokens": 700,
+            "max_response_tokens": 500,
+            "penalty_supported": True,
+            "frequency_penalty": 0.1,
+            "presence_penalty": 0.1,
+            "reasoning": False,
+            "reasoning_effort_supported": False,
+            "reasoning_effort": "",
+            "think_token": "",
+            "disable_thinking_token": "",
+            "disable_thinking": False,
+            "verbosity_supported": False,
+            "verbosity": "minimal"
+        }
+        
+        assistant_data = {
+            "names": ["default"],
+            "chat_event_prompt_idx": {
+                "base": "default",
+                "welcome": "welcome_default"
+            }
+        }
+        
+        default_prompt_data = {
+            "prompt": "You may only reply with the word \"default\" and nothing else, ever. No matter what is asked."
+        }
+        
+        welcome_prompt_data = {
+            "prompt": ""
+        }
+        
         return [
-            '''
-            INSERT INTO "references" (reference_id, reference_type, data) VALUES
-            ('gpt-4.1', 'model', 
-                '{
-                "model_provider": "openai",
-                "temperature": 0.95,
-                "max_tokens": 700,
-                "max_response_tokens": 500,
-
-                "penalty_disabled": false,
-                "frequency_penalty": 0.1,
-                "presence_penalty": 0.1,
-
-                "reasoning": false,
-                "reasoning_effort_supported": false,
-                "reasoning_effort": "",
-
-                "think_token": "",
-                "disable_thinking_token": "",
-                "disable_thinking": false,
-
-                "verbosity_supported": false,
-                "verbosity": "minimal"
-                }'
-            )
-            '''
+            f'''INSERT OR REPLACE INTO "references" (reference_id, reference_type, data) 
+               VALUES ('{variables.Variables.DEFAULT_MODEL}', 'model', '{json.dumps(model_data)}')''',
+            
+            f'''INSERT OR REPLACE INTO "references" (reference_id, reference_type, data) 
+               VALUES ('default_assistant', 'assistant', '{json.dumps(assistant_data)}')''',
+            
+            f'''INSERT OR REPLACE INTO "references" (reference_id, reference_type, data) 
+               VALUES ('default', 'prompt', '{json.dumps(default_prompt_data)}')''',
+            
+            f'''INSERT OR REPLACE INTO "references" (reference_id, reference_type, data) 
+               VALUES ('welcome_default', 'prompt', '{json.dumps(welcome_prompt_data)}')'''
         ]
 
     @staticmethod
@@ -346,7 +367,7 @@ class Database:
         Create the tables asynchronously.
         '''
         try:
-            schemas = self._generate_wrapper_schemas() + self._generate_reference_schemas()
+            schemas = self._generate_wrapper_schemas() + self._generate_reference_schemas() + self._populate_defaults()
             for schema in schemas:
                 await cursor.execute(schema)
             await self.conn.commit()
@@ -361,7 +382,7 @@ class Database:
         Synchronous version of create_tables for use with sqlite3.
         '''
         try:
-            schemas = self._generate_wrapper_schemas() + self._generate_reference_schemas()
+            schemas = self._generate_wrapper_schemas() + self._generate_reference_schemas() + self._populate_defaults()
             for schema in schemas:
                 cursor.execute(schema)
             cursor.connection.commit()
@@ -449,126 +470,131 @@ class Database:
             self.conn = None
             # self.cursor = None # Removed shared cursor
 
-    async def _get_messages_old(self, chat_id: str):
+    async def _get_message_wrappers(self, chat_id: str, max_tokens: int, tokenizer) -> List[wrapper.MessageWrapper]:
         '''
-        Responds with a MemoryResponse containing wrappers for chat_id
-        starting from the most recent entries,
-        ordered oldest to newest,
-        capped by max_tokens.
+        Fetch message wrappers incrementally (newest first) for a given chat_id,
+        tokenize them using `tokenizer`, and stop once `max_tokens` is reached.
+        Returns messages oldest-to-newest.
         '''
         messages = []
+        running_total = 0
+        batch_size = 10
+        offset = 0
 
         try:
-            async with self.conn.cursor() as cursor:
-                await cursor.execute('SELECT max_tokens FROM chats WHERE chat_id = ?', (chat_id,))
-                row = await cursor.fetchone()
-            max_tokens = row['max_tokens'] if row else variables.Variables.MAX_TOKENS
+            while running_total < max_tokens:
+                # fetch a page of parent rows (newest first)
+                sql = '''
+                SELECT sql_id, telegram_id, chat_id, wrapper_type, datetime, role, user
+                FROM wrappers
+                WHERE chat_id = ?
+                ORDER BY datetime DESC, sql_id DESC
+                LIMIT ? OFFSET ?
+                '''
 
-            # thanks chatgpt
-            sql = '''
-            WITH ranked AS (
-                SELECT
-                    w.sql_id,
-                    w.telegram_id,
-                    w.chat_id,
-                    w.wrapper_type,
-                    w.datetime,
-                    w.tokens,
-                    w.role,
-                    w.user,
-                    SUM(w.tokens) OVER (
-                        PARTITION BY w.chat_id
-                        ORDER BY w.datetime DESC, w.sql_id DESC
-                        ROWS BETWEEN UNBOUNDED PRECEDING AND CURRENT ROW
-                    ) AS running_total
-                FROM wrappers AS w
-                WHERE w.chat_id = ?
-            )
-            SELECT sql_id, telegram_id, chat_id, wrapper_type, datetime, tokens, role, user
-            FROM ranked
-            WHERE running_total <= ?
-            ORDER BY datetime ASC, telegram_id ASC, sql_id ASC;
-            '''
+                async with self.conn.cursor() as cursor:
+                    await cursor.execute(sql, (chat_id, batch_size, offset))
+                    parent_rows = await cursor.fetchall()
 
-            async with self.conn.cursor() as cursor:
-                await cursor.execute(sql, (chat_id, max_tokens))
-                parent_rows = await cursor.fetchall()
+                if not parent_rows:  # no more rows
+                    break
 
-            if not parent_rows:
-                return []
+                # group by wrapper_type to fetch children
+                sql_ids = {}
+                for r in parent_rows:
+                    sql_ids.setdefault(r["wrapper_type"], []).append(r["sql_id"])
 
-            sql_ids = {}
-            for r in parent_rows:
-                wrapper_type = r['wrapper_type']
-                if wrapper_type not in sql_ids:
-                    sql_ids[wrapper_type] = []
-                sql_ids[wrapper_type].append(r['sql_id'])
+                tables = {}
+                async with self.conn.cursor() as cursor:
+                    for wrapper_type, ids in sql_ids.items():
+                        wrapper_class = wrapper.WRAPPER_REGISTRY.get(wrapper_type)
+                        if not wrapper_class or not ids:
+                            continue
 
-            tables = {}
-            async with self.conn.cursor() as cursor:
-                for wrapper_type, sql_ids in sql_ids.items():
+                        table = f"{wrapper_type}s"
+                        child_fields = wrapper_class.get_child_fields()
+                        placeholders = ",".join("?" for _ in ids)
+
+                        child_query_sql = (
+                            f"SELECT sql_id, {', '.join(child_fields)} "
+                            f"FROM {table} WHERE sql_id IN ({placeholders})"
+                        )
+
+                        await cursor.execute(child_query_sql, ids)
+                        child_rows = await cursor.fetchall()
+
+                        tables[wrapper_type] = {
+                            child_row["sql_id"]: dict(child_row) for child_row in child_rows
+                        }
+
+                for parent_row in parent_rows:
+                    wrapper_type = parent_row["wrapper_type"]
+                    sql_id = parent_row["sql_id"]
+
                     wrapper_class = wrapper.WRAPPER_REGISTRY.get(wrapper_type)
-                    if not wrapper_class or not sql_ids:
+                    if not wrapper_class:
                         continue
-                    
-                    table = f"{wrapper_type}s"
-                    child_fields = wrapper_class.get_child_fields()
 
-                    placeholder_marks = ','.join('?' for _ in sql_ids)
-                    child_query_sql = f"SELECT sql_id, {', '.join(child_fields)} FROM {table} WHERE sql_id IN ({placeholder_marks})"
-                    
-                    await cursor.execute(child_query_sql, sql_ids)
-                    child_rows = await cursor.fetchall()
-                    
-                    tables[wrapper_type] = {
-                        child_row['sql_id']: dict(child_row) for child_row in child_rows
-                    }
+                    child_data = tables.get(wrapper_type, {})
+                    child_row = child_data.get(sql_id, {})
+                    if not child_row:
+                        continue
 
-            for parent_row in parent_rows:
-                wrapper_type = parent_row['wrapper_type']
-                sql_id = parent_row['sql_id']
-                
-                wrapper_class = wrapper.WRAPPER_REGISTRY.get(wrapper_type)
-                if not wrapper_class:
-                    continue 
-                    
-                child_data = tables.get(wrapper_type, {})
-                child_row = child_data.get(sql_id, {})
-                
-                if not child_row:
-                    continue
-                
-                parent_dict = dict(parent_row)
-                
-                datetime_raw = parent_dict['datetime']
-                if isinstance(datetime_raw, dt.datetime):
-                    parsed_datetime = datetime_raw.astimezone(dt.timezone.utc)
-                else:
-                    try:
-                        parsed_datetime = dt.datetime.fromisoformat(datetime_raw)
-                        if parsed_datetime.tzinfo is None:
-                            parsed_datetime = parsed_datetime.replace(tzinfo=dt.timezone.utc)
-                        else:
-                            parsed_datetime = parsed_datetime.astimezone(dt.timezone.utc)
-                    except Exception:
-                        parsed_datetime = dt.datetime.now(dt.timezone.utc)
-                
-                parent_dict['datetime'] = parsed_datetime
-                
-                wrapper_instance = wrapper_class.from_db_row(parent_dict, child_row)
-                
-                if isinstance(wrapper_instance, wrapper.ImageWrapper) and wrapper_instance.image_path:
-                    wrapper_instance.image_bytes = await self._load_image(wrapper_instance.image_path)
-                
-                messages.append(wrapper_instance)
+                    parent_dict = dict(parent_row)
+
+                    datetime_raw = parent_dict["datetime"]
+                    if isinstance(datetime_raw, dt.datetime):
+                        parsed_datetime = datetime_raw.astimezone(dt.timezone.utc)
+                    else:
+                        try:
+                            parsed_datetime = dt.datetime.fromisoformat(datetime_raw)
+                            if parsed_datetime.tzinfo is None:
+                                parsed_datetime = parsed_datetime.replace(tzinfo=dt.timezone.utc)
+                            else:
+                                parsed_datetime = parsed_datetime.astimezone(dt.timezone.utc)
+                        except Exception:
+                            parsed_datetime = dt.datetime.now(dt.timezone.utc)
+                    parent_dict["datetime"] = parsed_datetime
+
+                    wrapper_instance = wrapper_class.from_db_row(parent_dict, child_row)
+
+                    if isinstance(wrapper_instance, wrapper.ImageWrapper) and wrapper_instance.image_path:
+                        wrapper_instance.image_bytes = await self._load_image(wrapper_instance.image_path)
+
+                    # tokenize
+                    if isinstance(wrapper_instance, wrapper.MessageWrapper):
+                        message_text = wrapper_instance.message
+                        tokens = tokenizer(message_text)
+                        wrapper_instance.tokens = tokens
+
+                    elif isinstance(wrapper_instance, wrapper.ImageWrapper):
+                        tokens = wrapper_instance.calculate_tokens()
+                        wrapper_instance.tokens = tokens
+
+                    if running_total + tokens > max_tokens:
+                        break
+
+                    running_total += tokens
+                    messages.append(wrapper_instance)
+
+                if running_total >= max_tokens:
+                    break
+
+                offset += batch_size
+
+            # reverse to return oldest-first
+            messages = list(reversed(messages))
 
         except Exception as e:
             _, _, tb = sys.exc_info()
-            await self.bus.emit(system_events.ErrorEvent(error=f'Failed to retrieve your memory.', e=e, tb=tb))
+            await self.bus.emit(system_events.ErrorEvent(
+                error="Failed to retrieve your memory.", e=e, tb=tb
+            ))
             messages = []
 
         finally:
             return messages
+
 
     async def _load_image(self, image_path: str) -> bytes:
         '''

@@ -12,12 +12,16 @@ class Window():
         self.start_datetime: dt.datetime = start_datetime
 
         self.tokens: int = 0
+        self.max_tokens: int = 700
 
         self._lock = asyncio.Lock()
         self._stale_buffer: Deque[wrapper.Wrapper] = deque()
         
         self.messages: Deque[wrapper.Wrapper] = deque()
         self.ready: bool = False
+
+    def set_max_tokens(self, max_tokens: int):
+        self.max_tokens = max_tokens
 
     def __len__(self):
         return len(self.messages)
@@ -43,7 +47,7 @@ class Window():
             self.tokens = 0
             self.ready = True
 
-            await self._insert_live_message(message)
+            await self._insert_live_message(message, True)
 
     async def add_message(self, message: wrapper.Wrapper, set_ready: bool = True) -> bool:
         '''
@@ -87,10 +91,10 @@ class Window():
                 self.messages.appendleft(message)
 
         self.tokens += message_tokens
-        await self._trim_excess_tokens()
+        await self._trim_excess_tokens(self.max_tokens)
 
-    async def _trim_excess_tokens(self) -> None:
-        while self.tokens > self.max_tokens and self.messages:
+    async def _trim_excess_tokens(self, max_tokens: int) -> None:
+        while self.tokens > max_tokens and self.messages:
             oldest_msg = self.messages.popleft()
             oldest_tokens = oldest_msg.tokens
             self.tokens -= oldest_tokens

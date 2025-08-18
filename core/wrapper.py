@@ -57,7 +57,6 @@ class Wrapper():
             'id': combined_data.get('telegram_id'),
             'chat_id': combined_data.get('chat_id'),
             'datetime': combined_data.get('datetime'),
-            'tokens': combined_data.get('tokens', 0),
             'role': combined_data.get('role', 'assistant'),
             'user': combined_data.get('user', variables.Variables.USERNAME),
         }
@@ -105,7 +104,7 @@ class MessageWrapper(Wrapper):
         return ['message', 'reply_id', 'quote', 'think']
 
     def __str__(self):
-        return f'{self.user}: {self._remove_prefix(self.message)}'
+        return f'{self.user}: {self.message}'
 
     @staticmethod
     def _remove_prefixes(text: str, prefixes: List[str]) -> str:

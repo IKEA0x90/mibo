@@ -31,7 +31,7 @@ class Reference:
         for attribute_name, attribute_value in self.__dict__.items():
 
             # skip hidden properties, methods, and special properties
-            if attribute_name.startswith('_') or callable(attribute_value) or attribute_name == 'type':
+            if attribute_name.startswith('_') or callable(attribute_value) or attribute_name in ('type', 'id'):
                 continue
 
             # handle prompts in a special way
@@ -45,7 +45,7 @@ class Reference:
         return serialized_data
     
     @staticmethod
-    def from_dict(reference_data, reference_type):
+    def from_dict(reference_id, reference_data, reference_type):
         '''
         Create a reference instance from a dictionary.
         '''
@@ -57,10 +57,19 @@ class Reference:
         if reference_class is None:
             raise ValueError(f"Unknown reference type: {reference_type}")
 
-        if reference_data.get('id') is None:
-            raise ValueError('Reference id missing.')
+        # Accept dictionaries without embedded id (id is supplied separately)
+        constructor_kwargs = {key: value for key, value in reference_data.items() if key not in ('type', 'id')}
 
-        constructor_kwargs = {key: value for key, value in reference_data.items() if key != 'type'}
+        # Backwards compatibility: prior data may have stored penalty_disabled instead of penalty_supported
+        if reference_type == 'model':
+            if 'penalty_disabled' in constructor_kwargs and 'penalty_supported' not in constructor_kwargs:
+                constructor_kwargs['penalty_supported'] = not constructor_kwargs.pop('penalty_disabled')
+
+        # Assistant JSON may use 'chat_events' externally; map to internal 'chat_event_prompt_idx'
+        if reference_type == 'assistant':
+            # Normalize older/new external key name
+            if 'chat_events' in constructor_kwargs and 'chat_event_prompt_idx' not in constructor_kwargs:
+                constructor_kwargs['chat_event_prompt_idx'] = constructor_kwargs.pop('chat_events')
 
         # handle special deserialization for assistant properties
         if reference_type == 'assistant' and hasattr(reference_class, 'ASSISTANT_PROPERTIES'):
@@ -70,7 +79,7 @@ class Reference:
                         prompt_enum.PromptEnum(k): v for k, v in constructor_kwargs[field].items()
                     }
 
-        return reference_class(**constructor_kwargs)
+        return reference_class(id=reference_id, **constructor_kwargs)
     
 @register_reference
 class ModelReference(Reference):
@@ -99,10 +108,10 @@ class ModelReference(Reference):
 
     def get_request(self) -> Dict:
         request = {
-            'model': self.model,
+            'model': self.id,
             'temperature': self.temperature,
             'max_output_tokens': self.max_response_tokens,
-            'tools': self.tools,
+            #'tools': self.tools,
             'store': False,
             'tool_choice': 'auto',
             'truncation': 'auto',
@@ -133,6 +142,9 @@ class ModelReference(Reference):
                 special_fields['disable_thinking'] = self.disable_thinking
 
         return special_fields
+    
+    def get_max_tokens(self) -> int:
+        return self.max_tokens or 700
 
     def count_tokens(self, text: str) -> int:
         '''
@@ -173,9 +185,10 @@ class PromptReference(Reference):
 
 class Ref:
     def __init__(self, bus: event_bus.EventBus, db_path: str = 'memory', start_datetime: dt.datetime = None):
-        self.bus: event_bus.EventBus = bus
-        self.db: database.Database = database.Database(self.bus, db_path)
         self.start_datetime: dt.datetime = start_datetime or dt.datetime.now(dt.timezone.utc)
+
+        self.bus: event_bus.EventBus = bus
+        self.db: database.Database = database.Database(self.bus, db_path, self.start_datetime)
 
         self.chats: Dict[str, wrapper.ChatWrapper] = {}
         self.windows: Dict[str, window.Window] = {}
@@ -193,14 +206,14 @@ class Ref:
         self.db.initialize_sync()
         self._load()
 
-    async def add_message(self, chat_id, wrappers, set_ready: bool = True, **kwargs) -> window.Window:
+    async def add_message(self, chat_id: str, wrappers: List[wrapper.Wrapper], set_ready: bool = True, **kwargs) -> window.Window:
         '''
         Add a message to a chat window, returning the window
         '''
         try:
             wdw: window.Window = await self.get_window(chat_id, **kwargs)
         except ValueError as e:
-            self.bus.emit(system_events.ErrorEvent(error="Can't load chat window", e=e, tb=None))
+            await self.bus.emit(system_events.ErrorEvent(error="Can't load chat window", e=e, tb=None))
             return
 
         # add to window
@@ -221,16 +234,19 @@ class Ref:
         model: ModelReference = self.models.get(chat_model)
         if not model:
             raise ValueError(f"Default model doesn't exist")
+        
+        max_tokens = model.get_max_tokens()
 
         # same loading as chat
         wdw = self.windows.get(chat_id)
         if not wdw:
-            wdw = await self.db.get_window(chat_id, model.max_tokens)
+            wdw = await self.db.get_window(chat_id, max_tokens)
             if not wdw:
                 # create a new window
                 wdw = window.Window(chat_id, self.start_datetime)
                 self.windows[chat_id] = wdw
 
+        wdw.set_max_tokens(max_tokens)
         return wdw
 
     async def get_chat(self, chat_id: str, **kwargs) -> wrapper.ChatWrapper:
@@ -339,15 +355,15 @@ class Ref:
                     continue
 
                 elif reference_type == 'assistant':
-                    reference_object = AssistantReference.from_dict(reference_data, reference_type)
+                    reference_object = AssistantReference.from_dict(reference_id, reference_data, reference_type)
                     self.assistants[reference_id] = reference_object
 
                 elif reference_type == 'model':
-                    reference_object = ModelReference.from_dict(reference_data, reference_type)
+                    reference_object = ModelReference.from_dict(reference_id, reference_data, reference_type)
                     self.models[reference_id] = reference_object
 
                 elif reference_type == 'prompt':
-                    reference_object = PromptReference.from_dict(reference_data, reference_type)
+                    reference_object = PromptReference.from_dict(reference_id, reference_data, reference_type)
                     self.prompts[reference_id] = reference_object
 
         except Exception as e:

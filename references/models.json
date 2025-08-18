@@ -5,7 +5,7 @@
         "max_tokens": 700,
         "max_response_tokens": 500,
 
-        "penalty_disabled": false,
+        "penalty_supported": true,
         "frequency_penalty": 0.1,
         "presence_penalty": 0.1,
 
