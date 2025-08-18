@@ -36,9 +36,9 @@ class Reference:
 
             # handle prompts in a special way
             if hasattr(self, 'ASSISTANT_PROPERTIES') and attribute_name in self.ASSISTANT_PROPERTIES:
-                # k: prompt_enum.PromptEnum
+                # k: prompt_enum.PromptEnum class
                 # v: PromptReference
-                serialized_data[attribute_name] = {str(k): v.id for k, v in attribute_value.items()}
+                serialized_data[attribute_name] = {k.get_id(): v.id for k, v in attribute_value.items()}
             else:
                 serialized_data[attribute_name] = attribute_value
         
@@ -79,6 +79,7 @@ class ModelReference(Reference):
 
         self.base_url: str = kwargs.get('base_url', '')
         self.local: bool = kwargs.get('local', False)
+        self.model_provider: str = kwargs.get('model_provider', 'openai')
 
         self.temperature: float = kwargs.get('temperature', 1)
 
@@ -91,11 +92,14 @@ class ModelReference(Reference):
 
         self.reasoning: bool = kwargs.get('reasoning', False)
         self.reasoning_effort_supported: bool = kwargs.get('reasoning_effort_supported', True)
-        self.reasoning_effort: str = kwargs.get('reasoning_effort', 'medium')
+        self.reasoning_effort: str = kwargs.get('reasoning_effort', 'minimal')
 
         self.think_token: str = kwargs.get('think_token', '</think>')
         self.disable_thinking_token: str = kwargs.get('disable_thinking_token', '/no_think')
         self.disable_thinking: bool = kwargs.get('disable_thinking', False)
+
+        self.verbosity_supported: bool = kwargs.get('verbosity_supported', False)
+        self.verbosity: str = kwargs.get('verbosity', 'low')
 
     def get_request(self) -> Dict:
         request = {
@@ -112,7 +116,27 @@ class ModelReference(Reference):
             request['frequency_penalty'] = self.frequency_penalty
             request['presence_penalty'] = self.presence_penalty
 
+        if self.reasoning and self.reasoning_effort_supported:
+            request['reasoning_effort'] = self.reasoning_effort
+
+        if self.verbosity_supported:
+            request['text'] = {'verbosity': self.verbosity}
+
         return request
+    
+    def get_special_fields(self) -> Dict:
+        special_fields = {}
+
+        special_fields['model_provider'] = self.model_provider
+
+        if self.think_token:
+            special_fields['think_token'] = self.think_token
+
+            if self.disable_thinking:
+                special_fields['disable_thinking_token'] = self.disable_thinking_token
+                special_fields['disable_thinking'] = self.disable_thinking
+
+        return special_fields
 
     def count_tokens(self, text: str) -> int:
         '''
@@ -208,7 +232,7 @@ class Ref:
             wdw = await self.db.get_window(chat_id, model.max_tokens)
             if not wdw:
                 # create a new window
-                wdw = window.Window(self.start_datetime)
+                wdw = window.Window(chat_id, self.start_datetime)
                 self.windows[chat_id] = wdw
 
         return wdw
@@ -254,13 +278,27 @@ class Ref:
         return []
     
     async def get_prompt(self, chat_id: str, prompt_enumeration: prompt_enum.PromptEnum) -> str:
-        assistant = await self._get_assistant(chat_id)
+        assistant: AssistantReference = await self._get_assistant(chat_id)
         if not assistant:
             return ''
         
         prompt_id = assistant.get_prompt_id(prompt_enumeration)
         prompt = self.prompts.get(prompt_id, '')
         return prompt
+
+    async def get_prompts(self, chat_id: str) -> Dict[prompt_enum.PromptEnum, str]:
+        assistant: AssistantReference = await self._get_assistant(chat_id)
+        if not assistant:
+            return {}
+
+        assistant_prompt_ids: Dict[prompt_enum.PromptEnum, str] = assistant.chat_event_prompt_idx.items()
+        prompts: Dict[prompt_enum.PromptEnum, str] = {}
+
+        for prompt_enum_value, prompt_id in assistant_prompt_ids:
+            prompt = self.prompts.get(prompt_id, '')
+            prompts[prompt_enum_value] = str(prompt)
+
+        return prompts    
 
     async def get_chance(self, chat_id: str) -> int:
         chat = await self.get_chat(chat_id)
@@ -280,6 +318,16 @@ class Ref:
         request = model.get_request()
 
         return request
+    
+    async def get_special_fields(self, chat_id: str) -> Dict:
+        chat = await self.get_chat(chat_id)
+        if not chat:
+            return {}
+        
+        model: ModelReference = self.models.get(chat.model_id or variables.Variables.DEFAULT_MODEL)
+        special_fields = model.get_special_fields() if model else {}
+
+        return special_fields
 
     def _load(self):
         '''

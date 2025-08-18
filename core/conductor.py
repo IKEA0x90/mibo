@@ -5,13 +5,13 @@ import datetime as dt
 
 from io import BytesIO
 from PIL import Image
-from typing import cast
+from typing import Dict, cast
 from telegram import Chat, Update, Message, MessageEntity, User
 from telegram.ext import CallbackContext
 
 from events import event, event_bus, conductor_events, mibo_events, system_events
 from core import ref, window, wrapper
-from services import variables
+from services import prompt_enum, variables
 
 class Conductor:
     '''
@@ -127,14 +127,17 @@ class Conductor:
                 raise ValueError("Wrapper list is somehow empty. This probably shouldn't happen.")
             
             wdw: window.Window = await self.ref.add_message(chat_id, wrappers, chat_name=chat_name)
-            
+            request: Dict = await self.ref.get_request(chat_id)
+            prompts: Dict[prompt_enum.PromptEnum, str] = await self.ref.get_prompts(chat_id)
+            special_fields: Dict = self.ref.get_special_fields(chat_id)
+
             chance: int = await self.ref.get_chance(chat_id)
             random_chance = random.randint(1, 100)
 
             respond = wdw.ready and ((random_chance <= chance) or ping) and not message_caption
 
             if respond:
-                new_message_event = conductor_events.CompletionRequest(wdw=wdw)
+                new_message_event = conductor_events.CompletionRequest(wdw=wdw, request=request, prompts=prompts, special_fields=special_fields)
                 await self.bus.emit(new_message_event)
 
         except Exception as e:

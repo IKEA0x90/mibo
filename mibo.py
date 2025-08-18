@@ -48,10 +48,12 @@ class Mibo:
         '''
         Prepare the bot by loading the database, getting the openai client, and setting up signal handlers.
         '''
-        self.clients = [openai.OpenAI(api_key=self.key)]
-        self.local_clients = [openai.OpenAI(api_key=self.key, base_url=f"http://{variables.Variables.LOCAL_API_HOST}:{variables.Variables.LOCAL_API_PORT}/v1")] 
+        self.clients: Dict[str, openai.OpenAI] = {
+            'openai': openai.OpenAI(api_key=self.key),
+            'local': openai.OpenAI(api_key=self.key, base_url=f"http://{variables.Variables.LOCAL_API_HOST}:{variables.Variables.LOCAL_API_PORT}/v1")
+        }
 
-        self.assistant = assistant.Assistant(self.clients, self.local_clients, self.bus, self.ref, self.start_datetime)
+        self.assistant = assistant.Assistant(self.clients, self.bus, self.ref, self.start_datetime)
 
         # Register event listeners
         self._register()

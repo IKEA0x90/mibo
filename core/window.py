@@ -5,10 +5,10 @@ from typing import List, Dict, Deque
 from collections import deque
 
 from core import wrapper
-from events import event_bus
 
 class Window():
-    def __init__(self, start_datetime: dt.datetime):
+    def __init__(self, chat_id: str, start_datetime: dt.datetime):
+        self.chat_id: str = chat_id
         self.start_datetime: dt.datetime = start_datetime
 
         self.tokens: int = 0
@@ -45,7 +45,7 @@ class Window():
 
             await self._insert_live_message(message)
 
-    async def add_message(self, message: wrapper.Wrapper) -> bool:
+    async def add_message(self, message: wrapper.Wrapper, set_ready: bool = True) -> bool:
         '''
         Adds a message to the window. 
         returns True if the window now contains the latest context.
@@ -58,7 +58,7 @@ class Window():
 
             # if this is the first non-stale message after startup
             # mark the window ready and broadcast.
-            if not self.ready and is_new:
+            if not self.ready and is_new and set_ready:
                 self.ready = True
 
             # assistant should respond only for new messages *after* ready.

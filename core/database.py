@@ -158,18 +158,22 @@ class Database:
         Get a chat window, inserting messages up to max_tokens.
         '''
         from core import ref
-        wdw: window.Window = window.Window(self.start_datetime)
+        wdw: window.Window = window.Window(chat_id, self.start_datetime)
         model: ref.ModelReference = model
 
         try:
             # TODO actually count tokens for different models instead of assuming everything is openai
             messages = self._get_messages_old(chat_id)
             for msg in messages:
-                wdw._insert_live_message(msg) # use this instead of add_message since it doesn't flip the ready switch
+                wdw.add_message(msg, False)
 
         except Exception as e:
+            wdw = window.Window(chat_id, self.start_datetime) # if any errors, just make an empty one
             _, _, tb = sys.exc_info()
             await self.bus.emit(system_events.ErrorEvent(error="Can't load chat window", e=e, tb=tb))
+
+        finally:
+            return wdw
 
 
     async def _insert_wrapper(self, content: wrapper.Wrapper) -> str:
@@ -257,6 +261,7 @@ class Database:
                 datetime      TIMESTAMP NOT NULL,
                 role          TEXT NOT NULL,
                 user          TEXT NOT NULL,
+                safety_identifier TEXT NOT NULL,
                 FOREIGN KEY (chat_id) REFERENCES chats (chat_id) ON DELETE CASCADE
             );
             ''',

@@ -24,7 +24,9 @@ class Wrapper():
         self.tokens: int = kwargs.get('tokens', 0)
 
         self.role: str = kwargs.get('role', 'assistant')
-        self.user: str = kwargs.get('user', variables.Variables.MIBO)
+        self.user: str = kwargs.get('user', variables.Variables.NICKNAME)
+        
+        self.safety_identifier: str = hash(kwargs.get('safety_identifier', self.user))
 
         try:
             self.datetime: dt.datetime = datetime.astimezone(dt.timezone.utc)
@@ -44,6 +46,7 @@ class Wrapper():
             'tokens': self.tokens,
             'role': self.role,
             'user': self.user,
+            'safety_identifier': self.safety_identifier
         }
     
     @classmethod
