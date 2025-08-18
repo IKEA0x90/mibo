@@ -82,7 +82,7 @@ class Conductor:
                 ping = True 
 
             if entities or caption_entities:
-                for entity, value in {**entities.items(), **caption_entities.items()}:
+                for entity, value in {**entities, **caption_entities}.items():
                     entity = cast(MessageEntity, entity) # for type hinting
 
                     if entity.type == 'mention':
