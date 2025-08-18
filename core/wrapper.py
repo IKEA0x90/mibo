@@ -25,8 +25,6 @@ class Wrapper():
 
         self.role: str = kwargs.get('role', 'assistant')
         self.user: str = kwargs.get('user', variables.Variables.USERNAME)
-        
-        self.safety_identifier: str = hash(kwargs.get('safety_identifier', self.user))
 
         try:
             self.datetime: dt.datetime = datetime.astimezone(dt.timezone.utc)
@@ -43,10 +41,8 @@ class Wrapper():
             'chat_id': self.chat_id,
             'wrapper_type': self.type,
             'datetime': self.datetime,
-            'tokens': self.tokens,
             'role': self.role,
             'user': self.user,
-            'safety_identifier': self.safety_identifier
         }
     
     @classmethod

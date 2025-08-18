@@ -111,14 +111,14 @@ class Conductor:
 
             message_wrapper = wrapper.MessageWrapper(id=message_id, chat_id=chat_id, message=message_text, ping=ping, 
                                                      reply_id=reply_id, quote=quote_text,
-                                                     datetime=datetime, role=role, user=user)
+                                                     datetime=datetime, role=role, user=username)
             
             content = await self._look_for_content(update, context, event)
 
             c: wrapper.Wrapper
             for c in content:
                 c.role = role
-                c.user = user
+                c.user = username
                 c.ping = ping
 
             wrappers = ([message_wrapper] if message_wrapper.message else []) + content
@@ -129,7 +129,7 @@ class Conductor:
             wdw: window.Window = await self.ref.add_message(chat_id, wrappers, chat_name=chat_name)
             request: Dict = await self.ref.get_request(chat_id)
             prompts: Dict[prompt_enum.PromptEnum, str] = await self.ref.get_prompts(chat_id)
-            special_fields: Dict = self.ref.get_special_fields(chat_id)
+            special_fields: Dict = await self.ref.get_special_fields(chat_id)
 
             chance: int = await self.ref.get_chance(chat_id)
             random_chance = random.randint(1, 100)

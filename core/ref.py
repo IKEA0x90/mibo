@@ -88,8 +88,8 @@ class ModelReference(Reference):
 
         self.model_provider: str = kwargs.get('model_provider', 'openai')
         self.temperature: float = kwargs.get('temperature', 1)
-        self.max_tokens: int = kwargs.get('max_tokens', 1000)
-        self.max_response_tokens: int = kwargs.get('max_response_tokens', 500)
+        self.max_tokens: int = kwargs.get('max_tokens', 700)
+        self.max_completion_tokens: int = kwargs.get('max_completion_tokens', 100)
 
         self.penalty_supported: bool = kwargs.get('penalty_supported', True)
         self.frequency_penalty: float = kwargs.get('frequency_penalty', 0.1)
@@ -110,11 +110,10 @@ class ModelReference(Reference):
         request = {
             'model': self.id,
             'temperature': self.temperature,
-            'max_output_tokens': self.max_response_tokens,
+            'max_completion_tokens': self.max_completion_tokens,
             #'tools': self.tools,
+            #'tool_choice': 'auto',
             'store': False,
-            'tool_choice': 'auto',
-            'truncation': 'auto',
         }
 
         if self.penalty_supported:
@@ -170,6 +169,7 @@ class AssistantReference(Reference):
         prompt_id = self.chat_event_prompt_idx.get(prompt_enumeration, '')
         return prompt_id
 
+@register_reference
 class PromptReference(Reference):
     def __init__(self, id: str, **kwargs):
         super().__init__(id=id, **kwargs)
@@ -272,11 +272,11 @@ class Ref:
         '''
         Gets an AssistantReference object for the given chat id. 
         '''
-        chat: wrapper.ChatWrapper = self.chats.get(chat_id)
+        chat: wrapper.ChatWrapper = await self.get_chat(chat_id)
         if not chat:
-            return None
+            return self.assistants.get(variables.Variables.DEFAULT_ASSISTANT)
 
-        assistant_id: str = chat.assistant
+        assistant_id: str = chat.assistant_id
         if not assistant_id:
             assistant_id = variables.Variables.DEFAULT_ASSISTANT
 

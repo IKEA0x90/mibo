@@ -204,7 +204,7 @@ class Mibo:
 
         for message in messages:
             if isinstance(message, wrapper.MessageWrapper):
-                message_text: str = message._remove_prefix(message.message, self.ref.get_assistant_names(chat_id))
+                message_text: str = message._remove_prefixes(message.message, await self.ref.get_assistant_names(chat_id))
 
             if isinstance(message, wrapper.ImageWrapper):
                 message_images.append(message)

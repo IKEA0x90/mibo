@@ -246,7 +246,7 @@ class Database:
             "model_provider": "openai",
             "temperature": 0.95,
             "max_tokens": 700,
-            "max_response_tokens": 500,
+            "max_completion_tokens": 100,
             "penalty_supported": True,
             "frequency_penalty": 0.1,
             "presence_penalty": 0.1,
@@ -281,8 +281,8 @@ class Database:
                VALUES ('{variables.Variables.DEFAULT_MODEL}', 'model', '{json.dumps(model_data)}')''',
             
             f'''INSERT OR REPLACE INTO "references" (reference_id, reference_type, data) 
-               VALUES ('default_assistant', 'assistant', '{json.dumps(assistant_data)}')''',
-            
+               VALUES ('{variables.Variables.DEFAULT_ASSISTANT}', 'assistant', '{json.dumps(assistant_data)}')''',
+
             f'''INSERT OR REPLACE INTO "references" (reference_id, reference_type, data) 
                VALUES ('default', 'prompt', '{json.dumps(default_prompt_data)}')''',
             
@@ -313,7 +313,6 @@ class Database:
                 datetime      TIMESTAMP NOT NULL,
                 role          TEXT NOT NULL,
                 user          TEXT NOT NULL,
-                safety_identifier TEXT NOT NULL,
                 FOREIGN KEY (chat_id) REFERENCES chats (chat_id) ON DELETE CASCADE
             );
             ''',
@@ -476,30 +475,44 @@ class Database:
         tokenize them using `tokenizer`, and stop once `max_tokens` is reached.
         Returns messages oldest-to-newest.
         '''
-        messages = []
+        messages: List[wrapper.Wrapper] = []
         running_total = 0
         batch_size = 10
-        offset = 0
+        # Keyset (cursor) values: we page by (datetime DESC, sql_id DESC)
+        last_datetime = None  # store raw DB value (string / datetime)
+        last_sql_id = None
 
         try:
             while running_total < max_tokens:
-                # fetch a page of parent rows (newest first)
-                sql = '''
-                SELECT sql_id, telegram_id, chat_id, wrapper_type, datetime, role, user
-                FROM wrappers
-                WHERE chat_id = ?
-                ORDER BY datetime DESC, sql_id DESC
-                LIMIT ? OFFSET ?
-                '''
+                # Build keyset pagination query
+                base_sql = (
+                    "SELECT sql_id, telegram_id, chat_id, wrapper_type, datetime, role, user "
+                    "FROM wrappers WHERE chat_id = ?"
+                )
+                params = [chat_id]
+                if last_datetime is not None and last_sql_id is not None:
+                    # (datetime, sql_id) pair strictly less than last pair in DESC ordering
+                    base_sql += (
+                        " AND (datetime < ? OR (datetime = ? AND sql_id < ?))"
+                    )
+                    params.extend([last_datetime, last_datetime, last_sql_id])
+
+                base_sql += " ORDER BY datetime DESC, sql_id DESC LIMIT ?"
+                params.append(batch_size)
 
                 async with self.conn.cursor() as cursor:
-                    await cursor.execute(sql, (chat_id, batch_size, offset))
+                    await cursor.execute(base_sql, params)
                     parent_rows = await cursor.fetchall()
 
-                if not parent_rows:  # no more rows
-                    break
+                if not parent_rows:
+                    break  # no more rows
 
-                # group by wrapper_type to fetch children
+                # Prepare next key (oldest row in this batch)
+                tail = parent_rows[-1]
+                last_datetime = tail["datetime"]
+                last_sql_id = tail["sql_id"]
+
+                # Group SQL IDs per wrapper_type to fetch children in bulk
                 sql_ids = {}
                 for r in parent_rows:
                     sql_ids.setdefault(r["wrapper_type"], []).append(r["sql_id"])
@@ -510,38 +523,29 @@ class Database:
                         wrapper_class = wrapper.WRAPPER_REGISTRY.get(wrapper_type)
                         if not wrapper_class or not ids:
                             continue
-
                         table = f"{wrapper_type}s"
                         child_fields = wrapper_class.get_child_fields()
                         placeholders = ",".join("?" for _ in ids)
-
                         child_query_sql = (
-                            f"SELECT sql_id, {', '.join(child_fields)} "
-                            f"FROM {table} WHERE sql_id IN ({placeholders})"
+                            f"SELECT sql_id, {', '.join(child_fields)} FROM {table} "
+                            f"WHERE sql_id IN ({placeholders})"
                         )
-
                         await cursor.execute(child_query_sql, ids)
                         child_rows = await cursor.fetchall()
+                        tables[wrapper_type] = {child_row["sql_id"]: dict(child_row) for child_row in child_rows}
 
-                        tables[wrapper_type] = {
-                            child_row["sql_id"]: dict(child_row) for child_row in child_rows
-                        }
-
+                stop = False
                 for parent_row in parent_rows:
                     wrapper_type = parent_row["wrapper_type"]
                     sql_id = parent_row["sql_id"]
-
                     wrapper_class = wrapper.WRAPPER_REGISTRY.get(wrapper_type)
                     if not wrapper_class:
                         continue
-
-                    child_data = tables.get(wrapper_type, {})
-                    child_row = child_data.get(sql_id, {})
+                    child_row = tables.get(wrapper_type, {}).get(sql_id, {})
                     if not child_row:
                         continue
 
                     parent_dict = dict(parent_row)
-
                     datetime_raw = parent_dict["datetime"]
                     if isinstance(datetime_raw, dt.datetime):
                         parsed_datetime = datetime_raw.astimezone(dt.timezone.utc)
@@ -561,28 +565,27 @@ class Database:
                     if isinstance(wrapper_instance, wrapper.ImageWrapper) and wrapper_instance.image_path:
                         wrapper_instance.image_bytes = await self._load_image(wrapper_instance.image_path)
 
-                    # tokenize
+                    # Tokenize / compute tokens
                     if isinstance(wrapper_instance, wrapper.MessageWrapper):
-                        message_text = wrapper_instance.message
-                        tokens = tokenizer(message_text)
+                        tokens = tokenizer(wrapper_instance.message)
                         wrapper_instance.tokens = tokens
-
                     elif isinstance(wrapper_instance, wrapper.ImageWrapper):
                         tokens = wrapper_instance.calculate_tokens()
                         wrapper_instance.tokens = tokens
+                    else:
+                        tokens = 0
 
                     if running_total + tokens > max_tokens:
+                        stop = True
                         break
 
                     running_total += tokens
                     messages.append(wrapper_instance)
 
-                if running_total >= max_tokens:
+                if stop or running_total >= max_tokens:
                     break
 
-                offset += batch_size
-
-            # reverse to return oldest-first
+            # Oldest first for caller
             messages = list(reversed(messages))
 
         except Exception as e:
@@ -591,7 +594,6 @@ class Database:
                 error="Failed to retrieve your memory.", e=e, tb=tb
             ))
             messages = []
-
         finally:
             return messages
 

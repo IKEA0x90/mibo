@@ -53,7 +53,7 @@ class Assistant:
         base_prompt = prompts.get(prompt_enum.BasePrompt, '')
         messages.append({
             'role': 'system',
-            'content': base_prompt
+            'content': [{'type': 'text', 'text': f'{base_prompt}'}]
         })
 
         if special_fields.get('disable_thinking'):
@@ -65,11 +65,12 @@ class Assistant:
         for msg in user_messages:
             messages.append(msg)
 
-        request['messages'] = messages
+        model = special_fields.get('model', 'gpt-4.1')
+        request['safety_identifier'] = str(hash(chat_id))
 
         try:
             client = self.clients.get(model_provider)
-            response = await self.call_openai(client.chat.completions.create, **request)
+            response = await self.call_openai(client.chat.completions.create, messages=messages, model=model, extra_body=request)
 
             response_message = response.choices[0].message
 
@@ -118,7 +119,7 @@ class Assistant:
 
         except Exception as e:
             _, _, tb = sys.exc_info()
-            issue = system_events.ErrorEvent(error='Whoops! An unexpected error occurred.', e=e, tb=tb, event_id=event.event_id, chat_id=self.chat_id)
+            issue = system_events.ErrorEvent(error='Whoops! An unexpected error occurred.', e=e, tb=tb, event_id=event.event_id, chat_id=chat_id)
             await self.bus.emit(issue)
 
     async def _download_image_url(self, image_url: str, incomplete_wrapper: wrapper.ImageWrapper, parent_event: event.Event) -> wrapper.ImageWrapper:
