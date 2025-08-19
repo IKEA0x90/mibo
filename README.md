@@ -31,7 +31,7 @@ You just need to set all the variables specified in __variablies.py__. Either se
 
 ## Contributing
 
-If you want to add stuff, go ahead. There's a list of features that I want to support but can't. The projects page is ordered by priority.
+If you want to add stuff, go ahead. There's a list of features that I want to support but am yet to.
 
 ---
 
