@@ -270,13 +270,16 @@ class Mibo:
 
         # If only text
         if text_list and not images:
-            for t in text_list:
+            for i, t in enumerate(text_list):
                 await self._pop_typing(chat_id)
 
                 await self.app.bot.send_message(chat_id=chat_id, text=t)
-                await asyncio.sleep(variables.Variables.typing_delay(t)) # average of 0.5 for 10 characters and 5 for 100 characters
+                
+                if i != (len(text_list) - 1):
+                    typing()
 
-                typing()
+                await asyncio.sleep(variables.Variables.typing_delay(t) + 0.25) # average of 0.5 for 10 characters and 5 for 100 characters
+                
             return
 
         # If only images
@@ -295,13 +298,15 @@ class Mibo:
                 media_group.append(InputMediaPhoto(media=image.image_url, caption=caption))
             await self.app.bot.send_media_group(chat_id=chat_id, media=media_group)
 
-            for t in text_list[1:]:
+            for i, t in enumerate(text_list[1:]):
                 await self._pop_typing(chat_id)
 
                 await self.app.bot.send_message(chat_id=chat_id, text=t)
-                await asyncio.sleep(variables.Variables.typing_delay(t))
 
-                typing()
+                if i != (len(text_list) - 1):
+                    typing()
+
+                await asyncio.sleep(variables.Variables.typing_delay(t) + 0.25)
         
         await self._pop_typing(chat_id)
 
