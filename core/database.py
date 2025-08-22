@@ -275,7 +275,7 @@ class Database:
         welcome_prompt_data = {
             "prompt": "You were added to a group. Say hi!"
         }
-        start_prompt_data = {
+        start_default = {
             "prompt": "A new user has sent you their first message. Say hi!"
         }
         
@@ -290,7 +290,10 @@ class Database:
                VALUES ('default', 'prompt', '{json.dumps(default_prompt_data)}')''',
 
             f'''INSERT OR IGNORE INTO "references" (reference_id, reference_type, data) 
-               VALUES ('welcome_default', 'prompt', '{json.dumps(welcome_prompt_data)}')'''
+               VALUES ('welcome_default', 'prompt', '{json.dumps(welcome_prompt_data)}')''',
+
+            f'''INSERT OR IGNORE INTO "references" (reference_id, reference_type, data) 
+               VALUES ('start_default', 'prompt', '{json.dumps(start_default)}')'''
         ]
 
     @staticmethod

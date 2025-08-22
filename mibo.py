@@ -256,52 +256,54 @@ class Mibo:
         If both are empty, nothing is sent.
         If images are sent, they are combined into an album and the message is sent appended to the first image (like users do).
         '''
-        if not text and not images:
-            return
-        
-        text_list = []
+        try:
+            if not text and not images:
+                return
+            
+            text_list = []
 
-        if text:
-            text_list = self.parse_text(text)
+            if text:
+                text_list = self.parse_text(text)
 
-        # If only text
-        if text_list and not images:
-            for i, t in enumerate(text_list):
-                await self._pop_typing(chat_id)
+            # If only text
+            if text_list and not images:
+                for i, t in enumerate(text_list):
+                    await self._pop_typing(chat_id)
 
-                await self.app.bot.send_message(chat_id=chat_id, text=t)
-                
-                if i != (len(text_list) - 1):
-                    typing()
+                    await self.app.bot.send_message(chat_id=chat_id, text=t)
+                    
+                    if i != (len(text_list) - 1):
+                        typing()
 
-                await asyncio.sleep(variables.Variables.typing_delay(t) + 0.25) # average of 0.5 for 10 characters and 5 for 100 characters
-                
-        # If only images
-        elif images and not text:
-            media_group = [
-                self.app.bot._wrap_input_media_photo(image.image_url) for image in images
-            ]
-            await self.app.bot.send_media_group(chat_id=chat_id, media=media_group)
+                    await asyncio.sleep(variables.Variables.typing_delay(t) + 0.25) # average of 0.5 for 10 characters and 5 for 100 characters
+                    
+            # If only images
+            elif images and not text:
+                media_group = [
+                    self.app.bot._wrap_input_media_photo(image.image_url) for image in images
+                ]
+                await self.app.bot.send_media_group(chat_id=chat_id, media=media_group)
 
-        # If both text and images: send as album, text as caption to first image
-        elif images and text_list:
-            media_group = []
-            for idx, image in enumerate(images):
-                caption = text_list[0] if idx == 0 else None
-                media_group.append(InputMediaPhoto(media=image.image_url, caption=caption))
-            await self.app.bot.send_media_group(chat_id=chat_id, media=media_group)
+            # If both text and images: send as album, text as caption to first image
+            elif images and text_list:
+                media_group = []
+                for idx, image in enumerate(images):
+                    caption = text_list[0] if idx == 0 else None
+                    media_group.append(InputMediaPhoto(media=image.image_url, caption=caption))
+                await self.app.bot.send_media_group(chat_id=chat_id, media=media_group)
 
-            for i, t in enumerate(text_list[1:]):
-                await self._pop_typing(chat_id)
+                for i, t in enumerate(text_list[1:]):
+                    await self._pop_typing(chat_id)
 
-                await self.app.bot.send_message(chat_id=chat_id, text=t)
+                    await self.app.bot.send_message(chat_id=chat_id, text=t)
 
-                if i != (len(text_list) - 1):
-                    typing()
+                    if i != (len(text_list) - 1):
+                        typing()
 
-                await asyncio.sleep(variables.Variables.typing_delay(t) + 0.25)
-        
-        await self._pop_typing(chat_id)
+                    await asyncio.sleep(variables.Variables.typing_delay(t) + 0.25)
+    
+        finally:
+            await self._pop_typing(chat_id)
 
     async def _handle_exception(self, event: system_events.ErrorEvent) -> None:
         '''
@@ -339,7 +341,7 @@ class Mibo:
         language_code = user.language_code or 'en'
         language_name = variables.Variables.get_language_from_locale(language_code)
 
-        await self._event_message(chat_id=chat.id, event_prompt=prompt_enum.StartPrompt, replacers={'language': language_name}, chat_name=chat.effective_name)
+        await self._event_message(chat_id=str(chat.id), event_prompt=prompt_enum.StartPrompt, replacers={'language': language_name}, chat_name=chat.effective_name)
 
     async def _welcome(self, update: Update, context: CallbackContext):
         '''
@@ -364,7 +366,7 @@ class Mibo:
                     'group_name': group_name
                 }
 
-                await self._event_message(chat_id=chat.id, event_prompt=prompt_enum.WelcomePrompt, replacers=replacers, chat_name=group_name)
+                await self._event_message(chat_id=str(chat.id), event_prompt=prompt_enum.WelcomePrompt, replacers=replacers, chat_name=group_name)
 
             elif old_status in [ChatMember.MEMBER, ChatMember.ADMINISTRATOR] and new_status in [ChatMember.LEFT, ChatMember.BANNED]:
                 pass    
