@@ -224,10 +224,6 @@ class Database:
 
             # pre-save images, assign paths before insert
             for w in wrappers:
-                # skip system messages
-                if w.role == 'system' or w.role == 'developer':
-                    continue
-
                 if isinstance(w, wrapper.ImageWrapper):
                     if not w.image_path:
                         filepath = await self._save_image(w)
@@ -491,7 +487,7 @@ class Database:
                 # Build keyset pagination query
                 base_sql = (
                     "SELECT sql_id, telegram_id, chat_id, wrapper_type, datetime, role, user "
-                    "FROM wrappers WHERE chat_id = ?"
+                    "FROM wrappers WHERE chat_id = ? AND role != 'system'"
                 )
                 params = [chat_id]
                 if last_datetime is not None and last_sql_id is not None:
