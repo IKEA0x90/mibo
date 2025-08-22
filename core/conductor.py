@@ -113,16 +113,19 @@ class Conductor:
                                                      reply_id=reply_id, quote=quote_text,
                                                      datetime=datetime, role=role, user=username)
             
-            content = await self._look_for_content(update, context, event)
+            content = []
+            if context:
+                content = await self._look_for_content(update, context, event)
 
-            c: wrapper.Wrapper
-            for c in content:
-                c.role = role
-                c.user = username
-                c.ping = ping
-                c.datetime = datetime
+                c: wrapper.Wrapper
+                for c in content:
+                    c.role = role
+                    c.user = username
+                    c.ping = ping
+                    c.datetime = datetime
 
-            wrappers = ([message_wrapper] if message_wrapper.message else []) + content
+            wrappers = ([message_wrapper] if message_wrapper.message else [])
+            wrappers += content
 
             if not wrappers:
                 raise ValueError("Wrapper list is somehow empty. This probably shouldn't happen.")

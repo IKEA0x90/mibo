@@ -1,4 +1,7 @@
 import os
+import random
+
+from babel import Locale
 from dotenv import load_dotenv
 
 class Variables:
@@ -38,3 +41,24 @@ class Variables:
         message = original.replace('—', ' - ') 
 
         return message
+    
+    @staticmethod
+    def typing_delay(text: str):
+        length = len(text)
+        avg_cpm = 800
+        jitter_sd = 0.08
+        # Ramp from 0 to 0.3 seconds over the first 16 characters
+        reaction = random.uniform(0.0, 0.3) * min(length, 16) / 16
+        base = (60.0 / avg_cpm) * length
+        multiplier = max(0.2, random.gauss(1.0, jitter_sd))
+        return max(0.0, reaction + base * multiplier)
+    
+    @staticmethod
+    def get_language_from_locale(language_code: str) -> str:
+        '''
+        Maps a language code to a language name.
+        '''
+        try:
+            return Locale.parse(language_code).get_display_name(language_code).capitalize()
+        except:
+            return language_code

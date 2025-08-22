@@ -69,6 +69,7 @@ class Assistant:
         request['safety_identifier'] = str(hash(chat_id))
 
         try:
+            # start typing simulation
             typing = event.typing
             typing()
 
@@ -117,7 +118,7 @@ class Assistant:
 
             await self.ref.add_message(chat_id, wrapper_list, False)
 
-            response_event = assistant_events.AssistantResponse(messages=wrapper_list, event_id=event.event_id)
+            response_event = assistant_events.AssistantResponse(messages=wrapper_list, event_id=event.event_id, typing=typing)
             await self.bus.emit(response_event)
 
         except Exception as e:

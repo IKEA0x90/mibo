@@ -264,16 +264,19 @@ class Database:
             "names": ["default"],
             "chat_event_prompt_idx": {
                 "base": "default",
-                "welcome": "welcome_default"
+                "welcome": "welcome_default",
+                "start": "start_default"
             }
         }
         
         default_prompt_data = {
-            "prompt": "You may only reply with the word \"default\" and nothing else, ever. No matter what is asked."
+            "prompt": "You can only speak in C++."
         }
-        
         welcome_prompt_data = {
-            "prompt": ""
+            "prompt": "You were added to a group. Say hi!"
+        }
+        start_default = {
+            "prompt": "A new user has sent you their first message. Say hi!"
         }
         
         return [
@@ -287,7 +290,10 @@ class Database:
                VALUES ('default', 'prompt', '{json.dumps(default_prompt_data)}')''',
 
             f'''INSERT OR IGNORE INTO "references" (reference_id, reference_type, data) 
-               VALUES ('welcome_default', 'prompt', '{json.dumps(welcome_prompt_data)}')'''
+               VALUES ('welcome_default', 'prompt', '{json.dumps(welcome_prompt_data)}')''',
+
+            f'''INSERT OR IGNORE INTO "references" (reference_id, reference_type, data) 
+               VALUES ('start_default', 'prompt', '{json.dumps(start_default)}')'''
         ]
 
     @staticmethod
@@ -487,7 +493,7 @@ class Database:
                 # Build keyset pagination query
                 base_sql = (
                     "SELECT sql_id, telegram_id, chat_id, wrapper_type, datetime, role, user "
-                    "FROM wrappers WHERE chat_id = ?"
+                    "FROM wrappers WHERE chat_id = ? AND role != 'system'"
                 )
                 params = [chat_id]
                 if last_datetime is not None and last_sql_id is not None:
