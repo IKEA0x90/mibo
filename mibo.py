@@ -264,10 +264,7 @@ class Mibo:
         if text:
             text_list = self.parse_text(text)
 
-        # use local typing because it somehow prevents race conditions?
-        def typing():
-            if chat_id not in self.typing_tasks or self.typing_tasks[chat_id].done():
-                self.typing_tasks[chat_id] = asyncio.create_task(self._simulate_typing(chat_id))
+        typing = self._get_typing(chat_id)
 
         # If only text
         if text_list and not images:
