@@ -125,7 +125,7 @@ class Mibo:
 
         print('Shutdown complete.')
 
-    async def _simulate_typing(self, chat_id: int):
+    async def _simulate_typing(self, chat_id: str):
         try:
             while True:
                 await self.app.bot.send_chat_action(chat_id=chat_id, action=ChatAction.TYPING)
@@ -301,6 +301,10 @@ class Mibo:
                         typing()
 
                     await asyncio.sleep(variables.Variables.typing_delay(t) + 0.25)
+        
+        except Exception as e:
+            _, _, tb = sys.exc_info()
+            await self.bus.emit(system_events.ErrorEvent(error="Something's wrong with sending messages.", e=e, tb=tb, event_id=None, chat_id=chat_id))
     
         finally:
             await self._pop_typing(chat_id)
