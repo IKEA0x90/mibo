@@ -3,8 +3,6 @@ import sys
 import signal
 import openai
 import logging
-import random
-import re
 import traceback
 import uuid
 
@@ -94,9 +92,11 @@ class Mibo:
         '''
         Register telegram handlers for commands and messages.
         '''
-        self.app.add_handler(CommandHandler('debug', self._debug))
         self.app.add_handler(MessageHandler(filters.ALL & (~filters.COMMAND) & (~filters.StatusUpdate.ALL), self._handle_message))
         self.app.add_handler(ChatMemberHandler(self._welcome, ChatMemberHandler.MY_CHAT_MEMBER))
+
+        self.app.add_handler(CommandHandler('debug', self._debug))
+        self.app.add_handler(CommandHandler('start', self._start))
 
     def _system_signals(self):
         '''
@@ -165,7 +165,6 @@ class Mibo:
         
         chat_id = str(update.effective_chat.id)
 
-        #await self._pop_typing(chat_id)
         typing = self._get_typing(chat_id)
         
         event = await self.bus.emit(mibo_events.NewMessageArrived(update, context, typing=typing))
@@ -174,9 +173,6 @@ class Mibo:
         '''
         Forces the bot to send a message to a chat, possibly appending a system message to the prompt.
         '''
-        #await self._pop_typing(chat_id)
-        typing = self._get_typing(chat_id)
-
         chat_name: str = kwargs.get('chat_name', '')
 
         user = User(id=0, first_name="System", is_bot=True)
@@ -189,6 +185,8 @@ class Mibo:
             from_user=user,
             text=system_message
         )
+
+        typing = self._get_typing(chat_id)
 
         update = Update(update_id=uuid.uuid4().int, message=message)
         event = mibo_events.NewMessageArrived(update=update, context=None, typing=typing)
@@ -266,7 +264,10 @@ class Mibo:
         if text:
             text_list = self.parse_text(text)
 
-        typing = self._get_typing(chat_id)
+        # use local typing because it somehow prevents race conditions?
+        def typing():
+            if chat_id not in self.typing_tasks or self.typing_tasks[chat_id].done():
+                self.typing_tasks[chat_id] = asyncio.create_task(self._simulate_typing(chat_id))
 
         # If only text
         if text_list and not images:
@@ -280,18 +281,15 @@ class Mibo:
 
                 await asyncio.sleep(variables.Variables.typing_delay(t) + 0.25) # average of 0.5 for 10 characters and 5 for 100 characters
                 
-            return
-
         # If only images
-        if images and not text:
+        elif images and not text:
             media_group = [
                 self.app.bot._wrap_input_media_photo(image.image_url) for image in images
             ]
             await self.app.bot.send_media_group(chat_id=chat_id, media=media_group)
-            return
 
         # If both text and images: send as album, text as caption to first image
-        if images and text_list:
+        elif images and text_list:
             media_group = []
             for idx, image in enumerate(images):
                 caption = text_list[0] if idx == 0 else None
@@ -328,6 +326,25 @@ class Mibo:
         Sends a debug message.
         '''
         await context.bot.send_message(update.effective_chat.id, 'Debug OK')
+
+    async def _start(self, update: Update, context: CallbackContext):
+        '''
+        Sends a welcome message when the bot is started.
+        '''
+        chat = update.effective_chat
+        user = update.effective_user
+
+        if not chat or not user:
+            return
+        
+        update_datetime = update.message.date
+        if update_datetime < self.start_datetime:
+            return
+
+        language_code = user.language_code or 'en'
+        language_name = variables.Variables.get_language_from_locale(language_code)
+
+        await self._event_message(chat_id=chat.id, event_prompt=prompt_enum.StartPrompt, replacers={'language': language_name}, chat_name=chat.effective_name)
 
     async def _welcome(self, update: Update, context: CallbackContext):
         '''

@@ -70,8 +70,9 @@ class Assistant:
 
         try:
             # start typing simulation
-            typing = event.typing
-            typing()
+            typing = event.typing or None
+            if typing:
+                typing()
 
             client = self.clients.get(model_provider)
             response = await self.call_openai(client.chat.completions.create, messages=messages, model=model, extra_body=request)
