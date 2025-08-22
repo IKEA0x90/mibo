@@ -95,8 +95,8 @@ class Mibo:
         Register telegram handlers for commands and messages.
         '''
         self.app.add_handler(CommandHandler('debug', self._debug))
-        self.app.add_handler(MessageHandler(filters.ALL & (~filters.COMMAND), self._handle_message))
-        #self.app.add_handler(ChatMemberHandler(self._welcome, ChatMemberHandler.MY_CHAT_MEMBER))
+        self.app.add_handler(MessageHandler(filters.ALL & (~filters.COMMAND) & (~filters.StatusUpdate.ALL), self._handle_message))
+        self.app.add_handler(ChatMemberHandler(self._welcome, ChatMemberHandler.MY_CHAT_MEMBER))
 
     def _system_signals(self):
         '''
@@ -209,7 +209,7 @@ class Mibo:
                     key = '{' + replacer_key + '}'
                     prompt = prompt.replace(key, replacer_value)
 
-            self._system_message(chat_id=chat_id, system_message=prompt, **kwargs)
+            await self._system_message(chat_id=chat_id, system_message=prompt, **kwargs)
 
         except Exception as e:
             self.bus.emit(system_events.ErrorEvent(error="Something's wrong with getting prompts.", e=e, tb=None, event_id=None, chat_id=chat_id))

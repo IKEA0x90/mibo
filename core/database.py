@@ -224,6 +224,10 @@ class Database:
 
             # pre-save images, assign paths before insert
             for w in wrappers:
+                # skip system messages
+                if w.role == 'system' or w.role == 'developer':
+                    continue
+
                 if isinstance(w, wrapper.ImageWrapper):
                     if not w.image_path:
                         filepath = await self._save_image(w)
