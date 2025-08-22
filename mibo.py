@@ -37,7 +37,7 @@ class Mibo:
         self.key: str = variables.Variables.OPENAI_KEY
 
         self.app: Application = None
-        self.typing_tasks: Dict[int, asyncio.Task] = {}
+        self.typing_tasks: Dict[str, asyncio.Task] = {}
 
         self._prepare()
         print(f'Mibo is alive! It is {self.start_datetime.hour}:{self.start_datetime.minute}:{self.start_datetime.second} UTC.')
@@ -234,7 +234,7 @@ class Mibo:
                 message_images.append(message)
 
         if message_text or message_images:
-            await self._send_message(chat_id, message_text, message_images)
+            await self._send_message(chat_id, message_text, message_images, event.typing)
 
     @staticmethod
     def parse_text(text: str) -> List[str]:
@@ -249,7 +249,7 @@ class Mibo:
 
         return filtered_list
 
-    async def _send_message(self, chat_id: str, text: str, images: List[wrapper.ImageWrapper]) -> None:
+    async def _send_message(self, chat_id: str, text: str, images: List[wrapper.ImageWrapper], typing) -> None:
         '''
         Send the text and images from the response message.
         Text and/or images may be empty - in that case, only the non-empty item is sent.
@@ -263,8 +263,6 @@ class Mibo:
 
         if text:
             text_list = self.parse_text(text)
-
-        typing = self._get_typing(chat_id)
 
         # If only text
         if text_list and not images:

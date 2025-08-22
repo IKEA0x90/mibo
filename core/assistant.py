@@ -70,9 +70,8 @@ class Assistant:
 
         try:
             # start typing simulation
-            typing = event.typing or None
-            if typing:
-                typing()
+            typing = event.typing
+            typing()
 
             client = self.clients.get(model_provider)
             response = await self.call_openai(client.chat.completions.create, messages=messages, model=model, extra_body=request)
@@ -119,7 +118,7 @@ class Assistant:
 
             await self.ref.add_message(chat_id, wrapper_list, False)
 
-            response_event = assistant_events.AssistantResponse(messages=wrapper_list, event_id=event.event_id)
+            response_event = assistant_events.AssistantResponse(messages=wrapper_list, event_id=event.event_id, typing=typing)
             await self.bus.emit(response_event)
 
         except Exception as e:
