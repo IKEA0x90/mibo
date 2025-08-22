@@ -113,7 +113,8 @@ class Conductor:
                                                      reply_id=reply_id, quote=quote_text,
                                                      datetime=datetime, role=role, user=username)
             
-            content = await self._look_for_content(update, context, event)
+            if context:
+                content = await self._look_for_content(update, context, event)
 
             c: wrapper.Wrapper
             for c in content:

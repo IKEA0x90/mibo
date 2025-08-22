@@ -69,6 +69,7 @@ class Assistant:
         request['safety_identifier'] = str(hash(chat_id))
 
         try:
+            # start typing simulation
             typing = event.typing
             typing()
 
