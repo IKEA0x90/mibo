@@ -5,6 +5,8 @@ import re
 import datetime as dt
 from typing import Any, Dict, List, Optional
 
+from tomlkit import key
+
 from services import variables
 
 WRAPPER_REGISTRY = {}
@@ -218,6 +220,42 @@ class PollWrapper(Wrapper):
             rstr.append(f"{i+1}. {option}")
         return rstr
     
+class ArgumentWrapper():
+    def __init__(self, name: str, type: str, description: str = '', required: bool = False, **kwargs):
+        self.name: str = name
+        self.type: str = type
+        self.description: str = description
+        self.required: bool = required
+
+        for key, value in kwargs.items():
+            setattr(self, key, value)
+
+    def to_dict(self):
+        core = {
+            'name': self.name,
+            'type': self.type,
+            'description': self.description,
+            'required': self.required
+        }
+
+        other = {}
+        for key, value in self.__dict__.items():
+            if key not in core.keys():
+                other[key] = value
+
+        return {**other, **core}
+
+    @staticmethod
+    def from_dict(data):
+        name=data.get('name', '')
+        type=data.get('type', '')
+        description=data.get('description', '')
+        required=data.get('required', False)
+
+        kwargs = {key: value for key, value in data.items() if key not in ('name', 'type', 'description', 'required')}
+
+        return ArgumentWrapper(name, type, description, required, **kwargs)
+
 class ChatWrapper():
     def __init__(self, id: str, **kwargs):
         self.id: str = str(id)

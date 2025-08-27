@@ -50,7 +50,7 @@ class Assistant:
         user_messages: List[Dict] = await wdw.transform_messages()
         messages: List[Dict] = []
 
-        base_prompt = prompts.get(prompt_enum.BasePrompt, '')
+        base_prompt: str = prompts.get(prompt_enum.BasePrompt, '')
         messages.append({
             'role': 'system',
             'content': [{'type': 'text', 'text': f'{base_prompt}'}]
@@ -66,7 +66,9 @@ class Assistant:
             messages.append(msg)
 
         model = special_fields.get('model', 'gpt-4.1')
+
         request['safety_identifier'] = str(hash(chat_id))
+        request['prompt_cache_key'] = str(hash(base_prompt))
 
         try:
             # start typing simulation
@@ -78,48 +80,58 @@ class Assistant:
 
             response_message = response.choices[0].message
 
-            # For chat completions, content may be a list of blocks or a string
-            content = response_message.content
+            # go through tool calls
+            if hasattr(response_message, 'tool_calls') and (tools := response_message.tool_calls):
+                for tool_call in tools:
+                    if tool_call.type != "function_call":
+                        continue
 
-            if isinstance(content, list):
-                # Concatenate all text blocks for message text, collect images for content_list
-                message_text = "".join([block.get('text', '') for block in content if block.get('type') == 'text'])
-                images = [block for block in content if block.get('type') == 'image_url']
+                    tool_name = tool_call.function.name
+                    tool_args = tool_call.function.arguments
 
             else:
-                message_text = content or ''
-                images = [] # if it's not a list, no images
+                # For chat completions, content may be a list of blocks or a string
+                content = response_message.content
 
-            if not message_text.strip() and not images:
-                return
-            
-            # replace random stuff that I don't like and is easier to change here rather than in the prompt
-            message_text = variables.Variables.replacers(message_text)
-            
-            if think_token := special_fields.get('think_token', ''):
-                message_text = message_text.split(f'{think_token}', 1)[1]
-                message_text = message_text.strip()
+                if isinstance(content, list):
+                    # Concatenate all text blocks for message text, collect images for content_list
+                    message_text = "".join([block.get('text', '') for block in content if block.get('type') == 'text'])
+                    images = [block for block in content if block.get('type') == 'image_url']
 
-            wrapper_list = []
+                else:
+                    message_text = content or ''
+                    images = [] # if it's not a list, no images
 
-            assistant_message = wrapper.MessageWrapper(
-                id=str(response.id), chat_id=chat_id, 
-                role='assistant', user=variables.Variables.USERNAME,
-                message=message_text, ping=False,
-                datetime=dt.datetime.now(tz=dt.timezone.utc)
-            )
-            wrapper_list.append(assistant_message)
+                if not message_text.strip() and not images:
+                    return
+                
+                # replace random stuff that I don't like and is easier to change here rather than in the prompt
+                message_text = variables.Variables.replacers(message_text)
+                
+                if think_token := special_fields.get('think_token', ''):
+                    message_text = message_text.split(f'{think_token}', 1)[1]
+                    message_text = message_text.strip()
 
-            for img in images:
-                if 'image_url' in img:
-                    incomplete_wrapper = wrapper.ImageWrapper(id=str(response.id), chat_id=self.chat_id, x=0, y=0, role='assistant', user=variables.Variables.USERNAME)
-                    image = await self._download_image_url(img['image_url'], incomplete_wrapper=incomplete_wrapper, parent_event=event)
-                    wrapper_list.append(image)
+                wrapper_list = []
 
-            await self.ref.add_message(chat_id, wrapper_list, False)
+                assistant_message = wrapper.MessageWrapper(
+                    id=str(response.id), chat_id=chat_id, 
+                    role='assistant', user=variables.Variables.USERNAME,
+                    message=message_text, ping=False,
+                    datetime=dt.datetime.now(tz=dt.timezone.utc)
+                )
+                wrapper_list.append(assistant_message)
 
-            response_event = assistant_events.AssistantResponse(messages=wrapper_list, event_id=event.event_id, typing=typing)
-            await self.bus.emit(response_event)
+                for img in images:
+                    if 'image_url' in img:
+                        incomplete_wrapper = wrapper.ImageWrapper(id=str(response.id), chat_id=self.chat_id, x=0, y=0, role='assistant', user=variables.Variables.USERNAME)
+                        image = await self._download_image_url(img['image_url'], incomplete_wrapper=incomplete_wrapper, parent_event=event)
+                        wrapper_list.append(image)
+
+                await self.ref.add_message(chat_id, wrapper_list, False)
+
+                response_event = assistant_events.AssistantResponse(messages=wrapper_list, event_id=event.event_id, typing=typing)
+                await self.bus.emit(response_event)
 
         except Exception as e:
             _, _, tb = sys.exc_info()

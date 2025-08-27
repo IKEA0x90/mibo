@@ -1,4 +1,4 @@
-from typing import Dict, List, Callable, Tuple
+from typing import Any, Dict, List, Callable, Tuple
 import asyncio
 import time
 
@@ -19,7 +19,15 @@ def register_reference(cls):
 class Reference:
     def __init__(self, id: str, **kwargs):
         self.id: str = str(id)
-        self.type = self.__class__.type # assign type to the instance
+        self.type = str(self.__class__.type) # assign type to the instance
+
+    def __hash__(self):
+        return hash((self.id, self.type))
+
+    def __eq__(self, other):
+        if not isinstance(other, Reference):
+            return False
+        return (self.id, self.type) == (other.id, other.type)
 
     def to_dict(self):
         '''
@@ -39,6 +47,12 @@ class Reference:
                 # k: prompt_enum.PromptEnum class
                 # v: PromptReference
                 serialized_data[attribute_name] = {k.get_id(): v.id for k, v in attribute_value.items()}
+
+            elif hasattr(self, 'TOOL_PROPERTIES') and attribute_name in self.TOOL_PROPERTIES:
+                # k: str (argument name)
+                # v: ToolReference
+                pass
+
             else:
                 serialized_data[attribute_name] = attribute_value
         
@@ -60,24 +74,18 @@ class Reference:
         # Accept dictionaries without embedded id (id is supplied separately)
         constructor_kwargs = {key: value for key, value in reference_data.items() if key not in ('type', 'id')}
 
-        # Backwards compatibility: prior data may have stored penalty_disabled instead of penalty_supported
-        if reference_type == 'model':
-            if 'penalty_disabled' in constructor_kwargs and 'penalty_supported' not in constructor_kwargs:
-                constructor_kwargs['penalty_supported'] = not constructor_kwargs.pop('penalty_disabled')
-
-        # Assistant JSON may use 'chat_events' externally; map to internal 'chat_event_prompt_idx'
-        if reference_type == 'assistant':
-            # Normalize older/new external key name
-            if 'chat_events' in constructor_kwargs and 'chat_event_prompt_idx' not in constructor_kwargs:
-                constructor_kwargs['chat_event_prompt_idx'] = constructor_kwargs.pop('chat_events')
-
-        # handle special deserialization for assistant properties
+        # handle special deserialization
         if reference_type == 'assistant' and hasattr(reference_class, 'ASSISTANT_PROPERTIES'):
             for field in reference_class.ASSISTANT_PROPERTIES:
                 if field in constructor_kwargs and isinstance(constructor_kwargs[field], dict):
                     constructor_kwargs[field] = {
                         prompt_enum.PromptEnum(k): v for k, v in constructor_kwargs[field].items()
                     }
+
+        if reference_type == 'tool' and hasattr(reference_class, 'TOOL_PROPERTIES'):
+            for field in reference_class.TOOL_PROPERTIES:
+                if field in constructor_kwargs and isinstance(constructor_kwargs[field], dict):
+                    pass
 
         return reference_class(id=reference_id, **constructor_kwargs)
     
@@ -111,8 +119,6 @@ class ModelReference(Reference):
             'model': self.id,
             'temperature': self.temperature,
             'max_completion_tokens': self.max_completion_tokens,
-            #'tools': self.tools,
-            #'tool_choice': 'auto',
             'store': False,
         }
 
@@ -174,7 +180,6 @@ class PromptReference(Reference):
     def __init__(self, id: str, **kwargs):
         super().__init__(id=id, **kwargs)
 
-        # this is present here but not in other classes due to the confusing nature of prompt reference and prompt enum
         try:
             self.prompt: str = str(kwargs.get('prompt', ''))
         except Exception:
@@ -182,6 +187,16 @@ class PromptReference(Reference):
 
     def __str__(self):
         return self.prompt
+    
+@register_reference
+class ToolReference(Reference):
+    TOOL_PROPERTIES = ['arguments']
+
+    def __init__(self, id, **kwargs):
+        super().__init__(id, **kwargs)
+
+        self.description: str = kwargs.get('description', '')
+        self.arguments: Dict[str, wrapper.ArgumentWrapper] = kwargs.get('arguments', {})
 
 class Ref:
     def __init__(self, bus: event_bus.EventBus, db_path: str = 'memory', start_datetime: dt.datetime = None):
@@ -196,6 +211,7 @@ class Ref:
         self.assistants: Dict[str, AssistantReference] = {}
         self.models: Dict[str, ModelReference] = {}
         self.prompts: Dict[str, PromptReference] = {}
+        self.tools: Dict[str, ToolReference] = {}
 
         self._prepare()
 
@@ -365,6 +381,10 @@ class Ref:
                 elif reference_type == 'prompt':
                     reference_object = PromptReference.from_dict(reference_id, reference_data, reference_type)
                     self.prompts[reference_id] = reference_object
+                
+                elif reference_type == 'tool':
+                    reference_object = ToolReference.from_dict(reference_id, reference_data, reference_type)
+                    self.tools[reference_id] = reference_object
 
         except Exception as e:
             self.bus.emit_sync(system_events.ErrorEvent(
