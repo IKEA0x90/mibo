@@ -104,7 +104,7 @@ class Conductor:
 
             # if any of string names is in the text
             names = await self.ref.get_assistant_names(chat_id)
-            if any(name in message_text for name in names):
+            if any(name.lower() in message_text.lower() for name in names):
                 ping = True
                 
             datetime: dt.datetime = message.date.astimezone(dt.timezone.utc)

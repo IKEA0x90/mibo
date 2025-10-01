@@ -1,5 +1,25 @@
 _PROMPT_ENUM_REGISTRY = {}
 
+class DefaultPrompts:
+    AGENT = "You are a special agent. You must respond in very short messages. Never ask follow-up questions."
+    WELCOME_AGENT = "You were added to a group. Assess the situation."
+    START_AGENT = "A new user has sent you their first message. Introduce yourself."
+
+    NONE = ""
+
+    TOOLS = \
+    '''
+    #Tools
+    You can call one or more tools. Do so if the user makes an explicit request, or if you seem fit. The following are the names and descriptions of the tools:
+    - generate_image: use when the user requests to generate or modify an image
+    '''.strip()
+
+    # - cron: use when the user or you want something scheduled (once in the future or on a repeating interval). It triggers a system message at that time/interval.
+
+    INVOKER = \
+    f'''
+    Placeholder.
+    '''.strip()
 
 class PromptEnum:
     def __new__(cls, id: str):

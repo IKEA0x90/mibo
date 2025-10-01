@@ -48,13 +48,23 @@ class Reference:
                 # v: PromptReference
                 serialized_data[attribute_name] = {k.get_id(): v.id for k, v in attribute_value.items()}
 
-            elif hasattr(self, 'TOOL_PROPERTIES') and attribute_name in self.TOOL_PROPERTIES:
-                # k: str (argument name)
-                # v: ToolReference
+            if self.type == 'tool':
+                # This needs even specialer handling (yes that's a word)
                 pass
 
             else:
                 serialized_data[attribute_name] = attribute_value
+        
+        if hasattr(self, 'type') and self.type == 'tool':
+            # just get the tool dictionary
+            tool_def = self.get_tool()
+            
+            # add any special fields
+            for key, value in serialized_data.items():
+                if key not in ('description', 'arguments', 'additional_properties', 'strict'):
+                    tool_def[key] = value
+            
+            return tool_def
         
         return serialized_data
     
@@ -83,9 +93,48 @@ class Reference:
                     }
 
         if reference_type == 'tool' and hasattr(reference_class, 'TOOL_PROPERTIES'):
-            for field in reference_class.TOOL_PROPERTIES:
-                if field in constructor_kwargs and isinstance(constructor_kwargs[field], dict):
-                    pass
+            if 'function' in reference_data:
+                function_obj = reference_data.get('function', {})
+                constructor_kwargs['description'] = function_obj.get('description', '')
+                
+                parameters = function_obj.get('parameters', {})
+                properties = parameters.get('properties', {})
+                required_args = parameters.get('required', [])
+                
+                arguments = {}
+                for arg_name, arg_data in properties.items():
+                    arg_type = arg_data.get('type', 'string')
+                    arg_desc = arg_data.get('description', '')
+                    arg_required = arg_name in required_args
+                    
+                    extra_props = {k: v for k, v in arg_data.items() 
+                                  if k not in ('type', 'description')}
+                    
+                    arg = wrapper.ArgumentWrapper(
+                        name=arg_name,
+                        type=arg_type,
+                        description=arg_desc,
+                        required=arg_required,
+                        **extra_props
+                    )
+                    arguments[arg_name] = arg
+                
+                constructor_kwargs['arguments'] = arguments
+                
+                if 'additionalProperties' in parameters:
+                    constructor_kwargs['additional_properties'] = parameters['additionalProperties']
+                
+                if 'strict' in reference_data:
+                    constructor_kwargs['strict'] = reference_data['strict']
+            
+            # Handle normal format with direct arguments
+            else:
+                for field in reference_class.TOOL_PROPERTIES:
+                    if field in constructor_kwargs and isinstance(constructor_kwargs[field], dict):
+                        constructor_kwargs[field] = {
+                            arg_name: wrapper.ArgumentWrapper.from_dict(arg_data)
+                            for arg_name, arg_data in constructor_kwargs[field].items()
+                        }
 
         return reference_class(id=reference_id, **constructor_kwargs)
     
@@ -190,13 +239,50 @@ class PromptReference(Reference):
     
 @register_reference
 class ToolReference(Reference):
-    TOOL_PROPERTIES = ['arguments']
-
     def __init__(self, id, **kwargs):
         super().__init__(id, **kwargs)
 
         self.description: str = kwargs.get('description', '')
         self.arguments: Dict[str, wrapper.ArgumentWrapper] = kwargs.get('arguments', {})
+        self.additional_properties: bool = kwargs.get('additional_properties', False)
+        self.strict: bool = kwargs.get('strict', True)
+    
+    def get_tool(self):
+        parameters = {
+            "type": "object",
+            "properties": {},
+            "required": []
+        }
+        
+        for arg_name, arg_wrapper in self.arguments.items():
+            parameters["properties"][arg_name] = {
+                "type": arg_wrapper.type,
+                "description": arg_wrapper.description
+            }
+            
+            for key, value in arg_wrapper.__dict__.items():
+                if key not in ("name", "type", "description", "required"):
+                    parameters["properties"][arg_name][key] = value
+
+            if arg_wrapper.required:
+                parameters["required"].append(arg_name)
+        
+        if hasattr(self, 'additional_properties'):
+            parameters["additionalProperties"] = self.additional_properties
+                
+        tool_def = {
+            "type": "function",
+            "function": {
+                "name": self.id,
+                "description": self.description,
+                "parameters": parameters
+            }
+        }
+        
+        if hasattr(self, 'strict'):
+            tool_def["strict"] = self.strict
+            
+        return tool_def
 
 class Ref:
     def __init__(self, bus: event_bus.EventBus, db_path: str = 'memory', start_datetime: dt.datetime = None):
@@ -356,6 +442,9 @@ class Ref:
         special_fields = model.get_special_fields() if model else {}
 
         return special_fields
+
+    async def get_tools(self) -> Dict[str, ToolReference]:
+        return self.tools
 
     def _load(self):
         '''

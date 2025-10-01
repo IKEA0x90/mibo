@@ -4,7 +4,7 @@ import aiosqlite
 import sqlite3
 import sys
 import json
-from services import tokenizers, variables
+from services import tokenizers, variables, prompt_enum
 import aiofiles
 import datetime as dt
 
@@ -270,13 +270,13 @@ class Database:
         }
         
         default_prompt_data = {
-            "prompt": "You can only speak in C++."
+            "prompt": prompt_enum.DefaultPrompts.AGENT
         }
         welcome_prompt_data = {
-            "prompt": "You were added to a group. Say hi!"
+            "prompt": prompt_enum.DefaultPrompts.WELCOME_AGENT
         }
         start_default = {
-            "prompt": "A new user has sent you their first message. Say hi!"
+            "prompt": prompt_enum.DefaultPrompts.START_AGENT
         }
         
         return [
@@ -294,6 +294,38 @@ class Database:
 
             f'''INSERT OR IGNORE INTO "references" (reference_id, reference_type, data) 
                VALUES ('start_default', 'prompt', '{json.dumps(start_default)}')'''
+        ]
+    
+    @staticmethod
+    def _generate_agents():
+        import json
+
+        invoker_data = {
+            "names": ["invoker"],
+            "chat_event_prompt_idx": {
+                "base": "invoker",
+                "welcome": "none",
+                "start": "none"
+            }
+        }
+
+        invoker_prompt = {
+            "prompt": prompt_enum.DefaultPrompts.INVOKER
+        }
+
+        none_prompt = {
+            "prompt": prompt_enum.DefaultPrompts.NONE
+        }
+
+        return [
+            f'''INSERT OR IGNORE INTO "references" (reference_id, reference_type, data) 
+               VALUES ('{variables.Variables.DEFAULT_INVOKER}', 'assistant', '{json.dumps(invoker_data)}')''',
+
+            f'''INSERT OR IGNORE INTO "references" (reference_id, reference_type, data) 
+               VALUES ('none', 'prompt', '{json.dumps(none_prompt)}')''',
+
+            f'''INSERT OR IGNORE INTO "references" (reference_id, reference_type, data) 
+               VALUES ('invoker', 'prompt', '{json.dumps(invoker_prompt)}')'''
         ]
 
     @staticmethod

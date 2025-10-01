@@ -1,0 +1,43 @@
+{
+    "invoke": {
+        "type": "function",
+        "name": "invoke",
+        "description": "Call one of the tools described in the system prompt",
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "tool": {
+                    "type": "string",
+                    "description": "The name of the tool to invoke",
+                    "enum": ["generate_image"]
+                }
+            },
+            "required": ["tool"],
+            "additionalProperties": false
+        },
+        "strict": true
+    },
+    
+    "cron": {
+        "type": "function",
+        "name": "generate_image",
+        "description": "Use when the user requests to generate or modify an image",
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "prompt": {
+                    "type": "string",
+                    "description": "The prompt passed generate the image"
+                },
+                "interval": {
+                    "type": "string",
+                    "description": "The interval to repeat the job",
+                    "enum": ["daily", "weekly", "monthly"]
+                }
+            },
+            "required": ["time"],
+            "additionalProperties": false
+        },
+        "strict": true
+    }
+}

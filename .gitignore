@@ -4,6 +4,8 @@
 memory/*
 references/*
 
+!references/tools.json
+
 # Byte-compiled / optimized / DLL files
 __pycache__/
 *.py[cod]

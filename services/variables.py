@@ -23,6 +23,7 @@ class Variables:
     LOCAL_API_PORT = os.environ.get('LOCAL_API_PORT', '8888') # port of the local ollama host
 
     DEFAULT_ASSISTANT = os.environ.get('DEFAULT_ASSISTANT', 'default') # id of the default assistant, assumed to exist in assistant references
+    DEFAULT_INVOKER = os.environ.get('DEFAULT_INVOKER', 'invoker') # name of the default agent, assumed to exist in assistant references
     DEFAULT_MODEL = os.environ.get('DEFAULT_MODEL', 'gpt-4.1') # id (name) of the default model. assumed to exist in model references
 
     try:
