@@ -2,6 +2,7 @@ import os
 import random
 
 from babel import Locale
+from typing import List
 from dotenv import load_dotenv
 
 class Variables:
@@ -62,3 +63,16 @@ class Variables:
             return Locale.parse(language_code).get_display_name(language_code).capitalize()
         except:
             return language_code
+        
+    @staticmethod
+    def parse_text(text: str) -> List[str]:
+        '''
+        Parse the text for custom delimiters.
+        '''
+        text = text.strip()
+        text_list = text.split('|n|')
+
+        # remove empty strings and whitespace-only strings
+        filtered_list = [s for s in text_list if s.strip()]
+
+        return filtered_list

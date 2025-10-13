@@ -44,6 +44,8 @@ class Assistant:
         prompts: Dict[prompt_enum.PromptEnum, str] = event.prompts
         special_fields: Dict = event.special_fields
 
+        current_date_utc = special_fields.get('current_date_utc', None)
+
         chat_id: str = wdw.chat_id
         model_provider = special_fields.get('model_provider', 'openai')
 
@@ -55,6 +57,12 @@ class Assistant:
             'role': 'system',
             'content': [{'type': 'text', 'text': f'{base_prompt}'}]
         })
+
+        if current_date_utc:
+            messages.append({
+                'role': 'system',
+                'content': [{'type': 'text', 'text': f'Current date UTC: {current_date_utc}'}]
+            })
 
         if special_fields.get('disable_thinking'):
             messages.append({
@@ -102,13 +110,17 @@ class Assistant:
 
             wrapper_list = []
 
-            assistant_message = wrapper.MessageWrapper(
-                id=str(response.id), chat_id=chat_id, 
-                role='assistant', user=variables.Variables.USERNAME,
-                message=message_text, ping=False,
-                datetime=dt.datetime.now(tz=dt.timezone.utc)
-            )
-            wrapper_list.append(assistant_message)
+            message_list = variables.Variables.parse_text(message_text)
+
+            for m in message_list:
+                assistant_message = wrapper.MessageWrapper(
+                    id=str(response.id), chat_id=chat_id, 
+                    role='assistant', user=variables.Variables.USERNAME,
+                    message=m, ping=False,
+                    datetime=dt.datetime.now(tz=dt.timezone.utc)
+                )
+
+                wrapper_list.append(assistant_message)
 
             for img in images:
                 if 'image_url' in img:

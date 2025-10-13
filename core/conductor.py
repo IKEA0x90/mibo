@@ -135,6 +135,8 @@ class Conductor:
             prompts: Dict[prompt_enum.PromptEnum, str] = await self.ref.get_prompts(chat_id)
             special_fields: Dict = await self.ref.get_special_fields(chat_id)
 
+            special_fields['current_date_utc'] = dt.datetime.now(tz=dt.timezone.utc).strftime('%Y/%m/%d')
+
             chance: int = await self.ref.get_chance(chat_id)
             random_chance = random.randint(1, 100)
 

@@ -223,33 +223,21 @@ class Mibo:
         
         chat_id = messages[0].chat_id
 
-        message_text: str = ''
+        message_texts: List[str] = []
         message_images: List[wrapper.ImageWrapper] = []
 
         for message in messages:
             if isinstance(message, wrapper.MessageWrapper):
-                message_text: str = message._remove_prefixes(message.message, await self.ref.get_assistant_names(chat_id))
+                #message._remove_prefixes(message.message, await self.ref.get_assistant_names(chat_id))
+                message_texts.append(message.message)
 
             if isinstance(message, wrapper.ImageWrapper):
                 message_images.append(message)
 
-        if message_text or message_images:
-            await self._send_message(chat_id, message_text, message_images, event.typing)
+        if message_texts or message_images:
+            await self._send_message(chat_id, message_texts, message_images, event.typing)
 
-    @staticmethod
-    def parse_text(text: str) -> List[str]:
-        '''
-        Parse the text for custom delimiters.
-        '''
-        text = text.strip()
-        text_list = text.split('|n|')
-
-        # remove empty strings and whitespace-only strings
-        filtered_list = [s for s in text_list if s.strip()]
-
-        return filtered_list
-
-    async def _send_message(self, chat_id: str, text: str, images: List[wrapper.ImageWrapper], typing) -> None:
+    async def _send_message(self, chat_id: str, messages: List[str], images: List[wrapper.ImageWrapper], typing) -> None:
         '''
         Send the text and images from the response message.
         Text and/or images may be empty - in that case, only the non-empty item is sent.
@@ -257,47 +245,42 @@ class Mibo:
         If images are sent, they are combined into an album and the message is sent appended to the first image (like users do).
         '''
         try:
-            if not text and not images:
+            if not messages and not images:
                 return
             
-            text_list = []
-
-            if text:
-                text_list = self.parse_text(text)
-
             # If only text
-            if text_list and not images:
-                for i, t in enumerate(text_list):
+            if messages and not images:
+                for i, t in enumerate(messages):
                     await self._pop_typing(chat_id)
 
                     await self.app.bot.send_message(chat_id=chat_id, text=t)
-                    
-                    if i != (len(text_list) - 1):
+
+                    if i != (len(messages) - 1):
                         typing()
 
                     await asyncio.sleep(variables.Variables.typing_delay(t) + 0.25) # average of 0.5 for 10 characters and 5 for 100 characters
                     
             # If only images
-            elif images and not text:
+            elif images and not messages:
                 media_group = [
                     self.app.bot._wrap_input_media_photo(image.image_url) for image in images
                 ]
                 await self.app.bot.send_media_group(chat_id=chat_id, media=media_group)
 
             # If both text and images: send as album, text as caption to first image
-            elif images and text_list:
+            elif images and messages:
                 media_group = []
                 for idx, image in enumerate(images):
-                    caption = text_list[0] if idx == 0 else None
+                    caption = messages[0] if idx == 0 else None
                     media_group.append(InputMediaPhoto(media=image.image_url, caption=caption))
                 await self.app.bot.send_media_group(chat_id=chat_id, media=media_group)
 
-                for i, t in enumerate(text_list[1:]):
+                for i, t in enumerate(messages[1:]):
                     await self._pop_typing(chat_id)
 
                     await self.app.bot.send_message(chat_id=chat_id, text=t)
 
-                    if i != (len(text_list) - 1):
+                    if i != (len(messages) - 1):
                         typing()
 
                     await asyncio.sleep(variables.Variables.typing_delay(t) + 0.25)

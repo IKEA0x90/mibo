@@ -100,7 +100,7 @@ class MessageWrapper(Wrapper):
         return ['message', 'reply_id', 'quote', 'think']
 
     def __str__(self):
-        return f'{self.user}: {self.message}'
+        return f'{self.message}'
 
     @staticmethod
     def _remove_prefixes(text: str, prefixes: List[str]) -> str:

@@ -31,6 +31,12 @@ class Window():
     
     def __delitem__(self, idx):
         del self.messages[idx]
+        
+    def __contains__(self, message: wrapper.Wrapper) -> bool:
+        '''
+        Enables the 'in' keyword to check if the window contains a message with the same id and type.
+        '''
+        return any((msg.id == message.id and msg.type == message.type) for msg in self.messages)
 
     def contains(self, message: wrapper.Wrapper) -> bool:
         '''
@@ -99,6 +105,28 @@ class Window():
             oldest_tokens = oldest_msg.tokens
             self.tokens -= oldest_tokens
 
+    def _prepare_text(self, message: wrapper.MessageWrapper, message_id: int, reply_to: int) -> str:
+        text = message.message if message.role == 'assistant' else str(message)
+
+        metadata = {
+            'id': message_id,
+            'user': message.user,
+            'reply_to': reply_to,
+            'quote': message.quote,
+        }
+        
+        text = f'=id:{metadata["id"]}=user:{metadata["user"]}='
+
+        if metadata['reply_to']:
+            text += f'replyTo:{metadata["reply_to"]}='
+
+        if metadata['quote']:
+            pass # TODO
+
+        text = text.strip()
+
+        return text
+
     async def transform_messages(self) -> List[Dict[str, object]]:
         '''
         Transforms the context messages into a json compatible with OpenAI chat completions API.
@@ -107,8 +135,8 @@ class Window():
         '''
         grouped_content = {}
         messages = []
-        
-        for message in self.messages:
+
+        for message_id, message in enumerate(self.messages, start=1):
             group_id = message.id
             
             if group_id not in grouped_content:
@@ -120,7 +148,11 @@ class Window():
             
             if isinstance(message, wrapper.MessageWrapper):
                 if message.message:
-                    text = message.message if message.role == 'assistant' else str(message)
+
+                    # get reply_id if it exists in current window
+                    reply_id = (reply_id := message.reply_id) if reply_id and reply_id in self.messages else None
+
+                    text = self._prepare_text(message, message_id, reply_id)
                     if text:
                         grouped_content[group_id]["content"].append({"type": "text", "text": text})
             
@@ -134,7 +166,7 @@ class Window():
                     )
                 else:
                     grouped_content[group_id]["content"].append(
-                        {"type": "text", "text": f"|IMAGE|{message.image_summary or '|IMAGE|Image content not available.'}"}
+                        {"type": "text", "text": f"=image={message.image_summary or '=image=Image content not available.'}"}
                     )
         
         sorted_groups = sorted(grouped_content.values(), key=lambda x: x["datetime"])
