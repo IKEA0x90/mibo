@@ -242,6 +242,89 @@ class Database:
 
     async def _update_telegram_id(self, event: mibo_events.TelegramIDUpdateRequest):
         messages: List[Message] = event.messages
+        wrappers: List[wrapper.Wrapper] = getattr(event, 'wrappers', [])
+        
+        if not messages or not wrappers:
+            return
+            
+        try:
+            # Map telegram messages to wrappers based on the sending logic:
+            # 1. Images are sent first as media group (if any)
+            # 2. Then text messages are sent (starting from index 1 if images had captions)
+            
+            message_idx = 0
+            image_wrappers = [w for w in wrappers if isinstance(w, wrapper.ImageWrapper)]
+            text_wrappers = [w for w in wrappers if isinstance(w, wrapper.MessageWrapper)]
+            
+            async with self._lock:
+                async with self.conn.cursor() as cursor:
+                    await cursor.execute('BEGIN')
+                    try:
+                        # First, handle image wrappers (media group messages)
+                        for wrapper_obj in image_wrappers:
+                            if message_idx >= len(messages):
+                                break
+                                
+                            telegram_msg = messages[message_idx]
+                            new_telegram_id = str(telegram_msg.message_id)
+                            
+                            await cursor.execute(
+                                "UPDATE wrappers SET telegram_id = ? WHERE telegram_id = ? AND chat_id = ?",
+                                (new_telegram_id, wrapper_obj.id, wrapper_obj.chat_id)
+                            )
+                            
+                            # Update the wrapper object as well
+                            wrapper_obj.id = new_telegram_id
+                            message_idx += 1
+                        
+                        # Then handle text wrappers
+                        # If there were images, the first text wrapper was used as caption, skip it
+                        text_start_idx = 1 if image_wrappers else 0
+                        
+                        for wrapper_obj in text_wrappers[text_start_idx:]:
+                            if message_idx >= len(messages):
+                                break
+                                
+                            telegram_msg = messages[message_idx]
+                            new_telegram_id = str(telegram_msg.message_id)
+                            
+                            await cursor.execute(
+                                "UPDATE wrappers SET telegram_id = ? WHERE telegram_id = ? AND chat_id = ?",
+                                (new_telegram_id, wrapper_obj.id, wrapper_obj.chat_id)
+                            )
+                            
+                            # Update the wrapper object as well
+                            wrapper_obj.id = new_telegram_id
+                            message_idx += 1
+                        
+                        # Handle the first text wrapper if it was used as caption (no separate message)
+                        if image_wrappers and text_wrappers:
+                            # The first text wrapper shares the telegram ID with the first image
+                            first_text_wrapper = text_wrappers[0]
+                            first_image_wrapper = image_wrappers[0]
+                            
+                            await cursor.execute(
+                                "UPDATE wrappers SET telegram_id = ? WHERE telegram_id = ? AND chat_id = ?",
+                                (first_image_wrapper.id, first_text_wrapper.id, first_text_wrapper.chat_id)
+                            )
+                            
+                            # Update the wrapper object as well
+                            first_text_wrapper.id = first_image_wrapper.id
+                        
+                        await self.conn.commit()
+                        
+                    except Exception:
+                        await self.conn.rollback()
+                        raise
+                        
+        except Exception as e:
+            _, _, tb = sys.exc_info()
+            await self.bus.emit(system_events.ErrorEvent(
+                error="Failed to update telegram IDs in database", 
+                e=e, tb=tb, 
+                event_id=event.event_id, 
+                chat_id=event.chat_id
+            ))
 
     @staticmethod
     def _populate_defaults():

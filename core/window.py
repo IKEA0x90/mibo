@@ -115,14 +115,15 @@ class Window():
             'quote': message.quote,
         }
         
-        text = f'=id:{metadata["id"]}=user:{metadata["user"]}='
+        meta_text = f'=id:{metadata["id"]}=user:{metadata["user"]}='
 
         if metadata['reply_to']:
-            text += f'replyTo:{metadata["reply_to"]}='
+            meta_text += f'replyTo:{metadata["reply_to"]}='
 
         if metadata['quote']:
             pass # TODO
 
+        text = f'{meta_text}\n{text}'
         text = text.strip()
 
         return text

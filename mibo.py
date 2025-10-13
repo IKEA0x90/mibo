@@ -225,19 +225,21 @@ class Mibo:
 
         message_texts: List[str] = []
         message_images: List[wrapper.ImageWrapper] = []
+        message_wrappers: List[wrapper.MessageWrapper] = []
 
         for message in messages:
             if isinstance(message, wrapper.MessageWrapper):
                 #message._remove_prefixes(message.message, await self.ref.get_assistant_names(chat_id))
                 message_texts.append(message.message)
+                message_wrappers.append(message)
 
             if isinstance(message, wrapper.ImageWrapper):
                 message_images.append(message)
 
         if message_texts or message_images:
-            await self._send_message(chat_id, message_texts, message_images, event.typing)
+            await self._send_message(chat_id, message_texts, message_images, message_wrappers, event.typing)
 
-    async def _send_message(self, chat_id: str, messages: List[str], images: List[wrapper.ImageWrapper], typing) -> None:
+    async def _send_message(self, chat_id: str, messages: List[str], images: List[wrapper.ImageWrapper], message_wrappers: List[wrapper.MessageWrapper], typing) -> None:
         '''
         Send the text and images from the response message.
         Text and/or images may be empty - in that case, only the non-empty item is sent.
@@ -248,16 +250,15 @@ class Mibo:
             if not messages and not images:
                 return
             
-            sent_messages = {}
+            sent_messages = []
             
             # If only text
             if messages and not images:
-                i: int
-                t: wrapper.Wrapper
                 for i, t in enumerate(messages):
                     await self._pop_typing(chat_id)
 
-                    sent_messages[t] = await self.app.bot.send_message(chat_id=chat_id, text=t)
+                    sent_messages.append(await self.app.bot.send_message(chat_id=chat_id, text=t))
+
 
                     if i != (len(messages) - 1):
                         typing()
@@ -270,6 +271,7 @@ class Mibo:
                     self.app.bot._wrap_input_media_photo(image.image_url) for image in images
                 ]
                 sent_messages = await self.app.bot.send_media_group(chat_id=chat_id, media=media_group)
+                sent_messages = [m for m in sent_messages]
 
             # If both text and images: send as album, text as caption to first image
             elif images and messages:
@@ -278,19 +280,19 @@ class Mibo:
                     caption = messages[0] if idx == 0 else None
                     media_group.append(InputMediaPhoto(media=image.image_url, caption=caption))
                 sent_messages = await self.app.bot.send_media_group(chat_id=chat_id, media=media_group)
-                
+                sent_messages = [m for m in sent_messages]
 
                 for i, t in enumerate(messages[1:]):
                     await self._pop_typing(chat_id)
 
-                    sent_messages[t] = await self.app.bot.send_message(chat_id=chat_id, text=t)
+                    sent_messages.append(await self.app.bot.send_message(chat_id=chat_id, text=t))
 
                     if i != (len(messages) - 1):
                         typing()
 
                     await asyncio.sleep(variables.Variables.typing_delay(t) + 0.25)
 
-            await self.bus.emit(mibo_events.TelegramIDUpdateRequest(messages=sent_messages, chat_id=chat_id))
+            await self.bus.emit(mibo_events.TelegramIDUpdateRequest(messages=sent_messages, wrappers=message_wrappers + images, chat_id=chat_id))
         
         except Exception as e:
             _, _, tb = sys.exc_info()
