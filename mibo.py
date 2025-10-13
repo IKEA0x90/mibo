@@ -248,12 +248,15 @@ class Mibo:
             if not messages and not images:
                 return
             
+            sent_messages = []
+            
             # If only text
             if messages and not images:
                 for i, t in enumerate(messages):
                     await self._pop_typing(chat_id)
 
-                    await self.app.bot.send_message(chat_id=chat_id, text=t)
+                    sent_messages.append(await self.app.bot.send_message(chat_id=chat_id, text=t))
+
 
                     if i != (len(messages) - 1):
                         typing()
@@ -265,7 +268,8 @@ class Mibo:
                 media_group = [
                     self.app.bot._wrap_input_media_photo(image.image_url) for image in images
                 ]
-                await self.app.bot.send_media_group(chat_id=chat_id, media=media_group)
+                sent_messages = await self.app.bot.send_media_group(chat_id=chat_id, media=media_group)
+                sent_messages = [m for m in sent_messages]
 
             # If both text and images: send as album, text as caption to first image
             elif images and messages:
@@ -273,17 +277,20 @@ class Mibo:
                 for idx, image in enumerate(images):
                     caption = messages[0] if idx == 0 else None
                     media_group.append(InputMediaPhoto(media=image.image_url, caption=caption))
-                await self.app.bot.send_media_group(chat_id=chat_id, media=media_group)
+                sent_messages = await self.app.bot.send_media_group(chat_id=chat_id, media=media_group)
+                sent_messages = [m for m in sent_messages]
 
                 for i, t in enumerate(messages[1:]):
                     await self._pop_typing(chat_id)
 
-                    await self.app.bot.send_message(chat_id=chat_id, text=t)
+                    sent_messages.append(await self.app.bot.send_message(chat_id=chat_id, text=t))
 
                     if i != (len(messages) - 1):
                         typing()
 
                     await asyncio.sleep(variables.Variables.typing_delay(t) + 0.25)
+
+            await self.bus.emit(mibo_events.TelegramIDUpdateRequest(messages=sent_messages, chat_id=chat_id))
         
         except Exception as e:
             _, _, tb = sys.exc_info()
