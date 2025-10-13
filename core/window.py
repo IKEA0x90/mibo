@@ -149,8 +149,8 @@ class Window():
             if isinstance(message, wrapper.MessageWrapper):
                 if message.message:
 
-                    # get reply_id if it exists in current window
-                    reply_id = (reply_id := message.reply_id) if reply_id and reply_id in self.messages else None
+                    reply_id = message.reply_id
+                    reply_id = reply_id if reply_id and reply_id in self.messages else None
 
                     text = self._prepare_text(message, message_id, reply_id)
                     if text:
