@@ -8,10 +8,11 @@ from services import tokenizers, variables
 import aiofiles
 import datetime as dt
 
+from telegram import Chat, Update, Message, MessageEntity, User
 from pathlib import Path
 from uuid import uuid4
 from typing import Dict, List, Tuple
-from events import event_bus, ref_events, system_events
+from events import event_bus, mibo_events, ref_events, system_events
 from core import window, wrapper
 from services import variables
 
@@ -98,6 +99,7 @@ class Database:
             
         self.bus.register(ref_events.NewChat, self._insert_chat)
         self.bus.register(ref_events.NewMessage, self._add_message)
+        self.bus.register(mibo_events.TelegramIDUpdateRequest, self._update_telegram_id)
 
         self._handlers_registered = True
     
@@ -237,6 +239,9 @@ class Database:
         except Exception as e:
             _, _, tb = sys.exc_info()
             await self.bus.emit(system_events.ErrorEvent(error=f'Failed to add a message to the database.', e=e, tb=tb, event_id=event.event_id, chat_id=chat_id))
+
+    async def _update_telegram_id(self, event: mibo_events.TelegramIDUpdateRequest):
+        messages: List[Message] = event.messages
 
     @staticmethod
     def _populate_defaults():
