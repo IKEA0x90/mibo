@@ -1,5 +1,6 @@
 import datetime as dt
 import asyncio
+import re
 
 from typing import List, Dict, Deque
 from collections import deque
@@ -55,6 +56,48 @@ class Window():
 
             await self._insert_live_message(message, True)
 
+    async def extract_metadata(self, message: wrapper.Wrapper) -> wrapper.Wrapper:
+        """
+        Extracts metadata tags from the start of the text in the format =key:value=.
+        Returns a metadata dictionary and the remaining text.
+        Tags are optional and may not all be present.
+        """
+        if not isinstance(message, wrapper.MessageWrapper) or not message.message:
+            return message
+        
+        message: wrapper.MessageWrapper
+        text = message.message
+
+        metadata = {}
+        pattern = r"^(=([a-zA-Z0-9]+):([^=]*)=)+"
+        tag_pattern = r"=([a-zA-Z0-9]+):([^=]*)="
+
+        # Find all =key:value= tags at the start
+        match = re.match(pattern, text)
+        if match:
+            tags = re.findall(tag_pattern, match.group(0))
+            for key, value in tags:
+                if key.lower() == 'id':
+                    metadata['id'] = value if value else None
+                elif key.lower() == 'by':
+                    metadata['by'] = value if value else None
+                elif key.lower() == 'replyto':
+                    metadata['replyTo'] = value if value else None
+                elif key.lower() == 'quote':
+                    metadata['quote'] = value if value else None
+                else:
+                    metadata[key.lower()] = value
+            # Remove tags from text
+            text = text[match.end():].lstrip('\n')
+
+        message.message = text
+
+        if replyTo := metadata.get('replyTo'):
+            replied_message = self.messages[replyTo - 1] 
+            message.reply_id = replied_message.id if replied_message else None
+
+        return message
+
     async def add_message(self, message: wrapper.Wrapper, set_ready: bool = True) -> bool:
         '''
         Adds a message to the window. 
@@ -77,12 +120,15 @@ class Window():
     async def _insert_live_message(self, message: wrapper.Wrapper) -> None:
         if self.contains(message):
             return
+        
+        message = await self.extract_metadata(message)
 
         message_tokens = message.tokens or message.calculate_tokens()
         inserted = False
 
         # assume messages arrive mostly in order
-        if not self.messages or message.datetime >= self.messages[-1].datetime:
+        # add 5 leeway seconds 
+        if not self.messages or (message.datetime + dt.timedelta(seconds=5) >= self.messages[-1].datetime):
             self.messages.append(message)
             inserted = True
 
@@ -110,20 +156,20 @@ class Window():
 
         metadata = {
             'id': message_id,
-            'user': message.user,
-            'reply_to': reply_to,
+            'by': message.user,
+            'replyTo': reply_to,
             'quote': message.quote,
         }
         
-        meta_text = f'=id:{metadata["id"]}=user:{metadata["user"]}='
+        meta_text = f'=id:{metadata["id"]}=by:{metadata["by"]}='
 
-        if metadata['reply_to']:
-            meta_text += f'replyTo:{metadata["reply_to"]}='
+        if metadata['replyTo']:
+            meta_text += f'replyTo:{metadata["replyTo"]}='
 
         if metadata['quote']:
             pass # TODO
 
-        text = f'{meta_text}\n{text}'
+        text = f'{meta_text}{text}'
         text = text.strip()
 
         return text

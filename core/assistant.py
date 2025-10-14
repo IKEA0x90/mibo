@@ -112,7 +112,7 @@ class Assistant:
 
             message_list = variables.Variables.parse_text(message_text)
 
-            for i, m in enumerate(message_list):
+            for i, m in enumerate(message_list):  
                 assistant_message = wrapper.MessageWrapper(
                     id=f'{str(response.id)}-{i}',
                     chat_id=chat_id, 
@@ -129,7 +129,7 @@ class Assistant:
                     image = await self._download_image_url(img['image_url'], incomplete_wrapper=incomplete_wrapper, parent_event=event)
                     wrapper_list.append(image)
 
-            await self.ref.add_message(chat_id, wrapper_list, False)
+            await self.ref.add_messages(chat_id, wrapper_list, False)
 
             response_event = assistant_events.AssistantResponse(messages=wrapper_list, event_id=event.event_id, typing=typing)
             await self.bus.emit(response_event)

@@ -206,7 +206,7 @@ class Ref:
         self.db.initialize_sync()
         self._load()
 
-    async def add_message(self, chat_id: str, wrappers: List[wrapper.Wrapper], set_ready: bool = True, **kwargs) -> window.Window:
+    async def add_messages(self, chat_id: str, wrappers: List[wrapper.Wrapper], set_ready: bool = True, **kwargs) -> window.Window:
         '''
         Add a message to a chat window, returning the window
         '''

@@ -407,6 +407,7 @@ class Database:
                 datetime      TIMESTAMP NOT NULL,
                 role          TEXT NOT NULL,
                 user          TEXT NOT NULL,
+                reply_id      INTEGER,
                 FOREIGN KEY (chat_id) REFERENCES chats (chat_id) ON DELETE CASCADE
             );
             ''',
@@ -415,7 +416,6 @@ class Database:
             CREATE TABLE IF NOT EXISTS messages (
                 sql_id    INTEGER PRIMARY KEY,
                 message   TEXT NOT NULL,
-                reply_id  INTEGER,
                 quote     TEXT,
                 think     TEXT,
                 FOREIGN KEY (sql_id) REFERENCES wrappers (sql_id) ON DELETE CASCADE
