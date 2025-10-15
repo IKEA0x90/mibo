@@ -57,44 +57,65 @@ class Window():
             await self._insert_live_message(message, True)
 
     async def extract_metadata(self, message: wrapper.Wrapper) -> wrapper.Wrapper:
-        """
-        Extracts metadata tags from the start of the text in the format =key:value=.
-        Returns a metadata dictionary and the remaining text.
-        Tags are optional and may not all be present.
-        """
+        '''
+        Extract =key:value= tags from the start of message.message.
+        Leaves text after the tags in message.message.
+        Returns the message (modified in-place).
+        '''
+        # Basic guards (keep your original guard logic)
         if not isinstance(message, wrapper.MessageWrapper) or not message.message:
             return message
-        
-        message: wrapper.MessageWrapper
+
         text = message.message
-
         metadata = {}
-        pattern = r"^(=([a-zA-Z0-9]+):([^=]*)=)+"
-        tag_pattern = r"=([a-zA-Z0-9]+):([^=]*)="
 
-        # Find all =key:value= tags at the start
-        match = re.match(pattern, text)
-        if match:
-            tags = re.findall(tag_pattern, match.group(0))
-            for key, value in tags:
-                if key.lower() == 'id':
-                    metadata['id'] = value if value else None
-                elif key.lower() == 'by':
-                    metadata['by'] = value if value else None
-                elif key.lower() == 'replyto':
-                    metadata['replyTo'] = value if value else None
-                elif key.lower() == 'quote':
-                    metadata['quote'] = value if value else None
-                else:
-                    metadata[key.lower()] = value
-            # Remove tags from text
-            text = text[match.end():].lstrip('\n')
+        # pattern for a single tag like =key:value=
+        tag_re = re.compile(r"=([A-Za-z0-9]+):([^=]*)=")
 
-        message.message = text
+        idx = 0
+        # consume tags from the very start
+        while True:
+            m = tag_re.match(text, idx)
+            if not m:
+                break
+            key = m.group(1)
+            value = m.group(2) if m.group(2) != "" else None
 
-        if replyTo := metadata.get('replyTo'):
-            replied_message = self.messages[replyTo - 1] 
-            message.reply_id = replied_message.id if replied_message else None
+            k_lower = key.lower()
+            if k_lower == 'id':
+                metadata['id'] = value
+            elif k_lower == 'by':
+                metadata['by'] = value
+            elif k_lower == 'replyto':
+                # preserve camelCase in output as you used `replyTo` elsewhere
+                metadata['replyTo'] = value
+            elif k_lower == 'quote':
+                metadata['quote'] = value
+            else:
+                # store other keys in lowercase
+                metadata[k_lower] = value
+
+            idx = m.end()
+
+        # Remove the consumed tag block from the start, preserving the rest
+        remaining = text[idx:]
+        # trim only a leading newline if present (like your original .lstrip('\n'))
+        if remaining.startswith('\n'):
+            remaining = remaining.lstrip('\n')
+        message.message = remaining
+
+        # Resolve replyTo into reply_id (safe numeric parsing + bounds checking)
+        if reply_to_val := metadata.get('replyTo'):
+            try:
+                rt = int(reply_to_val)
+            except (TypeError, ValueError):
+                rt = None
+
+            if rt is not None and 1 <= rt <= len(self.messages):
+                replied_message = self.messages[rt - 1]  # keep your indexing logic
+                message.reply_id = replied_message.id if replied_message else None
+            else:
+                message.reply_id = None
 
         return message
 
@@ -127,12 +148,16 @@ class Window():
         inserted = False
 
         # assume messages arrive mostly in order
-        # add 5 leeway seconds 
-        if not self.messages or (message.datetime + dt.timedelta(seconds=5) >= self.messages[-1].datetime):
-            self.messages.append(message)
-            inserted = True
-
-        else:
+        try:
+            if not self.messages or int(message.id) >= int(self.messages[-1].id):
+                self.messages.append(message)
+                inserted = True
+        except ValueError:
+            if not self.messages or (message.datetime + dt.timedelta(seconds=5) >= self.messages[-1].datetime):
+                self.messages.append(message)
+                inserted = True
+        
+        if not inserted:
             for i in range(len(self.messages) - 1, -1, -1):
                 if message.datetime >= self.messages[i].datetime:
                     self.messages.insert(i + 1, message)
@@ -216,7 +241,7 @@ class Window():
                         {"type": "text", "text": f"=image={message.image_summary or '=image=Image content not available.'}"}
                     )
         
-        sorted_groups = sorted(grouped_content.values(), key=lambda x: x["datetime"])
+        sorted_groups = [grouped_content[k] for k in sorted(grouped_content.keys())]
         
         for group in sorted_groups:
             if group["content"]:

@@ -572,8 +572,8 @@ class Database:
         messages: List[wrapper.Wrapper] = []
         running_total = 0
         batch_size = 10
-        # Keyset (cursor) values: we page by (datetime DESC, sql_id DESC)
-        last_datetime = None  # store raw DB value (string / datetime)
+        # Keyset (cursor) values: we page by (telegram_id DESC, sql_id DESC)
+        last_telegram_id = None
         last_sql_id = None
 
         try:
@@ -584,14 +584,14 @@ class Database:
                     "FROM wrappers WHERE chat_id = ? AND role != 'system'"
                 )
                 params = [chat_id]
-                if last_datetime is not None and last_sql_id is not None:
-                    # (datetime, sql_id) pair strictly less than last pair in DESC ordering
+                if last_telegram_id is not None and last_sql_id is not None:
+                    # (telegram_id, sql_id) pair strictly less than last pair in DESC ordering
                     base_sql += (
-                        " AND (datetime < ? OR (datetime = ? AND sql_id < ?))"
+                        " AND (telegram_id < ? OR (telegram_id = ? AND sql_id < ?))"
                     )
-                    params.extend([last_datetime, last_datetime, last_sql_id])
+                    params.extend([last_telegram_id, last_telegram_id, last_sql_id])
 
-                base_sql += " ORDER BY datetime DESC, sql_id DESC LIMIT ?"
+                base_sql += " ORDER BY telegram_id DESC, sql_id DESC LIMIT ?"
                 params.append(batch_size)
 
                 async with self.conn.cursor() as cursor:
@@ -603,7 +603,7 @@ class Database:
 
                 # Prepare next key (oldest row in this batch)
                 tail = parent_rows[-1]
-                last_datetime = tail["datetime"]
+                last_telegram_id = tail["telegram_id"]
                 last_sql_id = tail["sql_id"]
 
                 # Group SQL IDs per wrapper_type to fetch children in bulk
