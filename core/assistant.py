@@ -49,7 +49,9 @@ class Assistant:
         chat_id: str = wdw.chat_id
         model_provider = special_fields.get('model_provider', 'openai')
 
-        user_messages: List[Dict] = await wdw.transform_messages()
+        user_messages: List[Dict]
+        idx: Dict[str, int]
+        user_messages, idx = await wdw.transform_messages()
         messages: List[Dict] = []
 
         base_prompt = prompts.get(prompt_enum.BasePrompt, '')
@@ -129,7 +131,7 @@ class Assistant:
                     image = await self._download_image_url(img['image_url'], incomplete_wrapper=incomplete_wrapper, parent_event=event)
                     wrapper_list.append(image)
 
-            await self.ref.add_messages(chat_id, wrapper_list, False)
+            await self.ref.add_messages(chat_id, wrapper_list, False, idx=idx)
 
             response_event = assistant_events.AssistantResponse(messages=wrapper_list, event_id=event.event_id, typing=typing)
             await self.bus.emit(response_event)

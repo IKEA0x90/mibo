@@ -56,7 +56,7 @@ class Window():
 
             await self._insert_live_message(message, True)
 
-    async def _extract_metadata(self, message: wrapper.Wrapper) -> wrapper.Wrapper:
+    async def _extract_metadata(self, message: wrapper.Wrapper, **kwargs) -> wrapper.Wrapper:
         '''
         Extract <key:value> tags from the start of message.message.
         Leaves text after the tags in message.message.
@@ -65,6 +65,9 @@ class Window():
         # Basic guards
         if not isinstance(message, wrapper.MessageWrapper) or not message.message:
             return message
+        
+        # Get the ID mapping if available
+        idx = kwargs.get("idx")
 
         message_text = message.message
         message_metadata = {}
@@ -121,7 +124,18 @@ class Window():
             if reply_to_number is not None and current_message_id is not None and reply_to_number == current_message_id - 1:
                 message_metadata["replyTo"] = None
                 message.reply_id = None
-
+            
+            # If we have the idx mapping from transform_messages, use it to get the actual message ID
+            elif idx and reply_to_number is not None:
+                # Find the original message ID that corresponds to the reply number
+                for telegram_id, msg_id in idx.items():
+                    if msg_id == reply_to_number:
+                        message.reply_id = telegram_id
+                        break
+                else:
+                    message.reply_id = None
+            
+            # Fallback to current window state if no idx mapping provided
             elif reply_to_number is not None and 1 <= reply_to_number <= len(self.messages):
                 replied_message = self.messages[reply_to_number - 1]
                 message.reply_id = replied_message.id if replied_message else None
@@ -130,8 +144,7 @@ class Window():
 
         return message
 
-
-    async def add_message(self, message: wrapper.Wrapper, set_ready: bool = True) -> bool:
+    async def add_message(self, message: wrapper.Wrapper, set_ready: bool = True, **kwargs) -> bool:
         '''
         Adds a message to the window. 
         returns True if the window now contains the latest context.
@@ -140,7 +153,7 @@ class Window():
             is_new = message.datetime >= self.start_datetime
 
             # add message
-            await self._insert_live_message(message)
+            await self._insert_live_message(message, **kwargs)
 
             # if this is the first non-stale message after startup
             # mark the window ready and broadcast.
@@ -150,11 +163,11 @@ class Window():
             # assistant should respond only for new messages *after* ready.
             return is_new and self.ready
 
-    async def _insert_live_message(self, message: wrapper.Wrapper) -> None:
+    async def _insert_live_message(self, message: wrapper.Wrapper, **kwargs) -> None:
         if self.contains(message):
             return
         
-        message = await self._extract_metadata(message)
+        message = await self._extract_metadata(message, **kwargs)
 
         message_tokens = message.tokens or message.calculate_tokens()
         inserted = False
@@ -214,8 +227,8 @@ class Window():
         Preserves both text and images as content blocks.
         Groups messages with the same group_id.
         '''
-        sorted_messages = sorted(self.messages, key=lambda m: m.id)
-        telegram_id_to_message_id = {str(msg.id): idx + 1 for idx, msg in enumerate(sorted_messages)}
+        sorted_messages: List[wrapper.Wrapper] = sorted(self.messages, key=lambda m: m.id)
+        telegram_id_to_message_id: Dict[str, int] = {str(msg.id): idx + 1 for idx, msg in enumerate(sorted_messages)}
 
         grouped_content = {}
         messages = []
@@ -264,4 +277,4 @@ class Window():
                     "content": group["content"]
                 })
 
-        return messages
+        return messages, telegram_id_to_message_id
