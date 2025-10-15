@@ -56,9 +56,9 @@ class Window():
 
             await self._insert_live_message(message, True)
 
-    async def extract_metadata(self, message: wrapper.Wrapper) -> wrapper.Wrapper:
+    async def _extract_metadata(self, message: wrapper.Wrapper) -> wrapper.Wrapper:
         '''
-        Extract =key:value= tags from the start of message.message.
+        Extract <key:value> tags from the start of message.message.
         Leaves text after the tags in message.message.
         Returns the message (modified in-place).
         '''
@@ -69,8 +69,8 @@ class Window():
         message_text = message.message
         message_metadata = {}
 
-        # Pattern for a single tag like =key:value=
-        tag_pattern = re.compile(r"=([A-Za-z0-9]+):([^=]*)=")
+        # Pattern for a single tag like <key:value>
+        tag_pattern = re.compile(r"<([A-Za-z0-9]+):([^>]*)>")
 
         text_index = 0
         # Consume tags from the very start
@@ -154,7 +154,7 @@ class Window():
         if self.contains(message):
             return
         
-        message = await self.extract_metadata(message)
+        message = await self._extract_metadata(message)
 
         message_tokens = message.tokens or message.calculate_tokens()
         inserted = False
@@ -251,7 +251,7 @@ class Window():
                     )
                 else:
                     grouped_content[group_id]["content"].append(
-                        {"type": "text", "text": f"=image={message.image_summary or '=image=Image content not available.'}"}
+                        {"type": "text", "text": f"<image:{message.image_summary or 'Image content not available.'}>"}
                     )
 
         # Now, sort groups by their first appearance in sorted_messages
