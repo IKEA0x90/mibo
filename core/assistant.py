@@ -44,10 +44,14 @@ class Assistant:
         prompts: Dict[prompt_enum.PromptEnum, str] = event.prompts
         special_fields: Dict = event.special_fields
 
+        current_date_utc = special_fields.get('current_date_utc', None)
+
         chat_id: str = wdw.chat_id
         model_provider = special_fields.get('model_provider', 'openai')
 
-        user_messages: List[Dict] = await wdw.transform_messages()
+        user_messages: List[Dict]
+        idx: Dict[str, int]
+        user_messages, idx = await wdw.transform_messages()
         messages: List[Dict] = []
 
         base_prompt = prompts.get(prompt_enum.BasePrompt, '')
@@ -55,6 +59,12 @@ class Assistant:
             'role': 'system',
             'content': [{'type': 'text', 'text': f'{base_prompt}'}]
         })
+
+        if current_date_utc:
+            messages.append({
+                'role': 'system',
+                'content': [{'type': 'text', 'text': f'Current date UTC: {current_date_utc}'}]
+            })
 
         if special_fields.get('disable_thinking'):
             messages.append({
@@ -102,21 +112,26 @@ class Assistant:
 
             wrapper_list = []
 
-            assistant_message = wrapper.MessageWrapper(
-                id=str(response.id), chat_id=chat_id, 
-                role='assistant', user=variables.Variables.USERNAME,
-                message=message_text, ping=False,
-                datetime=dt.datetime.now(tz=dt.timezone.utc)
-            )
-            wrapper_list.append(assistant_message)
+            message_list = variables.Variables.parse_text(message_text)
 
-            for img in images:
+            for i, m in enumerate(message_list):  
+                assistant_message = wrapper.MessageWrapper(
+                    id=f'{str(response.id)}-{i}',
+                    chat_id=chat_id, 
+                    role='assistant', user=variables.Variables.USERNAME,
+                    message=m, ping=False,
+                    datetime=dt.datetime.now(tz=dt.timezone.utc)
+                )
+
+                wrapper_list.append(assistant_message)
+
+            for i, img in enumerate(images):
                 if 'image_url' in img:
-                    incomplete_wrapper = wrapper.ImageWrapper(id=str(response.id), chat_id=self.chat_id, x=0, y=0, role='assistant', user=variables.Variables.USERNAME)
+                    incomplete_wrapper = wrapper.ImageWrapper(id=f'{str(response.id)}-{i}', chat_id=chat_id, x=0, y=0, role='assistant', user=variables.Variables.USERNAME)
                     image = await self._download_image_url(img['image_url'], incomplete_wrapper=incomplete_wrapper, parent_event=event)
                     wrapper_list.append(image)
 
-            await self.ref.add_message(chat_id, wrapper_list, False)
+            await self.ref.add_messages(chat_id, wrapper_list, False, idx=idx)
 
             response_event = assistant_events.AssistantResponse(messages=wrapper_list, event_id=event.event_id, typing=typing)
             await self.bus.emit(response_event)

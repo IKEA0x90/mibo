@@ -130,10 +130,12 @@ class Conductor:
             if not wrappers:
                 raise ValueError("Wrapper list is somehow empty. This probably shouldn't happen.")
             
-            wdw: window.Window = await self.ref.add_message(chat_id, wrappers, chat_name=chat_name)
+            wdw: window.Window = await self.ref.add_messages(chat_id, wrappers, chat_name=chat_name)
             request: Dict = await self.ref.get_request(chat_id)
             prompts: Dict[prompt_enum.PromptEnum, str] = await self.ref.get_prompts(chat_id)
             special_fields: Dict = await self.ref.get_special_fields(chat_id)
+
+            special_fields['current_date_utc'] = dt.datetime.now(tz=dt.timezone.utc).strftime('%Y/%m/%d, %A')
 
             chance: int = await self.ref.get_chance(chat_id)
             random_chance = random.randint(1, 100)

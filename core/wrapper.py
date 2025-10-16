@@ -26,6 +26,8 @@ class Wrapper():
         self.role: str = kwargs.get('role', 'assistant')
         self.user: str = kwargs.get('user', variables.Variables.USERNAME)
 
+        self.reply_id: str = kwargs.get('reply_id', None)
+
         try:
             self.datetime: dt.datetime = datetime.astimezone(dt.timezone.utc)
         except Exception:
@@ -43,6 +45,7 @@ class Wrapper():
             'datetime': self.datetime,
             'role': self.role,
             'user': self.user,
+            'reply_id': self.reply_id,
         }
     
     @classmethod
@@ -55,6 +58,7 @@ class Wrapper():
             'datetime': combined_data.get('datetime'),
             'role': combined_data.get('role', 'assistant'),
             'user': combined_data.get('user', variables.Variables.USERNAME),
+            'reply_id': combined_data.get('reply_id', None),
         }
     
         constructor_params.update(child_row)
@@ -82,7 +86,6 @@ class MessageWrapper(Wrapper):
         
         self.reactions: List[str] = kwargs.get('reactions', [])
 
-        self.reply_id: str = kwargs.get('reply_id', None)
         self.quote: str = kwargs.get('quote', None)
 
         self.think = kwargs.get('think', '')
@@ -90,17 +93,16 @@ class MessageWrapper(Wrapper):
     def to_child_dict(self):
         return {
             'message': self.message,
-            'reply_id': self.reply_id,
             'quote': self.quote,
             'think': self.think,
         }
     
     @classmethod
     def get_child_fields(cls):
-        return ['message', 'reply_id', 'quote', 'think']
+        return ['message', 'quote', 'think']
 
     def __str__(self):
-        return f'{self.user}: {self.message}'
+        return f'{self.message}'
 
     @staticmethod
     def _remove_prefixes(text: str, prefixes: List[str]) -> str:

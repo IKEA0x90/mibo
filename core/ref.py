@@ -206,7 +206,7 @@ class Ref:
         self.db.initialize_sync()
         self._load()
 
-    async def add_message(self, chat_id: str, wrappers: List[wrapper.Wrapper], set_ready: bool = True, **kwargs) -> window.Window:
+    async def add_messages(self, chat_id: str, wrappers: List[wrapper.Wrapper], set_ready: bool = True, **kwargs) -> window.Window:
         '''
         Add a message to a chat window, returning the window
         '''
@@ -218,7 +218,7 @@ class Ref:
 
         # add to window
         for wrapper in wrappers:
-            await wdw.add_message(wrapper, set_ready)
+            await wdw.add_message(wrapper, set_ready, **kwargs)
 
         # send signal to add to database
         new_message_event = ref_events.NewMessage(chat_id=chat_id, wrappers=wrappers)
