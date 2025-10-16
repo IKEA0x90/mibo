@@ -127,7 +127,7 @@ class Assistant:
 
             for i, img in enumerate(images):
                 if 'image_url' in img:
-                    incomplete_wrapper = wrapper.ImageWrapper(id=f'{str(response.id)}-{i}', chat_id=self.chat_id, x=0, y=0, role='assistant', user=variables.Variables.USERNAME)
+                    incomplete_wrapper = wrapper.ImageWrapper(id=f'{str(response.id)}-{i}', chat_id=chat_id, x=0, y=0, role='assistant', user=variables.Variables.USERNAME)
                     image = await self._download_image_url(img['image_url'], incomplete_wrapper=incomplete_wrapper, parent_event=event)
                     wrapper_list.append(image)
 

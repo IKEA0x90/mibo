@@ -279,7 +279,7 @@ class Mibo:
             elif images and messages:
                 media_group = []
                 for idx, image in enumerate(images):
-                    caption = messages[0] if idx == 0 else None
+                    caption = messages[0].message if idx == 0 else None
                     media_group.append(InputMediaPhoto(media=image.image_url, caption=caption))
                 sent_messages = await self.app.bot.send_media_group(chat_id=chat_id, media=media_group)
                 sent_messages = [m for m in sent_messages]
