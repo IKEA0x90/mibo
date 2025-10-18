@@ -1,1 +1,250 @@
-<!--Login page for user authentication-->
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Mibo Admin - Login</title>
+    <link rel="stylesheet" href="/static/web.css">
+    <style>
+        .login-container {
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            min-height: 100vh;
+            background: linear-gradient(135deg, var(--primary-red), var(--dark-red));
+        }
+        
+        .login-card {
+            background: white;
+            padding: 2rem;
+            border-radius: 10px;
+            box-shadow: 0 10px 30px rgba(0, 0, 0, 0.3);
+            width: 100%;
+            max-width: 400px;
+        }
+        
+        .login-header {
+            text-align: center;
+            margin-bottom: 2rem;
+        }
+        
+        .login-header h1 {
+            color: var(--primary-red);
+            margin: 0;
+            font-size: 2rem;
+        }
+        
+        .login-header p {
+            color: var(--text-secondary);
+            margin: 0.5rem 0 0 0;
+        }
+        
+        .form-group {
+            margin-bottom: 1.5rem;
+        }
+        
+        .form-group label {
+            display: block;
+            margin-bottom: 0.5rem;
+            color: var(--text-primary);
+            font-weight: 500;
+        }
+        
+        .form-group input {
+            width: 100%;
+            padding: 0.75rem;
+            border: 2px solid var(--border-color);
+            border-radius: 5px;
+            font-size: 1rem;
+            transition: border-color 0.3s ease;
+        }
+        
+        .form-group input:focus {
+            outline: none;
+            border-color: var(--primary-red);
+        }
+        
+        .login-btn {
+            width: 100%;
+            padding: 0.75rem;
+            background: var(--primary-red);
+            color: white;
+            border: none;
+            border-radius: 5px;
+            font-size: 1rem;
+            font-weight: 500;
+            cursor: pointer;
+            transition: background-color 0.3s ease;
+        }
+        
+        .login-btn:hover {
+            background: var(--dark-red);
+        }
+        
+        .login-btn:disabled {
+            background: var(--text-secondary);
+            cursor: not-allowed;
+        }
+        
+        .error-message {
+            background: var(--error-red);
+            color: white;
+            padding: 0.75rem;
+            border-radius: 5px;
+            margin-bottom: 1rem;
+            text-align: center;
+            display: none;
+        }
+        
+        .loading {
+            display: none;
+            text-align: center;
+            margin-top: 1rem;
+            color: var(--text-secondary);
+        }
+    </style>
+</head>
+<body>
+    <div class="login-container">
+        <div class="login-card">
+            <div class="login-header">
+                <h1>Mibo Admin</h1>
+                <p>Please sign in to continue</p>
+            </div>
+            
+            <div id="errorMessage" class="error-message"></div>
+            
+            <form id="loginForm">
+                <div class="form-group">
+                    <label for="username">Username</label>
+                    <input type="text" id="username" name="username" required autocomplete="username">
+                </div>
+                
+                <div class="form-group">
+                    <label for="password">Password</label>
+                    <input type="password" id="password" name="password" required autocomplete="current-password">
+                </div>
+                
+                <button type="submit" class="login-btn" id="loginBtn">
+                    Sign In
+                </button>
+                
+                <div class="loading" id="loading">
+                    Signing in...
+                </div>
+            </form>
+        </div>
+    </div>
+
+    <script>
+        class ApiClient {
+            constructor() {
+                this.baseURL = '/api';
+            }
+            
+            async request(endpoint, options = {}) {
+                const config = {
+                    headers: {
+                        'Content-Type': 'application/json',
+                        ...options.headers
+                    },
+                    ...options
+                };
+                
+                const response = await fetch(`${this.baseURL}${endpoint}`, config);
+                return response;
+            }
+            
+            async login(username, password) {
+                return await this.request('/auth/login', {
+                    method: 'POST',
+                    body: JSON.stringify({ username, password })
+                });
+            }
+        }
+
+        document.addEventListener('DOMContentLoaded', function() {
+            const loginForm = document.getElementById('loginForm');
+            const loginBtn = document.getElementById('loginBtn');
+            const loading = document.getElementById('loading');
+            const errorMessage = document.getElementById('errorMessage');
+            const api = new ApiClient();
+
+            // Check if already logged in
+            const token = localStorage.getItem('access_token');
+            if (token) {
+                // Verify token is still valid
+                fetch('/api/auth/verify', {
+                    headers: {
+                        'Authorization': `Bearer ${token}`
+                    }
+                }).then(response => {
+                    if (response.ok) {
+                        window.location.href = '/dashboard';
+                    }
+                });
+            }
+
+            function showError(message) {
+                errorMessage.textContent = message;
+                errorMessage.style.display = 'block';
+                setTimeout(() => {
+                    errorMessage.style.display = 'none';
+                }, 5000);
+            }
+
+            function setLoading(isLoading) {
+                loginBtn.disabled = isLoading;
+                loading.style.display = isLoading ? 'block' : 'none';
+                loginBtn.textContent = isLoading ? '' : 'Sign In';
+            }
+
+            loginForm.addEventListener('submit', async function(e) {
+                e.preventDefault();
+                
+                const username = document.getElementById('username').value.trim();
+                const password = document.getElementById('password').value;
+
+                if (!username || !password) {
+                    showError('Please enter both username and password');
+                    return;
+                }
+
+                setLoading(true);
+                errorMessage.style.display = 'none';
+
+                try {
+                    const response = await api.login(username, password);
+                    
+                    if (response.ok) {
+                        const data = await response.json();
+                        
+                        // Store token
+                        localStorage.setItem('access_token', data.access_token);
+                        localStorage.setItem('user_id', data.user_id);
+                        localStorage.setItem('username', data.username);
+                        
+                        // Redirect to dashboard
+                        window.location.href = '/dashboard';
+                    } else {
+                        const error = await response.json();
+                        showError(error.detail || 'Login failed. Please check your credentials.');
+                    }
+                } catch (error) {
+                    console.error('Login error:', error);
+                    showError('Connection error. Please try again.');
+                } finally {
+                    setLoading(false);
+                }
+            });
+
+            // Enter key support
+            document.getElementById('password').addEventListener('keypress', function(e) {
+                if (e.key === 'Enter') {
+                    loginForm.dispatchEvent(new Event('submit'));
+                }
+            });
+        });
+    </script>
+</body>
+</html>
