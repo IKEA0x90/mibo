@@ -72,8 +72,8 @@ class Window():
         message_text = message.message
         message_metadata = {}
 
-        # Pattern for a single tag like <key:value>
-        tag_pattern = re.compile(r"<([A-Za-z0-9]+):([^>]*)>")
+        # Pattern for a single tag like <key:value>, allowing for whitespace between tags
+        tag_pattern = re.compile(r"\s*<([A-Za-z0-9]+):([^>]*)>")
 
         text_index = 0
         # Consume tags from the very start
@@ -101,8 +101,8 @@ class Window():
 
         # Remove the consumed tag block from the start, preserving the rest
         remaining_text = message_text[text_index:]
-        if remaining_text.startswith("\n"):
-            remaining_text = remaining_text.lstrip("\n")
+        # Clean up leading whitespace, not just newlines
+        remaining_text = remaining_text.lstrip()
         message.message = remaining_text
 
         message.metadata = message_metadata
