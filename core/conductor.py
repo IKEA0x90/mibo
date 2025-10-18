@@ -65,7 +65,7 @@ class Conductor:
             user_id = user.id
             username = user.username or user.first_name
 
-            user_wrapper: wrapper.UserWrapper = await self.ref.get_user(user_id, username)
+            user_wrapper: wrapper.UserWrapper = await self.ref.get_user(user_id, username=username)
 
             entities = message.parse_entities()
             caption_entities = message.parse_caption_entities()
