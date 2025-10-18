@@ -1,4 +1,3 @@
-import uuid
 import openai
 import datetime as dt
 import random
@@ -27,7 +26,6 @@ class Assistant:
 
     def _register(self):
         self.bus.register(conductor_events.CompletionRequest, self._trigger_completion)
-        self.bus.register(assistant_events.CompletionResponse, self.send_completion)
 
     @staticmethod
     async def call_openai(sync_func, *args, **kwargs):
@@ -135,29 +133,9 @@ class Assistant:
                     image = await self._download_image_url(img['image_url'], incomplete_wrapper=incomplete_wrapper, parent_event=event)
                     wrapper_list.append(image)
 
-            completion_event = assistant_events.CompletionResponse(wrapper_list=wrapper_list, typing=typing, event_id=event.event_id)
-            await self.bus.emit(completion_event)
+            await self.ref.add_messages(chat_id, wrapper_list, False, idx=idx)
 
-        except Exception as e:
-            _, _, tb = sys.exc_info()
-            issue = system_events.ErrorEvent(error='Whoops! An unexpected error occurred.', e=e, tb=tb, event_id=event.event_id, chat_id=chat_id)
-            await self.bus.emit(issue)
-
-    async def send_completion(self, event: event.Event):
-        '''
-        Send a completion.
-        '''
-        try:
-            messages: List[wrapper.Wrapper] = event.wrapper_list
-
-            chat_id: str = messages[0].chat_id
-
-            typing = event.typing
-            typing()
-
-            await self.ref.add_messages(chat_id, messages, False)
-
-            response_event = assistant_events.AssistantResponse(messages=messages, typing=typing)
+            response_event = assistant_events.AssistantResponse(messages=wrapper_list, event_id=event.event_id, typing=typing)
             await self.bus.emit(response_event)
 
         except Exception as e:
