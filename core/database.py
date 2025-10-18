@@ -121,6 +121,26 @@ class Database:
             await self.bus.emit(system_events.ErrorEvent(error="Hmm.. Can't read your group chats from the database.", e=e, tb=tb))
             return None
 
+    async def get_user(self, user_id: str) -> wrapper.UserWrapper:
+        '''
+        Get a user by their ID.
+        '''
+        try:
+            async with self.conn.cursor() as cursor:
+                await cursor.execute('SELECT * FROM users WHERE user_id = ?', (user_id,))
+                row = await cursor.fetchone()
+
+            if row:
+                return wrapper.UserWrapper(id=row['user_id'], username=row['username'], 
+                                           image_generation_limit=row['image_generation_limit'],
+                                           deep_research_limit=row['deep_research_limit'],
+                                           utc_offset=row['utc_offset'])
+
+        except Exception as e:
+            _, _, tb = sys.exc_info()
+            await self.bus.emit(system_events.ErrorEvent(error="Hmm.. Can't read user from the database.", e=e, tb=tb))
+            return None
+
     async def _insert_chat(self, event: ref_events.NewChat):
         '''
         Inserts a new chat and returns the chat_id.
@@ -135,7 +155,7 @@ class Database:
         if chat.model_id is None:
             chat.model_id = variables.Variables.DEFAULT_MODEL
 
-        effective_chat_id = chat.chat_id or str(uuid4())
+        effective_chat_id = chat.chat_id
         chat_name = chat.chat_name
         chance = chat.chance
         assistant_id = chat.assistant_id
@@ -152,6 +172,36 @@ class Database:
                     (
                         str(effective_chat_id), chat_name,
                         chance, assistant_id, model_id
+                    ),
+                )
+                await self.conn.commit()
+
+    async def _insert_user(self, event: ref_events.NewUser):
+        '''
+        Inserts a new user and returns the user_id.
+        '''
+        user: wrapper.UserWrapper = event.user
+        if user is None or not isinstance(user, wrapper.UserWrapper):
+            return
+
+        user_id = user.id
+        username = user.username
+        preferred_name = user.preferred_name
+        image_generation_limit = user.image_generation_limit
+        deep_research_limit = user.deep_research_limit
+        utc_offset = user.utc_offset
+
+        async with self._lock:
+            async with self.conn.cursor() as cursor:
+                await cursor.execute(
+                    """
+                    INSERT OR REPLACE INTO users
+                    (user_id, username, preferred_name, image_generation_limit, deep_research_limit, utc_offset)
+                    VALUES (?, ?, ?, ?, ?, ?)
+                    """,
+                    (
+                        user_id, username,
+                        preferred_name, image_generation_limit, deep_research_limit, utc_offset
                     ),
                 )
                 await self.conn.commit()
@@ -395,6 +445,17 @@ class Database:
                 assistant_id         TEXT NOT NULL DEFAULT '{variables.Variables.DEFAULT_ASSISTANT}',
                 model_id             TEXT NOT NULL DEFAULT '{variables.Variables.DEFAULT_MODEL}',
                 timestamp            TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+            );
+            ''',
+
+            f'''
+            CREATE TABLE IF NOT EXISTS users (
+                user_id      TEXT PRIMARY KEY,
+                username     TEXT NOT NULL DEFAULT '',
+                preferred_name         TEXT,
+                image_generation_limit INTEGER NOT NULL DEFAULT 5,
+                deep_research_limit    INTEGER NOT NULL DEFAULT 3,
+                utc_offset   INTEGER NOT NULL DEFAULT 3,
             );
             ''',
 

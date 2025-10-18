@@ -201,6 +201,15 @@ class Window():
             oldest_tokens = oldest_msg.tokens
             self.tokens -= oldest_tokens
 
+    async def clear(self):
+        '''
+        Clears the window.
+        '''
+        async with self._lock:
+            self.messages.clear()
+            self.tokens = 0
+            self.ready = True
+
     def _prepare_text(self, message: wrapper.MessageWrapper, message_id: int, reply_message_id: int) -> str:
         text = message.message if message.role == 'assistant' else str(message)
 

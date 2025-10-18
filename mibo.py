@@ -303,31 +303,17 @@ class Mibo:
         finally:
             await self._pop_typing(chat_id)
 
-    async def _handle_exception(self, event: system_events.ErrorEvent) -> None:
-        '''
-        Print exception logs.
-        '''
-        error = event.error
-        e = event.e
-        tb = event.tb
+    async def _generate_image(self, update: Update, context: CallbackContext):
+        pass
 
-        print(f"{error}")
-
-        if tb:
-            traceback.print_exception(type(e), e, tb)
-
-    async def _debug(self, update: Update, context: CallbackContext):
-        '''
-        Sends a debug message.
-        '''
-        await context.bot.send_message(update.effective_chat.id, 'Debug OK')
-
+    """
     async def _fake_completion(self, chat_id: str, message: str):
         '''
         Sends a fake completion.
         '''
         typing = self._get_typing(chat_id=chat_id)
         await self.assistant.fake_completion(message, chat_id=chat_id, typing=typing)
+    """
 
     async def _start(self, update: Update, context: CallbackContext):
         '''
@@ -375,6 +361,31 @@ class Mibo:
 
             elif old_status in [ChatMember.MEMBER, ChatMember.ADMINISTRATOR] and new_status in [ChatMember.LEFT, ChatMember.BANNED]:
                 pass    
+
+    async def _debug(self, update: Update, context: CallbackContext):
+        '''
+        Sends a debug message.
+        '''
+        await context.bot.send_message(update.effective_chat.id, 'Debug OK')
+
+    async def _clear(self, chat_id: str):
+        '''
+        Clears the window.
+        '''
+        await self.ref.clear(chat_id)
+
+    async def _handle_exception(self, event: system_events.ErrorEvent) -> None:
+        '''
+        Print exception logs.
+        '''
+        error = event.error
+        e = event.e
+        tb = event.tb
+
+        print(f"{error}")
+
+        if tb:
+            traceback.print_exception(type(e), e, tb)
 
 logging.basicConfig(
     format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",

@@ -4,6 +4,8 @@ import time
 
 import datetime as dt
 
+from psutil import users
+
 from core import database, window, wrapper
 from events import ref_events, event_bus, system_events
 from services import tokenizers, variables, prompt_enum
@@ -192,6 +194,7 @@ class Ref:
 
         self.chats: Dict[str, wrapper.ChatWrapper] = {}
         self.windows: Dict[str, window.Window] = {}
+        self.users: Dict[str, wrapper.UserWrapper] = {}
 
         self.assistants: Dict[str, AssistantReference] = {}
         self.models: Dict[str, ModelReference] = {}
@@ -248,6 +251,18 @@ class Ref:
 
         wdw.set_max_tokens(max_tokens)
         return wdw
+    
+    async def clear(self, chat_id: str) -> window.Window:
+        '''
+        Clear the chat window for a chat.
+        '''
+        chat: wrapper.ChatWrapper = await self.get_chat(chat_id)
+        wdw = self.windows.get(chat_id)
+
+        if wdw:
+            await wdw.clear()
+
+        return wdw
 
     async def get_chat(self, chat_id: str, **kwargs) -> wrapper.ChatWrapper:
         # from memory
@@ -267,6 +282,29 @@ class Ref:
         chat.in_use = True
         
         return chat
+
+    async def get_user(self, user_id: str, **kwargs) -> wrapper.UserWrapper:
+        '''
+        Gets a user by user_id.
+        '''
+        user = self.users.get(user_id)
+        if not user:
+            user = await self.db.get_user(user_id)
+            if not user:
+                user = wrapper.UserWrapper(user_id, **kwargs)
+                await self.bus.emit(ref_events.NewUser(user))
+
+            self.users[user_id] = user
+
+        return user
+    
+    async def update_user(self, user: wrapper.UserWrapper):
+        '''
+        Update a user in the database and memory.
+        '''
+        self.users[user.id] = user
+        await self.bus.emit(ref_events.NewUser(user))
+        return user
 
     async def _get_assistant(self, chat_id: str) -> AssistantReference:
         '''
@@ -365,6 +403,8 @@ class Ref:
                 elif reference_type == 'prompt':
                     reference_object = PromptReference.from_dict(reference_id, reference_data, reference_type)
                     self.prompts[reference_id] = reference_object
+
+            self.users = self.db.load_users()
 
         except Exception as e:
             self.bus.emit_sync(system_events.ErrorEvent(

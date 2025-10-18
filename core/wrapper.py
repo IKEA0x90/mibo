@@ -179,47 +179,32 @@ class ImageWrapper(Wrapper):
     @classmethod
     def get_child_fields(cls):
         return ['x', 'y', 'image_path', 'image_summary']
+ 
+class UserWrapper():
+    def __init__(self, id: str, **kwargs):
+        self.id: str = id
 
-@register_wrapper  
-class PollWrapper(Wrapper):
-    def __init__(self, id: str, chat_id: str, question: str, options: List[str], multiple_choice: bool, correct_option_idx: int = 0, explanation: str = '', **kwargs):
-        super().__init__(id, chat_id, **kwargs)
+        self.username: str = kwargs.get('username', '')
+        self.preferred_name: str = kwargs.get('preferred_name', '')
 
-        self.question: str = question or ''
-        self.options: List[str] = options or []
-        self.multiple_choice: bool = multiple_choice or False
-        self.correct_option_idx: int = correct_option_idx or -1
-        self.explanation: str = explanation or ''
+        self.image_generation_limit: int = kwargs.get('image_generation_limit', 5)
+        self.deep_research_limit: int = kwargs.get('deep_research_limit', 3)
 
-        if correct_option_idx != -1:
-            self.multiple_choice = False
+        self.utc_offset: int = kwargs.get('utc_offset', 3)
 
-    def calculate_tokens(self, model='gpt-4o'):
-        encoding = tiktoken.encoding_for_model(model)
-        tokens = len(encoding.encode(str(self)))
-        return tokens
-    
     def to_child_dict(self):
         return {
-            'question': self.question,
-            'options': self.options,
-            'multiple_choice': self.multiple_choice,
-            'correct_option_idx': self.correct_option_idx,
-            'explanation': self.explanation,
+            'username': self.username,
+            'preferred_name': self.preferred_name,
+            'image_generation_limit': self.image_generation_limit,
+            'deep_research_limit': self.deep_research_limit,
+            'utc_offset': self.utc_offset,
         }
     
     @classmethod
     def get_child_fields(cls):
-        return ['question', 'options', 'multiple_choice', 'correct_option_idx', 'explanation']
+        return ['username', 'preferred_name', 'image_generation_limit', 'deep_research_limit', 'utc_offset']
 
-    def __str__(self):
-        rstr = []
-        rstr.append(f'|POLL|{self.question}\n')
-        rstr.append(f'Options {"(multiple choice)|" if self.multiple_choice else "|"}:\n')
-        for i, option in enumerate(self.options):
-            rstr.append(f"{i+1}. {option}")
-        return rstr
-    
 class ChatWrapper():
     def __init__(self, id: str, **kwargs):
         self.id: str = str(id)

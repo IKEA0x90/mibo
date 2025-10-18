@@ -27,6 +27,7 @@ class Assistant:
 
     def _register(self):
         self.bus.register(conductor_events.CompletionRequest, self._trigger_completion)
+        self.bus.register(assistant_events.CompletionResponse, self.send_completion)
 
     @staticmethod
     async def call_openai(sync_func, *args, **kwargs):
@@ -132,38 +133,24 @@ class Assistant:
                     image = await self._download_image_url(img['image_url'], incomplete_wrapper=incomplete_wrapper, parent_event=event)
                     wrapper_list.append(image)
 
-            await self.ref.add_messages(chat_id, wrapper_list, False, idx=idx)
-
-            response_event = assistant_events.AssistantResponse(messages=wrapper_list, event_id=event.event_id, typing=typing)
-            await self.bus.emit(response_event)
+            completion_event = assistant_events.CompletionResponse(chat_id=chat_id, wrapper_list=wrapper_list, typing=typing, event_id=event.event_id)
+            await self.bus.emit(completion_event)
 
         except Exception as e:
             _, _, tb = sys.exc_info()
             issue = system_events.ErrorEvent(error='Whoops! An unexpected error occurred.', e=e, tb=tb, event_id=event.event_id, chat_id=chat_id)
             await self.bus.emit(issue)
 
-    async def fake_completion(self, message: str, chat_id: str, typing):
+    async def send_completion(self, event: event.Event):
         '''
-        Send a fake completion.
+        Send a completion.
         '''
         try:
-            # start typing simulation
+            chat_id: str = event.chat_id
+            wrapper_list: List[wrapper.Wrapper] = event.wrapper_list
+
+            typing = event.typing
             typing()
-            content = message
-
-            wrapper_list = []
-            message_list = variables.Variables.parse_text(content)
-
-            for i, m in enumerate(message_list):  
-                assistant_message = wrapper.MessageWrapper(
-                    id=f'{uuid.uuid4().hex}',
-                    chat_id=chat_id, 
-                    role='assistant', user=variables.Variables.USERNAME,
-                    message=m, ping=False,
-                    datetime=dt.datetime.now(tz=dt.timezone.utc)
-                )
-
-                wrapper_list.append(assistant_message)
 
             await self.ref.add_messages(chat_id, wrapper_list, False)
 
