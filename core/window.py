@@ -210,12 +210,16 @@ class Window():
             self.tokens = 0
             self.ready = True
 
-    def _prepare_text(self, message: wrapper.MessageWrapper, message_id: int, reply_message_id: int) -> str:
+    def _prepare_text(self, message: wrapper.MessageWrapper, message_id: int, reply_message_id: int, **kwargs) -> str:
         text = message.message if message.role == 'assistant' else str(message)
 
         id = message_id
         by = message.user
         quote = message.quote
+
+        user: wrapper.UserWrapper = kwargs.get('user')
+        if user and user.preferred_name:
+            by = user.preferred_name
         
         meta_text = f'<id:{id}><by:{by}>'
 
@@ -230,7 +234,7 @@ class Window():
 
         return text
 
-    async def transform_messages(self) -> List[Dict[str, object]]:
+    async def transform_messages(self, **kwargs) -> List[Dict[str, object]]:
         '''
         Transforms the context messages into a json compatible with OpenAI chat completions API.
         Preserves both text and images as content blocks.
@@ -259,7 +263,7 @@ class Window():
                     if message.reply_id:
                         reply_message_id = telegram_id_to_message_id.get(str(message.reply_id))
 
-                    text = self._prepare_text(message, message_id, reply_message_id)
+                    text = self._prepare_text(message, message_id, reply_message_id, **kwargs)
                     if text:
                         grouped_content[group_id]["content"].append({"type": "text", "text": text})
 

@@ -65,6 +65,8 @@ class Conductor:
             user_id = user.id
             username = user.username or user.first_name
 
+            user_wrapper: wrapper.UserWrapper = await self.ref.get_user(user_id, username)
+
             entities = message.parse_entities()
             caption_entities = message.parse_caption_entities()
 
@@ -143,7 +145,7 @@ class Conductor:
             respond = wdw.ready and ((random_chance <= chance) or ping)
 
             if respond:
-                new_message_event = conductor_events.CompletionRequest(wdw=wdw, request=request, prompts=prompts, special_fields=special_fields, typing=event.typing)
+                new_message_event = conductor_events.CompletionRequest(wdw=wdw, request=request, prompts=prompts, special_fields=special_fields, typing=event.typing, user=user_wrapper)
                 await self.bus.emit(new_message_event)
 
         except Exception as e:

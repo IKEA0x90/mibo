@@ -51,9 +51,11 @@ class Assistant:
         chat_id: str = wdw.chat_id
         model_provider = special_fields.get('model_provider', 'openai')
 
+        user: wrapper.UserWrapper = getattr(event, 'user', None)
+
         user_messages: List[Dict]
         idx: Dict[str, int]
-        user_messages, idx = await wdw.transform_messages()
+        user_messages, idx = await wdw.transform_messages(user)
         messages: List[Dict] = []
 
         base_prompt = prompts.get(prompt_enum.BasePrompt, '')
