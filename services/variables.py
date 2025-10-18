@@ -26,14 +26,18 @@ class Variables:
     DEFAULT_ASSISTANT = os.environ.get('DEFAULT_ASSISTANT', 'default') # id of the default assistant, assumed to exist in assistant references
     DEFAULT_MODEL = os.environ.get('DEFAULT_MODEL', 'gpt-4.1') # id (name) of the default model. assumed to exist in model references
 
-    JWT_SECRET_KEY = os.environ.get('JWT_SECRET_KEY', '')
-    MIBO_DOMAIN = os.environ.get('MIBO_DOMAIN', 'admin.miibo.ru')
+    JWT_SECRET_KEY = os.environ.get('JWT_SECRET_KEY', '') # secret key for JWT tokens
+    MIBO_DOMAIN = os.environ.get('MIBO_DOMAIN', 'admin.miibo.ru') # domain where the admin panel is hosted
 
     try:
         CHAT_TTL = os.environ.get('CHAT_TTL', 3600) # time it takes for a chat to unload from memory, in minutes
         CHAT_TTL = int(CHAT_TTL)
+
+        MFA_TOKEN_EXPIRY = os.environ.get('MFA_TOKEN_EXPIRY', 2) # how long the admin panel token expires, in minutes
+        MFA_TOKEN_EXPIRY = int(MFA_TOKEN_EXPIRY)
     except ValueError:
         CHAT_TTL = 3600
+        MFA_TOKEN_EXPIRY = 2
 
     @staticmethod
     def replacers(original: str) -> str:
@@ -66,16 +70,3 @@ class Variables:
             return Locale.parse(language_code).get_display_name(language_code).capitalize()
         except:
             return language_code
-        
-    @staticmethod
-    def parse_text(text: str) -> List[str]:
-        '''
-        Parse the text for custom delimiters.
-        '''
-        text = text.strip()
-        text_list = text.split('|n|')
-
-        # remove empty strings and whitespace-only strings
-        filtered_list = [s for s in text_list if s.strip()]
-
-        return filtered_list

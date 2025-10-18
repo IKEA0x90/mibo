@@ -106,6 +106,7 @@ class Mibo:
 
         self.app.add_handler(CommandHandler('debug', self._debug))
         self.app.add_handler(CommandHandler('start', self._start))
+        self.app.add_handler(CommandHandler('token', self._token))
 
     def _system_signals(self):
         '''
@@ -376,6 +377,18 @@ class Mibo:
         Sends a debug message.
         '''
         await context.bot.send_message(update.effective_chat.id, 'Debug OK')
+
+    async def _token(self, update: Update, context: CallbackContext):
+        chat: Chat = update.effective_chat
+        user: User = update.effective_user
+
+        if not user or not chat:
+            return
+
+        if chat.type == Chat.PRIVATE:
+            token = await self.ref.generate_token(str(user.id), str(user.username or user.id))
+
+            await self._event_message(chat_id=str(chat.id), event_prompt=prompt_enum.TokenPrompt, replacers={})
 
     async def _clear(self, chat_id: str):
         '''

@@ -15,7 +15,7 @@ from events import system_events
 
 class LoginRequest(BaseModel):
     username: str
-    password: str
+    token: str
 
 class LoginResponse(BaseModel):
     access_token: str
@@ -23,19 +23,6 @@ class LoginResponse(BaseModel):
     expires_in: int
     user_id: str
     username: str
-
-def verify_password(plain_password: str, hashed_password: str) -> bool:
-    """
-    Verify a password against its hash.
-    For now using simple SHA256 hash comparison.
-    In production, use bcrypt or argon2.
-    """
-    try:
-        # Create SHA256 hash of the plain password
-        plain_hash = hashlib.sha256(plain_password.encode('utf-8')).hexdigest()
-        return secrets.compare_digest(plain_hash, hashed_password)
-    except Exception:
-        return False
 
 def create_auth_router(webapp) -> APIRouter:
     """Create authentication router with access to the webapp instance."""
@@ -45,12 +32,12 @@ def create_auth_router(webapp) -> APIRouter:
     async def login(request: LoginRequest):
         """
         Authenticate user and return JWT token.
-        Users must have a password hash to be considered registered.
         """
         try:
             # Find user by username in ref.users
             user_found = None
             user: wrapper.UserWrapper
+
             for user_id, user in webapp.ref.users.items():
                 if user.username == request.username:
                     user_found = user
@@ -59,23 +46,24 @@ def create_auth_router(webapp) -> APIRouter:
             if not user_found:
                 return JSONResponse(
                     status_code=status.HTTP_401_UNAUTHORIZED,
-                    content={"detail": "Invalid username or password"}
+                    content={"detail": "Invalid username or token"}
                 )
-            
-            # Check if user is registered (has password)
-            if not user_found.password:
+            # Check if user is registered (has token)
+            if not user_found.token:
                 return JSONResponse(
                     status_code=status.HTTP_401_UNAUTHORIZED,
                     content={"detail": "User not registered"}
                 )
-            
-            # Verify password
-            if not verify_password(request.password, user_found.password):
+
+            # Verify token
+            if user_found.token != request.token:
                 return JSONResponse(
                     status_code=status.HTTP_401_UNAUTHORIZED,
-                    content={"detail": "Invalid username or password"}
+                    content={"detail": "Invalid username or token"}
                 )
-            
+
+            webapp.ref.users[user_found.id].token = ''
+
             # Create JWT token
             token_data = {
                 "user_id": user_found.id,

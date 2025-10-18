@@ -114,7 +114,7 @@ class Assistant:
 
             wrapper_list = []
 
-            message_list = variables.Variables.parse_text(message_text)
+            message_list = await self.parse_text(message_text, chat_id)
 
             for i, m in enumerate(message_list):  
                 assistant_message = wrapper.MessageWrapper(
@@ -142,6 +142,23 @@ class Assistant:
             _, _, tb = sys.exc_info()
             issue = system_events.ErrorEvent(error='Whoops! An unexpected error occurred.', e=e, tb=tb, event_id=event.event_id, chat_id=chat_id)
             await self.bus.emit(issue)
+
+    async def parse_text(self, text: str, chat_id: str) -> List[str]:
+        '''
+        Parse the text for custom delimiters.
+        '''
+        text = text.strip()
+
+        if '|TOKEN|' in text:
+            user: wrapper.UserWrapper = await self.ref.get_user(chat_id)
+            if user.token:
+                text = text.replace('|TOKEN|', user.token)
+
+        text_list = text.split('|n|')
+        # remove empty strings and whitespace-only strings
+        filtered_list = [s for s in text_list if s.strip()]
+
+        return filtered_list
 
     async def _download_image_url(self, image_url: str, incomplete_wrapper: wrapper.ImageWrapper, parent_event: event.Event) -> wrapper.ImageWrapper:
         '''

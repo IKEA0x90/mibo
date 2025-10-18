@@ -177,10 +177,10 @@ class WebApp:
         # Get user from ref
         try:
             user = await self.ref.get_user(user_id)
-            if not user or not user.password:  # Check if user has password (is registered)
+            if not user:
                 raise HTTPException(
                     status_code=status.HTTP_401_UNAUTHORIZED,
-                    detail="User not found or not registered",
+                    detail="Please chat with Mibo first",
                 )
             
             return {

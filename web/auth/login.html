@@ -109,7 +109,7 @@
         <div class="login-card">
             <div class="login-header">
                 <h1>Mibo Admin</h1>
-                <p>Please sign in to continue</p>
+                <p>Welcome!</p>
             </div>
             
             <div id="errorMessage" class="error-message"></div>
@@ -121,8 +121,8 @@
                 </div>
                 
                 <div class="form-group">
-                    <label for="password">Password</label>
-                    <input type="password" id="password" name="password" required autocomplete="current-password">
+                    <label for="token">Token</label>
+                    <input type="token" id="token" name="token" required autocomplete="one-time-code">
                 </div>
                 
                 <button type="submit" class="login-btn" id="loginBtn">
@@ -155,10 +155,10 @@
                 return response;
             }
             
-            async login(username, password) {
+            async login(username, token) {
                 return await this.request('/auth/login', {
                     method: 'POST',
-                    body: JSON.stringify({ username, password })
+                    body: JSON.stringify({ username, token })
                 });
             }
         }
@@ -203,10 +203,10 @@
                 e.preventDefault();
                 
                 const username = document.getElementById('username').value.trim();
-                const password = document.getElementById('password').value;
+                const token = document.getElementById('token').value.trim();
 
-                if (!username || !password) {
-                    showError('Please enter both username and password');
+                if (!username || !token) {
+                    showError('Please enter both username and token');
                     return;
                 }
 
@@ -214,7 +214,7 @@
                 errorMessage.style.display = 'none';
 
                 try {
-                    const response = await api.login(username, password);
+                    const response = await api.login(username, token);
                     
                     if (response.ok) {
                         const data = await response.json();
@@ -239,7 +239,7 @@
             });
 
             // Enter key support
-            document.getElementById('password').addEventListener('keypress', function(e) {
+            document.getElementById('token').addEventListener('keypress', function(e) {
                 if (e.key === 'Enter') {
                     loginForm.dispatchEvent(new Event('submit'));
                 }

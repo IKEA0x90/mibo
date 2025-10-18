@@ -186,7 +186,6 @@ class UserWrapper():
 
         self.username: str = kwargs.get('username', '')
         self.preferred_name: str = kwargs.get('preferred_name', '')
-        self.preferred_language: str = kwargs.get('preferred_language', 'en')
 
         self.image_generation_limit: int = kwargs.get('image_generation_limit', 5)
         self.deep_research_limit: int = kwargs.get('deep_research_limit', 3)
@@ -194,7 +193,6 @@ class UserWrapper():
         self.utc_offset: int = kwargs.get('utc_offset', 3)
         self.admin_chats: List[str] = kwargs.get('admin_chats', [])
 
-        self.password: str = kwargs.get('password', '')
         self.token: str = kwargs.get('token', '')
 
 class ChatWrapper():

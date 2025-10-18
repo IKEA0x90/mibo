@@ -135,20 +135,18 @@ class Database:
                 admin_chats = row['admin_chats'].split(',') if row['admin_chats'] else []
                 return wrapper.UserWrapper(id=row['user_id'], username=row['username'], 
                                             preferred_name=row['preferred_name'],
-                                            preferred_language=row['preferred_language'],
                                             image_generation_limit=row['image_generation_limit'],
                                             deep_research_limit=row['deep_research_limit'],
-                                            utc_offset=row['utc_offset'], admin_chats=admin_chats, 
-                                            password=row['password'])
+                                            utc_offset=row['utc_offset'], admin_chats=admin_chats)
 
         except Exception as e:
             _, _, tb = sys.exc_info()
             await self.bus.emit(system_events.ErrorEvent(error="Hmm.. Can't read user from the database.", e=e, tb=tb))
             return None
         
-    def get_registered_users(self) -> Dict[str, wrapper.UserWrapper]:
+    def get_all_users(self) -> Dict[str, wrapper.UserWrapper]:
         '''
-        Get all users who have a password set (registered users).
+        Get all users
         '''
         users: Dict[str, wrapper.UserWrapper] = {}
         try:
@@ -156,17 +154,15 @@ class Database:
             conn.row_factory = sqlite3.Row
             cursor = conn.cursor()
             
-            cursor.execute('SELECT * FROM users WHERE password != ""')
+            cursor.execute('SELECT * FROM users')
             rows = cursor.fetchall()
 
             for row in rows:
                 user_wrapper = wrapper.UserWrapper(id=row['user_id'], username=row['username'], 
                                                 preferred_name=row['preferred_name'],
-                                                preferred_language=row['preferred_language'],
                                                 image_generation_limit=row['image_generation_limit'],
                                                 deep_research_limit=row['deep_research_limit'],
-                                                utc_offset=row['utc_offset'], admin_chats=row['admin_chats'].split(','), 
-                                                password=row['password']) 
+                                                utc_offset=row['utc_offset'], admin_chats=row['admin_chats'].split(','))
                 users[row['user_id']] = user_wrapper
 
             return users
@@ -222,24 +218,22 @@ class Database:
         user_id = user.id
         username = user.username
         preferred_name = user.preferred_name
-        preferred_language = user.preferred_language
         image_generation_limit = user.image_generation_limit
         deep_research_limit = user.deep_research_limit
         utc_offset = user.utc_offset
         admin_chats = ','.join(user.admin_chats)
-        password = user.password
 
         async with self._lock:
             async with self.conn.cursor() as cursor:
                 await cursor.execute(
                     """
                     INSERT OR REPLACE INTO users
-                    (user_id, username, preferred_name, preferred_language, image_generation_limit, deep_research_limit, utc_offset, admin_chats, password)
-                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    (user_id, username, preferred_name, image_generation_limit, deep_research_limit, utc_offset, admin_chats)
+                    VALUES (?, ?, ?, ?, ?, ?, ?)
                     """,
                     (
                         user_id, username,
-                        preferred_name, preferred_language, image_generation_limit, deep_research_limit, utc_offset, admin_chats, password
+                        preferred_name, image_generation_limit, deep_research_limit, utc_offset, admin_chats
                     ),
                 )
                 await self.conn.commit()
@@ -491,12 +485,10 @@ class Database:
                 user_id      TEXT PRIMARY KEY,
                 username     TEXT NOT NULL DEFAULT '',
                 preferred_name         TEXT,
-                preferred_language     TEXT DEFAULT 'en',
                 image_generation_limit INTEGER NOT NULL DEFAULT 5,
                 deep_research_limit    INTEGER NOT NULL DEFAULT 3,
                 utc_offset   INTEGER NOT NULL DEFAULT 3,
-                admin_chats  TEXT NOT NULL DEFAULT '',
-                password     VARCHAR(255) NOT NULL DEFAULT ''
+                admin_chats  TEXT NOT NULL DEFAULT ''
             );
             ''',
 

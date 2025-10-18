@@ -1,3 +1,5 @@
+import secrets
+import string
 from typing import Dict, List, Callable, Tuple
 import asyncio
 import time
@@ -376,6 +378,28 @@ class Ref:
         special_fields = model.get_special_fields() if model else {}
 
         return special_fields
+    
+    async def generate_token(self, user_id: str, username: str) -> str:
+        '''
+        Generate an MFA token.
+        '''
+        user: wrapper.UserWrapper = await self.get_user(user_id, username=username)
+        
+        alphabet = string.ascii_uppercase + string.digits
+        token = ''.join(secrets.choice(alphabet) for _ in range(6))
+        user.token = token
+
+        asyncio.create_task(self._invalidate_token(user_id, username=username))
+
+        return token
+
+    async def _invalidate_token(self, user_id: str, username: str):
+        try:
+            await asyncio.sleep(variables.Variables.MFA_TOKEN_EXPIRY * 60)
+        finally:
+            user: wrapper.UserWrapper = await self.get_user(user_id, username=username)
+            if user and user.token:
+                user.token = ''
 
     def _load(self):
         '''
@@ -402,7 +426,8 @@ class Ref:
                     reference_object = PromptReference.from_dict(reference_id, reference_data, reference_type)
                     self.prompts[reference_id] = reference_object
 
-                self.users = self.db.get_registered_users()
+                #TODO probably don't want to load all users
+                self.users = self.db.get_all_users()
 
         except Exception as e:
             self.bus.emit_sync(system_events.ErrorEvent(
@@ -425,7 +450,7 @@ class Ref:
             now = time.time()
             to_delete = []
 
-            for cid, chat in list(self.chats.items()):
+            for cid, chat in self.chats.items():
                 if (now - chat.last_active) > (variables.Variables.CHAT_TTL * 60 / 2):
 
                     if not chat.in_use:
@@ -434,7 +459,7 @@ class Ref:
                         chat.in_use = False
 
             for cid in to_delete:
-                del self.chats[cid]
+                del self.windows[cid]
 
             try:
                 await asyncio.sleep(30)
