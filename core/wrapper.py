@@ -182,10 +182,11 @@ class ImageWrapper(Wrapper):
  
 class UserWrapper():
     def __init__(self, id: str, **kwargs):
-        self.id: str = id
+        self.id: str = str(id)
 
         self.username: str = kwargs.get('username', '')
         self.preferred_name: str = kwargs.get('preferred_name', '')
+        self.preferred_language: str = kwargs.get('preferred_language', 'en')
 
         self.image_generation_limit: int = kwargs.get('image_generation_limit', 5)
         self.deep_research_limit: int = kwargs.get('deep_research_limit', 3)
@@ -206,7 +207,7 @@ class ChatWrapper():
         self.chance: int = kwargs.get('chance', 5)
 
         self.assistant_id: str = kwargs.get('assistant_id', variables.Variables.DEFAULT_ASSISTANT)
-        self.model_id: str = kwargs.get('model_id', variables.Variables.DEFAULT_MODEL)
+        self.ai_model_id: str = kwargs.get('ai_model_id', variables.Variables.DEFAULT_MODEL)
 
         self.last_active: float = 0
         self.in_use: bool = False
@@ -217,5 +218,5 @@ class ChatWrapper():
             'chat_name': self.chat_name,
             'chance': self.chance,
             'assistant_id': self.assistant_id,
-            'model_id': self.model_id,
+            'ai_model_id': self.ai_model_id,
         }

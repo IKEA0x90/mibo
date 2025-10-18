@@ -83,15 +83,15 @@ class Mibo:
         await self.app.start()
         await self.app.updater.start_polling()
 
-        webapp_task = asyncio.create_task(web.start_webapp(self.ref, self.bus, 6426))
+        self.webapp_task = asyncio.create_task(web.start_webapp(self.ref, self.bus, 6426))
 
         try:
             await self.stop_event.wait()
         finally:
-            webapp_task.cancel()
-            try:
-                await webapp_task
-            except asyncio.CancelledError:
+            self.webapp_task.cancel()
+            try:    
+                await self.webapp_task
+            except:
                 pass
 
             # kill Mibo (oh no!)

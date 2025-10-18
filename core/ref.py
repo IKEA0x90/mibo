@@ -231,7 +231,7 @@ class Ref:
         # we don't want to load a window without loading the chat
         chat: wrapper.ChatWrapper = await self.get_chat(chat_id, **kwargs)
 
-        chat_model: str = chat.model_id or variables.Variables.DEFAULT_MODEL
+        chat_model: str = chat.ai_model_id or variables.Variables.DEFAULT_MODEL
         model: ModelReference = self.models.get(chat_model)
         if not model:
             raise ValueError(f"Default model doesn't exist")
@@ -362,7 +362,7 @@ class Ref:
         if not chat:
             return {}
 
-        model: ModelReference = self.models.get(chat.model_id or variables.Variables.DEFAULT_MODEL)
+        model: ModelReference = self.models.get(chat.ai_model_id or variables.Variables.DEFAULT_MODEL)
         request = model.get_request()
 
         return request
@@ -372,7 +372,7 @@ class Ref:
         if not chat:
             return {}
         
-        model: ModelReference = self.models.get(chat.model_id or variables.Variables.DEFAULT_MODEL)
+        model: ModelReference = self.models.get(chat.ai_model_id or variables.Variables.DEFAULT_MODEL)
         special_fields = model.get_special_fields() if model else {}
 
         return special_fields

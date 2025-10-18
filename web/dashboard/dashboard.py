@@ -16,7 +16,7 @@ class ChatInfo(BaseModel):
     chat_name: str
     chance: int
     assistant_id: str
-    model_id: str
+    ai_model_id: str
 
 class ClearChatRequest(BaseModel):
     chat_id: str
@@ -44,7 +44,7 @@ def create_dashboard_router(webapp) -> APIRouter:
                     chat_name=chat.chat_name or f"Chat {chat.id}",
                     chance=chat.chance,
                     assistant_id=chat.assistant_id,
-                    model_id=chat.model_id
+                    ai_model_id=chat.ai_model_id
                 ))
             
             # Sort by chat name for better UX

@@ -115,7 +115,7 @@ class Database:
 
             if row:
                 return wrapper.ChatWrapper(id=row['chat_id'], name=row['chat_name'],
-                                            chance=row['chance'], assistant_id=row['assistant_id'], model_id=row['model_id'])
+                                            chance=row['chance'], assistant_id=row['assistant_id'], ai_model_id=row['ai_model_id'])
 
         except Exception as e:
             _, _, tb = sys.exc_info()
@@ -134,10 +134,12 @@ class Database:
             if row:
                 admin_chats = row['admin_chats'].split(',') if row['admin_chats'] else []
                 return wrapper.UserWrapper(id=row['user_id'], username=row['username'], 
-                                           image_generation_limit=row['image_generation_limit'],
-                                           deep_research_limit=row['deep_research_limit'],
-                                           utc_offset=row['utc_offset'], admin_chats=admin_chats, 
-                                           password=row['password'])
+                                            preferred_name=row['preferred_name'],
+                                            preferred_language=row['preferred_language'],
+                                            image_generation_limit=row['image_generation_limit'],
+                                            deep_research_limit=row['deep_research_limit'],
+                                            utc_offset=row['utc_offset'], admin_chats=admin_chats, 
+                                            password=row['password'])
 
         except Exception as e:
             _, _, tb = sys.exc_info()
@@ -150,17 +152,22 @@ class Database:
         '''
         users: Dict[str, wrapper.UserWrapper] = {}
         try:
-            with self.conn.cursor() as cursor:
-                cursor.execute('SELECT * FROM users WHERE password != ""')
-                rows = cursor.fetchall()
+            conn = sqlite3.connect(self.db_path)
+            conn.row_factory = sqlite3.Row
+            cursor = conn.cursor()
+            
+            cursor.execute('SELECT * FROM users') #WHERE password != ""')
+            rows = cursor.fetchall()
 
             for row in rows:
                 user_wrapper = wrapper.UserWrapper(id=row['user_id'], username=row['username'], 
-                                                  image_generation_limit=row['image_generation_limit'],
-                                                  deep_research_limit=row['deep_research_limit'],
-                                                  utc_offset=row['utc_offset'], admin_chats=row['admin_chats'].split(','), 
-                                                  password=row['password'])
-                users[row['username']] = user_wrapper
+                                                preferred_name=row['preferred_name'],
+                                                preferred_language=row['preferred_language'],
+                                                image_generation_limit=row['image_generation_limit'],
+                                                deep_research_limit=row['deep_research_limit'],
+                                                utc_offset=row['utc_offset'], admin_chats=row['admin_chats'].split(','), 
+                                                password=row['password']) 
+                users[row['user_id']] = user_wrapper
 
             return users
 
@@ -180,26 +187,26 @@ class Database:
 
         if chat.assistant_id is None:
             chat.assistant_id = variables.Variables.DEFAULT_ASSISTANT
-        if chat.model_id is None:
-            chat.model_id = variables.Variables.DEFAULT_MODEL
+        if chat.ai_model_id is None:
+            chat.ai_model_id = variables.Variables.DEFAULT_MODEL
 
         effective_chat_id = chat.chat_id
         chat_name = chat.chat_name
         chance = chat.chance
         assistant_id = chat.assistant_id
-        model_id = chat.model_id
+        ai_model_id = chat.ai_model_id
 
         async with self._lock:
             async with self.conn.cursor() as cursor:
                 await cursor.execute(
                     """
                     INSERT OR IGNORE INTO chats
-                    (chat_id, chat_name, chance, assistant_id, model_id)
+                    (chat_id, chat_name, chance, assistant_id, ai_model_id)
                     VALUES (?, ?, ?, ?, ?)
                     """,
                     (
                         str(effective_chat_id), chat_name,
-                        chance, assistant_id, model_id
+                        chance, assistant_id, ai_model_id
                     ),
                 )
                 await self.conn.commit()
@@ -215,6 +222,7 @@ class Database:
         user_id = user.id
         username = user.username
         preferred_name = user.preferred_name
+        preferred_language = user.preferred_language
         image_generation_limit = user.image_generation_limit
         deep_research_limit = user.deep_research_limit
         utc_offset = user.utc_offset
@@ -226,12 +234,12 @@ class Database:
                 await cursor.execute(
                     """
                     INSERT OR REPLACE INTO users
-                    (user_id, username, preferred_name, image_generation_limit, deep_research_limit, utc_offset, admin_chats, password)
-                    VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+                    (user_id, username, preferred_name, preferred_language, image_generation_limit, deep_research_limit, utc_offset, admin_chats, password)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
                     """,
                     (
                         user_id, username,
-                        preferred_name, image_generation_limit, deep_research_limit, utc_offset, admin_chats, password
+                        preferred_name, preferred_language, image_generation_limit, deep_research_limit, utc_offset, admin_chats, password
                     ),
                 )
                 await self.conn.commit()
@@ -473,7 +481,7 @@ class Database:
                 chat_name            TEXT NOT NULL DEFAULT '',
                 chance               INTEGER NOT NULL DEFAULT 5,
                 assistant_id         TEXT NOT NULL DEFAULT '{variables.Variables.DEFAULT_ASSISTANT}',
-                model_id             TEXT NOT NULL DEFAULT '{variables.Variables.DEFAULT_MODEL}',
+                ai_model_id          TEXT NOT NULL DEFAULT '{variables.Variables.DEFAULT_MODEL}',
                 timestamp            TIMESTAMP DEFAULT CURRENT_TIMESTAMP
             );
             ''',
@@ -483,11 +491,12 @@ class Database:
                 user_id      TEXT PRIMARY KEY,
                 username     TEXT NOT NULL DEFAULT '',
                 preferred_name         TEXT,
+                preferred_language     TEXT DEFAULT 'en',
                 image_generation_limit INTEGER NOT NULL DEFAULT 5,
                 deep_research_limit    INTEGER NOT NULL DEFAULT 3,
                 utc_offset   INTEGER NOT NULL DEFAULT 3,
                 admin_chats  TEXT NOT NULL DEFAULT '',
-                password     VARCHAR(255) NOT NULL DEFAULT '',
+                password     VARCHAR(255) NOT NULL DEFAULT ''
             );
             ''',
 
