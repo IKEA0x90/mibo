@@ -99,6 +99,7 @@ class Database:
             
         self.bus.register(ref_events.NewChat, self._insert_chat)
         self.bus.register(ref_events.NewMessage, self._add_message)
+        self.bus.register(ref_events.NewUser, self._insert_user)
         self.bus.register(mibo_events.TelegramIDUpdateRequest, self._update_telegram_id)
 
         self._handlers_registered = True
@@ -134,7 +135,8 @@ class Database:
                 return wrapper.UserWrapper(id=row['user_id'], username=row['username'], 
                                            image_generation_limit=row['image_generation_limit'],
                                            deep_research_limit=row['deep_research_limit'],
-                                           utc_offset=row['utc_offset'])
+                                           utc_offset=row['utc_offset'], admin_chats=row['admin_chats'].split(','), 
+                                           password=row['password'], salt=row['salt'])
 
         except Exception as e:
             _, _, tb = sys.exc_info()
@@ -190,18 +192,21 @@ class Database:
         image_generation_limit = user.image_generation_limit
         deep_research_limit = user.deep_research_limit
         utc_offset = user.utc_offset
+        admin_chats = ','.join(user.admin_chats)
+        password = user.password
+        salt = user.salt
 
         async with self._lock:
             async with self.conn.cursor() as cursor:
                 await cursor.execute(
                     """
                     INSERT OR REPLACE INTO users
-                    (user_id, username, preferred_name, image_generation_limit, deep_research_limit, utc_offset)
-                    VALUES (?, ?, ?, ?, ?, ?)
+                    (user_id, username, preferred_name, image_generation_limit, deep_research_limit, utc_offset, admin_chats, password, salt)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
                     """,
                     (
                         user_id, username,
-                        preferred_name, image_generation_limit, deep_research_limit, utc_offset
+                        preferred_name, image_generation_limit, deep_research_limit, utc_offset, admin_chats, password, salt
                     ),
                 )
                 await self.conn.commit()
@@ -456,6 +461,9 @@ class Database:
                 image_generation_limit INTEGER NOT NULL DEFAULT 5,
                 deep_research_limit    INTEGER NOT NULL DEFAULT 3,
                 utc_offset   INTEGER NOT NULL DEFAULT 3,
+                admin_chats  TEXT NOT NULL DEFAULT '',
+                password     VARCHAR(255) NOT NULL DEFAULT '',
+                salt         VARCHAR(255) NOT NULL DEFAULT ''
             );
             ''',
 

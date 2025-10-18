@@ -191,19 +191,10 @@ class UserWrapper():
         self.deep_research_limit: int = kwargs.get('deep_research_limit', 3)
 
         self.utc_offset: int = kwargs.get('utc_offset', 3)
+        self.admin_chats: List[str] = kwargs.get('admin_chats', [])
 
-    def to_child_dict(self):
-        return {
-            'username': self.username,
-            'preferred_name': self.preferred_name,
-            'image_generation_limit': self.image_generation_limit,
-            'deep_research_limit': self.deep_research_limit,
-            'utc_offset': self.utc_offset,
-        }
-    
-    @classmethod
-    def get_child_fields(cls):
-        return ['username', 'preferred_name', 'image_generation_limit', 'deep_research_limit', 'utc_offset']
+        self.password: str = kwargs.get('password', '')
+        self.salt: str = kwargs.get('salt', '')
 
 class ChatWrapper():
     def __init__(self, id: str, **kwargs):
