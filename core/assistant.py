@@ -133,7 +133,7 @@ class Assistant:
                     image = await self._download_image_url(img['image_url'], incomplete_wrapper=incomplete_wrapper, parent_event=event)
                     wrapper_list.append(image)
 
-            completion_event = assistant_events.CompletionResponse(chat_id=chat_id, wrapper_list=wrapper_list, typing=typing, event_id=event.event_id)
+            completion_event = assistant_events.CompletionResponse(wrapper_list=wrapper_list, typing=typing, event_id=event.event_id)
             await self.bus.emit(completion_event)
 
         except Exception as e:
@@ -146,15 +146,16 @@ class Assistant:
         Send a completion.
         '''
         try:
-            chat_id: str = event.chat_id
-            wrapper_list: List[wrapper.Wrapper] = event.wrapper_list
+            messages: List[wrapper.Wrapper] = event.wrapper_list
+
+            chat_id: str = messages[0].chat_id
 
             typing = event.typing
             typing()
 
-            await self.ref.add_messages(chat_id, wrapper_list, False)
+            await self.ref.add_messages(chat_id, messages, False)
 
-            response_event = assistant_events.AssistantResponse(messages=wrapper_list, typing=typing)
+            response_event = assistant_events.AssistantResponse(messages=messages, typing=typing)
             await self.bus.emit(response_event)
 
         except Exception as e:
