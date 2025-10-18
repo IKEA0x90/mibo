@@ -12,6 +12,7 @@ from pydantic import BaseModel
 
 from core import wrapper
 from events import system_events
+from web import web
 
 class LoginRequest(BaseModel):
     username: str
@@ -37,7 +38,7 @@ def verify_password(plain_password: str, hashed_password: str) -> bool:
     except Exception:
         return False
 
-def create_auth_router(webapp) -> APIRouter:
+def create_auth_router(webapp: web.WebApp) -> APIRouter:
     """Create authentication router with access to the webapp instance."""
     router = APIRouter()
     
@@ -99,7 +100,7 @@ def create_auth_router(webapp) -> APIRouter:
             ))
             raise HTTPException(
                 status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-                detail="Internal server error"
+                detail=f"{e}"
             )
     
     @router.post("/logout")
