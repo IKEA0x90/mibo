@@ -132,11 +132,12 @@ class Database:
                 row = await cursor.fetchone()
 
             if row:
+                admin_chats = row['admin_chats'].split(',') if row['admin_chats'] else []
                 return wrapper.UserWrapper(id=row['user_id'], username=row['username'], 
                                            image_generation_limit=row['image_generation_limit'],
                                            deep_research_limit=row['deep_research_limit'],
-                                           utc_offset=row['utc_offset'], admin_chats=row['admin_chats'].split(','), 
-                                           password=row['password'], salt=row['salt'])
+                                           utc_offset=row['utc_offset'], admin_chats=admin_chats, 
+                                           password=row['password'])
 
         except Exception as e:
             _, _, tb = sys.exc_info()
@@ -158,7 +159,7 @@ class Database:
                                                   image_generation_limit=row['image_generation_limit'],
                                                   deep_research_limit=row['deep_research_limit'],
                                                   utc_offset=row['utc_offset'], admin_chats=row['admin_chats'].split(','), 
-                                                  password=row['password'], salt=row['salt'])
+                                                  password=row['password'])
                 users[row['username']] = user_wrapper
 
             return users
@@ -219,19 +220,18 @@ class Database:
         utc_offset = user.utc_offset
         admin_chats = ','.join(user.admin_chats)
         password = user.password
-        salt = user.salt
 
         async with self._lock:
             async with self.conn.cursor() as cursor:
                 await cursor.execute(
                     """
                     INSERT OR REPLACE INTO users
-                    (user_id, username, preferred_name, image_generation_limit, deep_research_limit, utc_offset, admin_chats, password, salt)
-                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    (user_id, username, preferred_name, image_generation_limit, deep_research_limit, utc_offset, admin_chats, password)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?)
                     """,
                     (
                         user_id, username,
-                        preferred_name, image_generation_limit, deep_research_limit, utc_offset, admin_chats, password, salt
+                        preferred_name, image_generation_limit, deep_research_limit, utc_offset, admin_chats, password
                     ),
                 )
                 await self.conn.commit()
@@ -488,7 +488,6 @@ class Database:
                 utc_offset   INTEGER NOT NULL DEFAULT 3,
                 admin_chats  TEXT NOT NULL DEFAULT '',
                 password     VARCHAR(255) NOT NULL DEFAULT '',
-                salt         VARCHAR(255) NOT NULL DEFAULT ''
             );
             ''',
 

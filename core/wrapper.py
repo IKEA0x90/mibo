@@ -194,7 +194,6 @@ class UserWrapper():
         self.admin_chats: List[str] = kwargs.get('admin_chats', [])
 
         self.password: str = kwargs.get('password', '')
-        self.salt: str = kwargs.get('salt', '')
         self.token: str = kwargs.get('token', '')
 
 class ChatWrapper():

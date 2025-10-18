@@ -120,12 +120,11 @@ class WebApp:
         async def login_page(request: Request):
             return self.templates.TemplateResponse("auth/login.html", {"request": request})
         
-        # Dashboard page (protected)
+        # Dashboard page (public access - auth handled by JavaScript)
         @self.app.get("/dashboard", response_class=HTMLResponse)
-        async def dashboard_page(request: Request, user: dict = Depends(self.get_current_user)):
+        async def dashboard_page(request: Request):
             return self.templates.TemplateResponse("dashboard/dashboard.html", {
-                "request": request, 
-                "user": user
+                "request": request
             })
     
     def create_access_token(self, data: dict) -> str:
@@ -143,8 +142,10 @@ class WebApp:
             payload = jwt.decode(token, self.JWT_SECRET, algorithms=[self.JWT_ALGORITHM])
             return payload
         except jwt.ExpiredSignatureError:
+            print(f"JWT token expired: {token[:20]}...")
             return None
-        except jwt.JWTError:
+        except jwt.JWTError as e:
+            print(f"JWT decode error: {e}, token: {token[:20]}...")
             return None
     
     async def get_current_user(self, credentials: HTTPAuthorizationCredentials = Depends(HTTPBearer(auto_error=False))):
@@ -185,7 +186,7 @@ class WebApp:
             return {
                 "user_id": user.id,
                 "username": user.username,
-                "admin_chats": user.admin_chats
+                "admin_chats": getattr(user, 'admin_chats', [])
             }
         except Exception:
             raise HTTPException(
