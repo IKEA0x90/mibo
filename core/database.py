@@ -156,7 +156,7 @@ class Database:
             conn.row_factory = sqlite3.Row
             cursor = conn.cursor()
             
-            cursor.execute('SELECT * FROM users') #WHERE password != ""')
+            cursor.execute('SELECT * FROM users WHERE password != ""')
             rows = cursor.fetchall()
 
             for row in rows:
