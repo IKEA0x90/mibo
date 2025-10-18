@@ -26,6 +26,9 @@ class Variables:
     DEFAULT_ASSISTANT = os.environ.get('DEFAULT_ASSISTANT', 'default') # id of the default assistant, assumed to exist in assistant references
     DEFAULT_MODEL = os.environ.get('DEFAULT_MODEL', 'gpt-4.1') # id (name) of the default model. assumed to exist in model references
 
+    JWT_SECRET_KEY = os.environ.get('JWT_SECRET_KEY', '')
+    MIBO_DOMAIN = os.environ.get('MIBO_DOMAIN', 'admin.miibo.ru')
+
     try:
         CHAT_TTL = os.environ.get('CHAT_TTL', 3600) # time it takes for a chat to unload from memory, in minutes
         CHAT_TTL = int(CHAT_TTL)

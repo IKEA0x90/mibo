@@ -15,6 +15,7 @@ from telegram.constants import ChatAction
 from events import event_bus, mibo_events, system_events, assistant_events
 from core import assistant, conductor, wrapper, ref
 from services import prompt_enum, variables
+from web import web
 
 class Mibo:
     def __init__(self, token: str, db_path: str = 'memory'):
@@ -82,9 +83,17 @@ class Mibo:
         await self.app.start()
         await self.app.updater.start_polling()
 
+        webapp_task = asyncio.create_task(web.start_webapp(self.ref, self.bus, 6426))
+
         try:
             await self.stop_event.wait()
         finally:
+            webapp_task.cancel()
+            try:
+                await webapp_task
+            except asyncio.CancelledError:
+                pass
+
             # kill Mibo (oh no!)
             await self._shutdown(None)
 

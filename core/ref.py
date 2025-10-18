@@ -4,8 +4,6 @@ import time
 
 import datetime as dt
 
-from psutil import users
-
 from core import database, window, wrapper
 from events import ref_events, event_bus, system_events
 from services import tokenizers, variables, prompt_enum

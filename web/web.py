@@ -9,6 +9,7 @@ from datetime import datetime, timedelta, timezone
 from typing import Dict, List, Optional
 import uvicorn
 from pathlib import Path
+import os
 
 from fastapi import FastAPI, Request, Response, HTTPException, Depends, status, Form
 from fastapi.staticfiles import StaticFiles
@@ -20,6 +21,7 @@ import jwt
 
 from events import event_bus
 from core import ref
+from services import variables
 from .auth import authentication
 from .dashboard import dashboard
 
@@ -39,7 +41,7 @@ class WebApp:
         )
         
         # JWT Configuration
-        self.JWT_SECRET = "mibo_web_secret_key_change_in_production"
+        self.JWT_SECRET = variables.Variables.JWT_SECRET_KEY
         self.JWT_ALGORITHM = "HS256"
         self.JWT_EXPIRE_MINUTES = 30
         
@@ -53,21 +55,46 @@ class WebApp:
         self._setup_routes()
         
     def _setup_middleware(self):
-        """Setup CORS and security middleware."""
+        """Setup CORS and security middleware for HTTPS deployment."""
+        # Get domain from environment or use default
+        domain = variables.Variables.MIBO_DOMAIN
+        
         self.app.add_middleware(
             CORSMiddleware,
-            allow_origins=["*"],  # Configure appropriately for production
+            allow_origins=[
+                f"https://{domain}",
+                f"https://www.{domain}",
+                "http://localhost:6426",  # For local testing
+                "http://127.0.0.1:6426",  # Local testing alternative
+            ],
             allow_credentials=True,
-            allow_methods=["*"],
-            allow_headers=["*"],
+            allow_methods=["GET", "POST", "PUT", "DELETE", "OPTIONS"],
+            allow_headers=["Authorization", "Content-Type", "X-Requested-With", "Accept"],
         )
         
         @self.app.middleware("http")
         async def security_headers(request: Request, call_next):
             response = await call_next(request)
+            
+            # HTTPS Security Headers for subdomain
             response.headers["X-Content-Type-Options"] = "nosniff"
             response.headers["X-Frame-Options"] = "DENY"
             response.headers["X-XSS-Protection"] = "1; mode=block"
+            response.headers["Referrer-Policy"] = "strict-origin-when-cross-origin"
+            
+            # HSTS for subdomain (always set since we're HTTPS-only)
+            response.headers["Strict-Transport-Security"] = "max-age=31536000; includeSubDomains; preload"
+            
+            # Content Security Policy for admin subdomain
+            response.headers["Content-Security-Policy"] = (
+                "default-src 'self'; "
+                "script-src 'self' 'unsafe-inline'; "
+                "style-src 'self' 'unsafe-inline'; "
+                "img-src 'self' data:; "
+                "font-src 'self'; "
+                "connect-src 'self';"
+            )
+            
             return response
     
     def _setup_routes(self):
