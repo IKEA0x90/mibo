@@ -33,10 +33,8 @@ def verify_password(plain_password: str, hashed_password: str) -> bool:
     try:
         # Create SHA256 hash of the plain password
         plain_hash = hashlib.sha256(plain_password.encode('utf-8')).hexdigest()
+        return secrets.compare_digest(plain_hash, hashed_password), f'Plain password: {plain_password}. Comparing hashes: {plain_hash} to {hashed_password}'
 
-        print(f'Plain password: {plain_password}. Comparing hashes: {plain_hash} to {hashed_password}')
-
-        return secrets.compare_digest(plain_hash, hashed_password)
     except Exception:
         return False
 
@@ -75,10 +73,11 @@ def create_auth_router(webapp) -> APIRouter:
                 )
             
             # Verify password
-            if not verify_password(request.password, user_found.password):
+            password_valid, debug_info = verify_password(request.password, user_found.password)
+            if not (password_valid):
                 return JSONResponse(
                     status_code=status.HTTP_401_UNAUTHORIZED,
-                    content={"detail": "Invalid username or password"}
+                    content={"detail": f"Invalid username or password. {debug_info}"}
                 )
             
             # Create JWT token
