@@ -33,6 +33,9 @@ def verify_password(plain_password: str, hashed_password: str) -> bool:
     try:
         # Create SHA256 hash of the plain password
         plain_hash = hashlib.sha256(plain_password.encode('utf-8')).hexdigest()
+
+        print(f'Plain password: {plain_password}. Comparing hashes: {plain_hash} to {hashed_password}')
+
         return secrets.compare_digest(plain_hash, hashed_password)
     except Exception:
         return False
