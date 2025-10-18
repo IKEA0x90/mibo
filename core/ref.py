@@ -402,7 +402,7 @@ class Ref:
                     reference_object = PromptReference.from_dict(reference_id, reference_data, reference_type)
                     self.prompts[reference_id] = reference_object
 
-            self.users = self.db.get_registered_users()
+                self.users = self.db.get_registered_users()
 
         except Exception as e:
             self.bus.emit_sync(system_events.ErrorEvent(
