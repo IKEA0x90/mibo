@@ -33,8 +33,7 @@ def verify_password(plain_password: str, hashed_password: str) -> bool:
     try:
         # Create SHA256 hash of the plain password
         plain_hash = hashlib.sha256(plain_password.encode('utf-8')).hexdigest()
-        return secrets.compare_digest(plain_hash, hashed_password), f'Plain password: {plain_password}. Comparing hashes: {plain_hash} to {hashed_password}'
-
+        return secrets.compare_digest(plain_hash, hashed_password)
     except Exception:
         return False
 
@@ -51,15 +50,13 @@ def create_auth_router(webapp) -> APIRouter:
         try:
             # Find user by username in ref.users
             user_found = None
+            user: wrapper.UserWrapper
             for user_id, user in webapp.ref.users.items():
                 if user.username == request.username:
                     user_found = user
                     break
             
-            # If not found in memory, try database
             if not user_found:
-                # Since we don't have get_user_by_username, we'll search through all users
-                # This is not ideal but works for the current implementation
                 return JSONResponse(
                     status_code=status.HTTP_401_UNAUTHORIZED,
                     content={"detail": "Invalid username or password"}
@@ -73,11 +70,10 @@ def create_auth_router(webapp) -> APIRouter:
                 )
             
             # Verify password
-            password_valid, debug_info = verify_password(request.password, user_found.password)
-            if not (password_valid):
+            if not verify_password(request.password, user_found.password):
                 return JSONResponse(
                     status_code=status.HTTP_401_UNAUTHORIZED,
-                    content={"detail": f"Invalid username or password. {debug_info}"}
+                    content={"detail": "Invalid username or password"}
                 )
             
             # Create JWT token

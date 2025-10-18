@@ -142,6 +142,31 @@ class Database:
             _, _, tb = sys.exc_info()
             await self.bus.emit(system_events.ErrorEvent(error="Hmm.. Can't read user from the database.", e=e, tb=tb))
             return None
+        
+    async def get_registered_users(self) -> Dict[str, wrapper.UserWrapper]:
+        '''
+        Get all users who have a password set (registered users).
+        '''
+        users: Dict[str, wrapper.UserWrapper] = {}
+        try:
+            async with self.conn.cursor() as cursor:
+                await cursor.execute('SELECT * FROM users WHERE password != ""')
+                rows = await cursor.fetchall()
+
+            for row in rows:
+                user_wrapper = wrapper.UserWrapper(id=row['user_id'], username=row['username'], 
+                                                  image_generation_limit=row['image_generation_limit'],
+                                                  deep_research_limit=row['deep_research_limit'],
+                                                  utc_offset=row['utc_offset'], admin_chats=row['admin_chats'].split(','), 
+                                                  password=row['password'], salt=row['salt'])
+                users[row['username']] = user_wrapper
+
+            return users
+
+        except Exception as e:
+            _, _, tb = sys.exc_info()
+            await self.bus.emit(system_events.ErrorEvent(error="Hmm.. Can't read users from the database.", e=e, tb=tb))
+            return {}
 
     async def _insert_chat(self, event: ref_events.NewChat):
         '''

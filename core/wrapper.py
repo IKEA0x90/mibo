@@ -195,6 +195,7 @@ class UserWrapper():
 
         self.password: str = kwargs.get('password', '')
         self.salt: str = kwargs.get('salt', '')
+        self.token: str = kwargs.get('token', '')
 
 class ChatWrapper():
     def __init__(self, id: str, **kwargs):

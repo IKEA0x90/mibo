@@ -14,8 +14,8 @@
     --info-color: #3182ce;       /* Info blue */
     
     /* Neutral Colors */
-    --text-primary: #2d3748;     /* Primary text */
-    --text-secondary: #718096;   /* Secondary text */
+    --text-primary: #0c192e;     /* Primary text */
+    --text-secondary: #0c192e;   /* Secondary text */
     --border-color: #e2e8f0;     /* Borders */
     --background-gray: #f7fafc;  /* Light background */
     --background-white: #ffffff; /* White background */
@@ -72,6 +72,7 @@ h3 {
 
 p {
     margin-bottom: 1rem;
+    color: var(--text-primary);
 }
 
 /* Links */
@@ -195,7 +196,7 @@ a:hover {
     display: block;
     margin-bottom: 0.5rem;
     font-weight: 500;
-    color: var(--text-primary);
+    color: var(--primary-red);
 }
 
 /* Cards */
@@ -449,21 +450,5 @@ a:hover {
     .card-body,
     .card-header {
         padding: 1rem;
-    }
-}
-
-/* Dark mode support (optional) */
-@media (prefers-color-scheme: dark) {
-    :root {
-        --text-primary: #e2e8f0;
-        --text-secondary: #a0aec0;
-        --border-color: #4a5568;
-        --background-gray: #1a202c;
-        --background-white: #2d3748;
-    }
-    
-    body {
-        background-color: var(--background-gray);
-        color: var(--text-primary);
     }
 }
