@@ -1,3 +1,4 @@
+import uuid
 import openai
 import datetime as dt
 import random
@@ -134,6 +135,39 @@ class Assistant:
             await self.ref.add_messages(chat_id, wrapper_list, False, idx=idx)
 
             response_event = assistant_events.AssistantResponse(messages=wrapper_list, event_id=event.event_id, typing=typing)
+            await self.bus.emit(response_event)
+
+        except Exception as e:
+            _, _, tb = sys.exc_info()
+            issue = system_events.ErrorEvent(error='Whoops! An unexpected error occurred.', e=e, tb=tb, event_id=event.event_id, chat_id=chat_id)
+            await self.bus.emit(issue)
+
+    async def fake_completion(self, message: str, chat_id: str, typing):
+        '''
+        Send a fake completion.
+        '''
+        try:
+            # start typing simulation
+            typing()
+            content = message
+
+            wrapper_list = []
+            message_list = variables.Variables.parse_text(content)
+
+            for i, m in enumerate(message_list):  
+                assistant_message = wrapper.MessageWrapper(
+                    id=f'{uuid.uuid4().hex}',
+                    chat_id=chat_id, 
+                    role='assistant', user=variables.Variables.USERNAME,
+                    message=m, ping=False,
+                    datetime=dt.datetime.now(tz=dt.timezone.utc)
+                )
+
+                wrapper_list.append(assistant_message)
+
+            await self.ref.add_messages(chat_id, wrapper_list, False)
+
+            response_event = assistant_events.AssistantResponse(messages=wrapper_list, typing=typing)
             await self.bus.emit(response_event)
 
         except Exception as e:

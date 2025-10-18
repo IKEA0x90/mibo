@@ -322,6 +322,13 @@ class Mibo:
         '''
         await context.bot.send_message(update.effective_chat.id, 'Debug OK')
 
+    async def _fake_completion(self, chat_id: str, message: str):
+        '''
+        Sends a fake completion.
+        '''
+        typing = self._get_typing(chat_id=chat_id)
+        await self.assistant.fake_completion(message, chat_id=chat_id, typing=typing)
+
     async def _start(self, update: Update, context: CallbackContext):
         '''
         Sends a welcome message when the bot is started.
