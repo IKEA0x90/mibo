@@ -199,6 +199,10 @@ a:hover {
     color: var(--primary-red);
 }
 
+.label {
+    color: var(--primary-red);
+}
+
 /* Cards */
 .card {
     background-color: var(--background-white);
