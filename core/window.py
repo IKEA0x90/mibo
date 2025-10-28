@@ -53,6 +53,7 @@ class Window():
             self.messages.clear()
             self.tokens = 0
             self.ready = True
+            print(f'Window {message.chat_id} is ready, starting live processing.')
 
             await self._insert_live_message(message, True)
 
@@ -247,7 +248,7 @@ class Window():
         messages = []
 
         for message_id, message in enumerate(sorted_messages, start=1):
-            group_id = message.id
+            group_id = getattr(message, 'group_id', message.id)
 
             if group_id not in grouped_content:
                 grouped_content[group_id] = {
@@ -281,9 +282,16 @@ class Window():
                     )
 
         # Now, sort groups by their first appearance in sorted_messages
-        sorted_groups = [grouped_content[k] for k in [msg.id for msg in sorted_messages] if k in grouped_content]
+        # We need to find the first message in each group to maintain order
+        group_order = {}
+        for msg in sorted_messages:
+            group_id = getattr(msg, 'group_id', msg.id)
+            if group_id not in group_order:
+                group_order[group_id] = msg.id
 
-        for group in sorted_groups:
+        sorted_groups = sorted(grouped_content.items(), key=lambda x: group_order[x[0]])
+
+        for group_id, group in sorted_groups:
             if group["content"]:
                 messages.append({
                     "role": group["role"],

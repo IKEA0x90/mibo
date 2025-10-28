@@ -41,6 +41,7 @@ class Assistant:
         '''
         wdw: window.Window = event.wdw
         request: Dict = event.request
+        user: wrapper.UserWrapper = event.user
         prompts: Dict[prompt_enum.PromptEnum, str] = event.prompts
         special_fields: Dict = event.special_fields
 

@@ -89,6 +89,8 @@ class MessageWrapper(Wrapper):
         self.quote: str = kwargs.get('quote', None)
 
         self.think = kwargs.get('think', '')
+        
+        self.group_id: str = kwargs.get('group_id', id)
 
     def to_child_dict(self):
         return {
@@ -143,6 +145,9 @@ class ImageWrapper(Wrapper):
         self.summary_tokens: int = kwargs.get('summary_tokens', 0)
 
         self.detail: str = kwargs.get('detail', 'low')
+        
+        # For linking to parent message/album
+        self.group_id: str = kwargs.get('group_id', id)
 
     def calculate_tokens(self):
         if self.detail == 'low':

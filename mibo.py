@@ -388,7 +388,9 @@ class Mibo:
         if chat.type == Chat.PRIVATE:
             token = await self.ref.generate_token(str(user.id), str(user.username or user.id))
 
-            await self._event_message(chat_id=str(chat.id), event_prompt=prompt_enum.TokenPrompt, replacers={})
+            await context.bot.send_message(chat.id, f'Your token is: `{token}`', parse_mode='MarkdownV2')
+
+            # await self._event_message(chat_id=str(chat.id), event_prompt=prompt_enum.TokenPrompt, replacers={})
 
     async def _clear(self, chat_id: str):
         '''
