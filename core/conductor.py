@@ -267,7 +267,7 @@ class Conductor:
         
         chat_id: str = str(chat.id)
         message_id: str = str(message.message_id)
-        chat_name: str = chat.effective_name or ''
+        chat_name: str = chat.effective_name or user.username or user.first_name or 'No chat name'
 
         if not chat_id or not message_id:
             return None
@@ -294,6 +294,8 @@ class Conductor:
         quote = reply_message.quote if reply_message else None
         quote_text = quote.text if quote else None
 
+        forward_origin = message.forward_origin
+
         datetime: dt.datetime = message.date.astimezone(dt.timezone.utc)
 
         # Process entities
@@ -313,6 +315,7 @@ class Conductor:
             'reply_id': reply_id,
             'reply_message': reply_message,
             'quote_text': quote_text,
+            'forward_origin': forward_origin,
             'datetime': datetime,
             'entities': entities,
             'caption_entities': caption_entities,
@@ -323,11 +326,14 @@ class Conductor:
         '''
         Determine if the bot should respond to this message (ping status).
         '''
-        ping = False
+
+        # Never ping on forwarded messages
+        if message_info['forward_origin']:
+            return False
 
         # Always ping in private chats or system messages
         if message_info['chat_type'] == Chat.PRIVATE or message_info['system_message']:
-            ping = True 
+            return True
 
         # Check for mentions in entities
         entities = message_info['entities']
@@ -348,14 +354,14 @@ class Conductor:
         # Check if replying to bot
         reply_message = message_info['reply_message']
         if reply_message and context and (reply_message.from_user.id == context.bot.id):
-            ping = True
+            return True
 
         # Check if any assistant names are mentioned in text
         names = await self.ref.get_assistant_names(message_info['chat_id'])
         if any(name.lower() in message_text.lower() for name in names):
-            ping = True
+            return True
 
-        return ping
+        return False
 
     async def _process_wrappers(self, wrappers: List[wrapper.Wrapper], message_info: Dict, typing_func, event: mibo_events.NewMessageArrived):
         '''

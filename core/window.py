@@ -211,6 +211,8 @@ class Window():
             self.tokens = 0
             self.ready = True
 
+        return self
+
     def _prepare_text(self, message: wrapper.MessageWrapper, message_id: int, reply_message_id: int, **kwargs) -> str:
         text = message.message if message.role == 'assistant' else str(message)
 

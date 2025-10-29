@@ -1,0 +1,1 @@
+# Allows to edit user information defined in UserWrapper, except ones defined by telegram (username, user id).

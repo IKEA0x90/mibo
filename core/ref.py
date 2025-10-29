@@ -260,7 +260,9 @@ class Ref:
         wdw = self.windows.get(chat_id)
 
         if wdw:
-            await wdw.clear()
+            wdw = await wdw.clear()
+
+        self.windows[chat_id] = wdw
 
         return wdw
 

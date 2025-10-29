@@ -1,7 +1,6 @@
-"""
-API for dashboard actions.
-Handles chat management and clear functionality.
-"""
+'''
+Code preserved for reference. Delete old code after refactoring.
+See new requirements in dashboard.html
 
 from typing import List, Dict
 from fastapi import APIRouter, HTTPException, status, Depends
@@ -156,3 +155,5 @@ def create_dashboard_router(webapp) -> APIRouter:
             )
     
     return router 
+
+'''
