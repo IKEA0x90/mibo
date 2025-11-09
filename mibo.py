@@ -384,6 +384,9 @@ class Mibo:
 
         if not user or not chat:
             return
+        
+        if str(user.id) != variables.Variables.ADMIN_ID:
+            return
 
         if chat.type == Chat.PRIVATE:
             token = await self.ref.generate_token(str(user.id), str(user.username or user.id))

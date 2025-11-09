@@ -1,19 +1,3 @@
-<!-- 
-The admin dashboard is now a single-page webpage.
-The elements that must always be present are:
-- Header with user info and logout button
-- Buttons to navigate between sections / change the view below
-- The container below which is dynamically updated based on the selected section
-The sections are:
-1. Chat manager
-2. Reference manager
-3. User manager
-
-Any calls that change anything must go to ref.py  
--->
-
-<!--
-CODE BELOW IS PRESERVED FOR CSS REFERENCE ONLY. DELETE AFTER REFACTORING IS COMPLETE.
 <!DOCTYPE html>
 <html lang="en">
 <head>
@@ -29,7 +13,7 @@ CODE BELOW IS PRESERVED FOR CSS REFERENCE ONLY. DELETE AFTER REFACTORING IS COMP
         }
         
         .dashboard-container {
-            max-width: 1200px;
+            max-width: 1400px;
             margin: 0 auto;
             padding: 2rem;
         }
@@ -41,10 +25,13 @@ CODE BELOW IS PRESERVED FOR CSS REFERENCE ONLY. DELETE AFTER REFACTORING IS COMP
             margin-bottom: 2rem;
             padding-bottom: 1rem;
             border-bottom: 2px solid var(--border-color);
+            background: white;
+            padding: 1.5rem;
+            border-radius: 8px;
         }
         
         .header h1 {
-            color: rgb(0, 0, 0);
+            color: var(--primary-red);
             margin: 0;
         }
         
@@ -68,33 +55,35 @@ CODE BELOW IS PRESERVED FOR CSS REFERENCE ONLY. DELETE AFTER REFACTORING IS COMP
             background: var(--dark-red);
         }
         
-        .stats-grid {
-            display: grid;
-            grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+        .nav-buttons {
+            display: flex;
             gap: 1rem;
             margin-bottom: 2rem;
-        }
-        
-        .stat-card {
             background: white;
-            padding: 1.5rem;
+            padding: 1rem;
             border-radius: 8px;
-            box-shadow: 0 2px 10px rgba(0, 0, 0, 0.1);
-            border-left: 4px solid rgb(0, 0, 0);
         }
         
-        .stat-card h3 {
-            margin: 0 0 0.5rem 0;
-            color: var(--text-secondary);
-            font-size: 0.9rem;
-            text-transform: uppercase;
-        }
-        
-        .stat-card .value {
-            font-size: 2rem;
-            font-weight: bold;
+        .nav-btn {
+            flex: 1;
+            padding: 1rem 2rem;
+            font-size: 1rem;
+            font-weight: 500;
+            background: white;
             color: var(--primary-red);
-            margin: 0;
+            border: 2px solid var(--primary-red);
+            border-radius: 5px;
+            cursor: pointer;
+            transition: all 0.3s ease;
+        }
+        
+        .nav-btn:hover {
+            background: var(--light-red);
+        }
+        
+        .nav-btn.active {
+            background: var(--primary-red);
+            color: white;
         }
         
         .main-section {
@@ -102,125 +91,275 @@ CODE BELOW IS PRESERVED FOR CSS REFERENCE ONLY. DELETE AFTER REFACTORING IS COMP
             padding: 2rem;
             border-radius: 8px;
             box-shadow: 0 2px 10px rgba(0, 0, 0, 0.1);
+            min-height: 500px;
+        }
+        
+        .manager-section {
+            display: none;
+        }
+        
+        .manager-section.active {
+            display: block;
         }
         
         .section-title {
             color: var(--primary-red);
             margin: 0 0 1.5rem 0;
-            font-size: 1.5rem;
-        }
-        
-        .clear-form {
-            display: flex;
-            gap: 1rem;
-            align-items: flex-end;
-            margin-bottom: 2rem;
-        }
-        
-        .form-group {
-            flex: 1;
-        }
-        
-        .form-group label {
-            display: block;
-            margin-bottom: 0.5rem;
-            color: var(--text-primary);
-            font-weight: 500;
-        }
-        
-        .form-group select, .form-group input {
-            width: 100%;
-            padding: 0.75rem;
-            border: 2px solid var(--border-color);
-            border-radius: 5px;
-            font-size: 1rem;
-        }
-        
-        .form-group select:focus, .form-group input:focus {
-            outline: none;
-            border-color: var(--primary-red);
-        }
-        
-        .clear-btn {
-            background: var(--primary-red);
-            color: white;
-            border: none;
-            padding: 0.75rem 2rem;
-            border-radius: 5px;
-            font-size: 1rem;
-            cursor: pointer;
-            transition: background-color 0.3s ease;
-            white-space: nowrap;
-            height: 48px;
-            margin-top: 1.5rem;
-        }
-        
-        .clear-btn:hover {
-            background: var(--dark-red);
-        }
-        
-        .clear-btn:disabled {
-            background: var(--text-secondary);
-            cursor: not-allowed;
-        }
-        
-        .message {
-            padding: 1rem;
-            border-radius: 5px;
-            margin-bottom: 1rem;
-            display: none;
-        }
-        
-        .message.success {
-            background: var(--success-color);
-            color: white;
-        }
-        
-        .message.error {
-            background: var(--error-red);
-            color: white;
-        }
-        
-        .loading {
-            display: none;
-            text-align: center;
-            color: var(--text-secondary);
-            margin: 1rem 0;
-        }
-        
-        .chat-list {
-            margin-top: 2rem;
-        }
-        
-        .chat-item {
-            display: flex;
-            justify-content: space-between;
-            align-items: center;
-            padding: 1rem;
-            border: 1px solid var(--border-color);
-            border-radius: 5px;
-            margin-bottom: 0.5rem;
-            transition: background-color 0.3s ease;
-        }
-        
-        .chat-item:hover {
-            background: #f9f9f9;
-        }
-        
-        .chat-info {
-            flex: 1;
-        }
-        
-        .chat-name {
-            font-weight: 500;
-            color: var(--text-primary);
-        }
-        
-        .chat-details {
-            font-size: 0.85rem;
-            color: var(--text-secondary);
-            margin-top: 0.25rem;
+            font-size: 1.75rem;
+            border-bottom: 2px solid var(--border-color);
+            padding-bottom: 0.5rem;
         }
     </style>
 </head>
--->
+<body>
+    <div class="dashboard-container">
+        <!-- Header -->
+        <div class="header">
+            <h1>Mibo Admin Dashboard</h1>
+            <div class="user-info">
+                <span id="username-display">Loading...</span>
+                <button class="logout-btn" onclick="logout()">Logout</button>
+            </div>
+        </div>
+        
+        <!-- Navigation -->
+        <div class="nav-buttons">
+            <button class="nav-btn active" onclick="showSection('chat', this)">Chat Manager</button>
+            <button class="nav-btn" onclick="showSection('reference', this)">Reference Manager</button>
+            <button class="nav-btn" onclick="showSection('user', this)">User Manager</button>
+        </div>
+        
+        <!-- Main Content -->
+        <div class="main-section">
+            <!-- Chat Manager -->
+            <div id="chat-section" class="manager-section active">
+                <!-- Content will be loaded from chat.html -->
+            </div>
+            
+            <!-- Reference Manager -->
+            <div id="reference-section" class="manager-section">
+                <!-- Content will be loaded from reference.html -->
+            </div>
+            
+            <!-- User Manager -->
+            <div id="user-section" class="manager-section">
+                <!-- Content will be loaded from user.html -->
+            </div>
+        </div>
+    </div>
+    
+    <script>
+        // Global manager initialization functions
+        let chatManagerInitialized = false;
+        let referenceManagerInitialized = false;
+        let userManagerInitialized = false;
+        
+        // Check authentication on page load
+        async function checkAuth() {
+            const token = localStorage.getItem('access_token');
+            
+            if (!token) {
+                window.location.href = '/login';
+                return;
+            }
+            
+            try {
+                const response = await fetch('/api/auth/verify', {
+                    headers: {
+                        'Authorization': `Bearer ${token}`
+                    }
+                });
+                
+                if (!response.ok) {
+                    throw new Error('Token invalid');
+                }
+                
+                const data = await response.json();
+                document.getElementById('username-display').textContent = data.user.username;
+                
+                // Load manager sections
+                await loadManagerSections();
+                
+                // Small delay to ensure scripts are fully executed
+                await new Promise(resolve => setTimeout(resolve, 100));
+                
+                // Initialize the first visible section (chat)
+                await initializeSection('chat');
+            } catch (error) {
+                localStorage.removeItem('access_token');
+                window.location.href = '/login';
+            }
+        }
+        
+        // Load manager HTML sections
+        async function loadManagerSections() {
+            try {
+                // Load chat manager
+                const chatResponse = await fetch('/static/managers/chat.html');
+                const chatHtml = await chatResponse.text();
+                document.getElementById('chat-section').innerHTML = chatHtml;
+                
+                // Load reference manager
+                const refResponse = await fetch('/static/managers/reference.html');
+                const refHtml = await refResponse.text();
+                document.getElementById('reference-section').innerHTML = refHtml;
+                
+                // Load user manager
+                const userResponse = await fetch('/static/managers/user.html');
+                const userHtml = await userResponse.text();
+                document.getElementById('user-section').innerHTML = userHtml;
+                
+                // Execute scripts in loaded HTML (this makes functions available globally)
+                await executeScripts('chat-section');
+                await executeScripts('reference-section');
+                await executeScripts('user-section');
+            } catch (error) {
+                console.error('Failed to load manager sections:', error);
+            }
+        }
+        
+        // Execute scripts in loaded HTML
+        async function executeScripts(containerId) {
+            console.log(`Executing scripts for ${containerId}...`);
+            const container = document.getElementById(containerId);
+            const scripts = container.querySelectorAll('script');
+            
+            console.log(`Found ${scripts.length} scripts in ${containerId}`);
+            
+            for (let script of scripts) {
+                const newScript = document.createElement('script');
+                
+                if (script.src) {
+                    // For external scripts
+                    console.log(`Loading external script: ${script.src}`);
+                    newScript.src = script.src;
+                    // Wait for external script to load
+                    await new Promise((resolve, reject) => {
+                        newScript.onload = () => {
+                            console.log(`External script loaded: ${script.src}`);
+                            resolve();
+                        };
+                        newScript.onerror = (err) => {
+                            console.error(`Failed to load external script: ${script.src}`, err);
+                            reject(err);
+                        };
+                        document.body.appendChild(newScript);
+                    });
+                } else {
+                    // For inline scripts, execute immediately
+                    console.log(`Executing inline script in ${containerId} (${script.textContent.length} chars)`);
+                    newScript.textContent = script.textContent;
+                    document.body.appendChild(newScript);
+                }
+                
+                // Remove old script
+                script.remove();
+            }
+            
+            console.log(`Finished executing scripts for ${containerId}`);
+        }
+        
+        // Initialize a specific section
+        async function initializeSection(section) {
+            console.log(`Attempting to initialize ${section} manager...`);
+            
+            try {
+                switch(section) {
+                    case 'chat':
+                        if (!chatManagerInitialized && typeof window.initChatManager === 'function') {
+                            console.log('Initializing chat manager...');
+                            await window.initChatManager();
+                            chatManagerInitialized = true;
+                            console.log('Chat manager initialized successfully');
+                        } else if (chatManagerInitialized) {
+                            console.log('Chat manager already initialized');
+                        } else {
+                            console.error('window.initChatManager is not a function:', typeof window.initChatManager);
+                        }
+                        break;
+                    case 'reference':
+                        if (!referenceManagerInitialized && typeof window.initReferenceManager === 'function') {
+                            console.log('Initializing reference manager...');
+                            await window.initReferenceManager();
+                            referenceManagerInitialized = true;
+                            console.log('Reference manager initialized successfully');
+                        } else if (referenceManagerInitialized) {
+                            console.log('Reference manager already initialized');
+                        } else {
+                            console.error('window.initReferenceManager is not a function:', typeof window.initReferenceManager);
+                        }
+                        break;
+                    case 'user':
+                        if (!userManagerInitialized && typeof window.initUserManager === 'function') {
+                            console.log('Initializing user manager...');
+                            await window.initUserManager();
+                            userManagerInitialized = true;
+                            console.log('User manager initialized successfully');
+                        } else if (userManagerInitialized) {
+                            console.log('User manager already initialized');
+                        } else {
+                            console.error('window.initUserManager is not a function:', typeof window.initUserManager);
+                        }
+                        break;
+                }
+            } catch (error) {
+                console.error(`Failed to initialize ${section} manager:`, error);
+            }
+        }
+        
+        // Show section
+        async function showSection(section, buttonElement) {
+            // Update nav buttons
+            document.querySelectorAll('.nav-btn').forEach(btn => {
+                btn.classList.remove('active');
+            });
+            
+            // Find and activate the button that was clicked
+            if (buttonElement) {
+                buttonElement.classList.add('active');
+            } else {
+                // Fallback: find button by section name
+                const buttons = document.querySelectorAll('.nav-btn');
+                buttons.forEach(btn => {
+                    if (btn.textContent.toLowerCase().includes(section)) {
+                        btn.classList.add('active');
+                    }
+                });
+            }
+            
+            // Hide all sections
+            document.querySelectorAll('.manager-section').forEach(sec => {
+                sec.classList.remove('active');
+            });
+            
+            // Show selected section
+            document.getElementById(section + '-section').classList.add('active');
+            
+            // Initialize the section if needed
+            await initializeSection(section);
+        }
+        
+        // Logout
+        async function logout() {
+            const token = localStorage.getItem('access_token');
+            
+            try {
+                await fetch('/api/auth/logout', {
+                    method: 'POST',
+                    headers: {
+                        'Authorization': `Bearer ${token}`
+                    }
+                });
+            } catch (error) {
+                console.error('Logout error:', error);
+            }
+            
+            localStorage.removeItem('access_token');
+            window.location.href = '/login';
+        }
+        
+        // Initialize on page load
+        checkAuth();
+    </script>
+</body>
+</html>

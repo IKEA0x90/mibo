@@ -17,9 +17,6 @@ class Variables:
 
     DB_PATH = os.environ.get('DB_PATH', 'memory') # relative path to the database file
 
-    USERNAME = os.environ.get('USERNAME', '') # telegram USERNAME of the bot
-    SYSTEM_CHAT = os.environ.get('SYSTEM_CHAT', '') # id of the system chat where all possible notifications are sent to #TODO change to system_user
-
     LOCAL_API_HOST = os.environ.get('LOCAL_API_HOST', '127.0.0.1') # ip of the local ollama host
     LOCAL_API_PORT = os.environ.get('LOCAL_API_PORT', '8888') # port of the local ollama host
 
@@ -28,6 +25,8 @@ class Variables:
 
     JWT_SECRET_KEY = os.environ.get('JWT_SECRET_KEY', '') # secret key for JWT tokens
     MIBO_DOMAIN = os.environ.get('MIBO_DOMAIN', 'admin.miibo.ru') # domain where the admin panel is hosted
+
+    ADMIN_ID = os.environ.get('ADMIN_ID', '') # id of the admin user
 
     try:
         CHAT_TTL = os.environ.get('CHAT_TTL', 3600) # time it takes for a chat to unload from memory, in minutes

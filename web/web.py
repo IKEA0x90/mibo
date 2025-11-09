@@ -24,6 +24,7 @@ from core import ref
 from services import variables
 from .auth import authentication
 from .dashboard import dashboard
+from .managers import chat, reference, user
 
 class WebApp:
     def __init__(self, ref_instance: ref.Ref, bus_instance: event_bus.EventBus):
@@ -107,8 +108,16 @@ class WebApp:
         auth_router = authentication.create_auth_router(self)
         dashboard_router = dashboard.create_dashboard_router(self)
         
+        # Include manager routers
+        chat_manager_router = chat.create_chat_manager_router(self)
+        reference_manager_router = reference.create_reference_manager_router(self)
+        user_manager_router = user.create_user_manager_router(self)
+        
         self.app.include_router(auth_router, prefix="/api/auth", tags=["authentication"])
         self.app.include_router(dashboard_router, prefix="/api/dashboard", tags=["dashboard"])
+        self.app.include_router(chat_manager_router, prefix="/api/managers/chat", tags=["chat_manager"])
+        self.app.include_router(reference_manager_router, prefix="/api/managers/reference", tags=["reference_manager"])
+        self.app.include_router(user_manager_router, prefix="/api/managers/user", tags=["user_manager"])
         
         # Root redirect to login
         @self.app.get("/", response_class=RedirectResponse)
