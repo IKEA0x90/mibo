@@ -20,6 +20,8 @@ class Variables:
     LOCAL_API_HOST = os.environ.get('LOCAL_API_HOST', '127.0.0.1') # ip of the local ollama host
     LOCAL_API_PORT = os.environ.get('LOCAL_API_PORT', '8888') # port of the local ollama host
 
+    USERNAME = os.environ.get('USERNAME', 'itsmiibot') # username of the bot 
+
     DEFAULT_ASSISTANT = os.environ.get('DEFAULT_ASSISTANT', 'default') # id of the default assistant, assumed to exist in assistant references
     DEFAULT_MODEL = os.environ.get('DEFAULT_MODEL', 'gpt-4.1') # id (name) of the default model. assumed to exist in model references
 
