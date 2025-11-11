@@ -104,7 +104,7 @@ class Database:
 
         self._handlers_registered = True
     
-    async def get_chat(self, chat_id: str) -> wrapper.ChatWrapper:
+    async def get_chat(self, chat_id: str, **kwargs) -> wrapper.ChatWrapper:
         '''
         Get a chat by its ID.
         '''
