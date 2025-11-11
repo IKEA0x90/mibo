@@ -36,9 +36,13 @@ class Variables:
 
         MFA_TOKEN_EXPIRY = os.environ.get('MFA_TOKEN_EXPIRY', 2) # how long the admin panel token expires, in minutes
         MFA_TOKEN_EXPIRY = int(MFA_TOKEN_EXPIRY)
+
+        JWT_EXPIRE_MINUTES = os.environ.get('JWT_EXPIRE_MINUTES', 180) # how long JWT tokens last, in minutes
+        JWT_EXPIRE_MINUTES = int(JWT_EXPIRE_MINUTES)
     except ValueError:
         CHAT_TTL = 3600
         MFA_TOKEN_EXPIRY = 2
+        JWT_EXPIRE_MINUTES = 180
 
     @staticmethod
     def replacers(original: str) -> str:

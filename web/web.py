@@ -44,7 +44,7 @@ class WebApp:
         # JWT Configuration
         self.JWT_SECRET = variables.Variables.JWT_SECRET_KEY
         self.JWT_ALGORITHM = "HS256"
-        self.JWT_EXPIRE_MINUTES = 30
+        self.JWT_EXPIRE_MINUTES = variables.Variables.JWT_EXPIRE_MINUTES
         
         # Security
         self.security = HTTPBearer(auto_error=False)
@@ -64,7 +64,6 @@ class WebApp:
             CORSMiddleware,
             allow_origins=[
                 f"https://{domain}",
-                f"https://www.{domain}",
                 "http://localhost:6426",  # For local testing
                 "http://127.0.0.1:6426",  # Local testing alternative
             ],
