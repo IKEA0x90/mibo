@@ -91,7 +91,8 @@ class ModelReference(Reference):
         self.model_provider: str = kwargs.get('model_provider', 'openai')
         self.temperature: float = kwargs.get('temperature', 1)
         self.max_tokens: int = kwargs.get('max_tokens', 700)
-        self.max_completion_tokens: int = kwargs.get('max_completion_tokens', 100)
+        self.max_completion_tokens: int = kwargs.get('max_completion_tokens', 700)
+        self.image_support: bool = kwargs.get('image_support', False)
 
         self.penalty_supported: bool = kwargs.get('penalty_supported', True)
         self.frequency_penalty: float = kwargs.get('frequency_penalty', 0.1)
