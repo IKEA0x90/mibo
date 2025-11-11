@@ -246,6 +246,8 @@ class Window():
         sorted_messages: List[wrapper.Wrapper] = sorted(self.messages, key=lambda m: m.id)
         telegram_id_to_message_id: Dict[str, int] = {str(msg.id): idx + 1 for idx, msg in enumerate(sorted_messages)}
 
+        image_support: bool = kwargs.get('image_support', False)
+
         grouped_content = {}
         messages = []
 
@@ -270,7 +272,7 @@ class Window():
                     if text:
                         grouped_content[group_id]["content"].append({"type": "text", "text": text})
 
-            elif isinstance(message, wrapper.ImageWrapper):
+            elif isinstance(message, wrapper.ImageWrapper) and image_support:
                 base64 = message.get_base64()
                 detail = message.detail
 

@@ -142,6 +142,11 @@ class ModelReference(Reference):
                 special_fields['disable_thinking_token'] = self.disable_thinking_token
                 special_fields['disable_thinking'] = self.disable_thinking
 
+        if self.image_support:
+            special_fields['image_support'] = True
+        else:
+            special_fields['image_support'] = False
+
         return special_fields
     
     def get_max_tokens(self) -> int:

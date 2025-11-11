@@ -46,6 +46,7 @@ class Assistant:
         special_fields: Dict = event.special_fields
 
         current_date_utc = special_fields.get('current_date_utc', None)
+        image_support: bool = special_fields.get('image_support', False)
 
         chat_id: str = wdw.chat_id
         model_provider = special_fields.get('model_provider', 'openai')
@@ -54,7 +55,7 @@ class Assistant:
 
         user_messages: List[Dict]
         idx: Dict[str, int]
-        user_messages, idx = await wdw.transform_messages(user=user)
+        user_messages, idx = await wdw.transform_messages(user=user, image_support=False)
         messages: List[Dict] = []
 
         base_prompt = prompts.get(prompt_enum.BasePrompt, '')
