@@ -218,17 +218,29 @@ class Database:
 
         async with self._lock:
             async with self.conn.cursor() as cursor:
-                await cursor.execute(
-                    f"""
-                    INSERT OR {'IGNORE' if not update else 'REPLACE'} INTO chats
-                    (chat_id, chat_name, chance, assistant_id, ai_model_id)
-                    VALUES (?, ?, ?, ?, ?)
-                    """,
-                    (
-                        str(effective_chat_id), chat_name,
-                        chance, assistant_id, ai_model_id
-                    ),
-                )
+                if update:
+                    # Use UPDATE instead of REPLACE to avoid CASCADE deletion
+                    await cursor.execute(
+                        """
+                        UPDATE chats 
+                        SET chat_name = ?, chance = ?, assistant_id = ?, ai_model_id = ?
+                        WHERE chat_id = ?
+                        """,
+                        (chat_name, chance, assistant_id, ai_model_id, str(effective_chat_id))
+                    )
+                else:
+                    # Insert new chat
+                    await cursor.execute(
+                        """
+                        INSERT OR IGNORE INTO chats
+                        (chat_id, chat_name, chance, assistant_id, ai_model_id)
+                        VALUES (?, ?, ?, ?, ?)
+                        """,
+                        (
+                            str(effective_chat_id), chat_name,
+                            chance, assistant_id, ai_model_id
+                        ),
+                    )
                 await self.conn.commit()
 
     async def _insert_user(self, event: ref_events.NewUser):
