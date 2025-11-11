@@ -14,6 +14,7 @@ class Variables:
 
     TELEGRAM_KEY = os.environ.get('TELEGRAM_KEY', '') # Telegram bot key
     OPENAI_KEY = os.environ.get('OPENAI_KEY', '') # OpenAI API key
+    LOCAL_KEY = os.environ.get('LOCAL_KEY', '') # Local API key
 
     DB_PATH = os.environ.get('DB_PATH', 'memory') # relative path to the database file
 

@@ -36,6 +36,7 @@ class Mibo:
         self.conductor: conductor.Conductor = conductor.Conductor(self.bus, self.ref)
 
         self.key: str = variables.Variables.OPENAI_KEY
+        self.local_key : str = variables.Variables.LOCAL_KEY
 
         self.app: Application = None
         self.typing_tasks: Dict[str, asyncio.Task] = {}
@@ -49,7 +50,7 @@ class Mibo:
         '''
         self.clients: Dict[str, openai.OpenAI] = {
             'openai': openai.OpenAI(api_key=self.key),
-            'local': openai.OpenAI(api_key=self.key, base_url=f"http://{variables.Variables.LOCAL_API_HOST}:{variables.Variables.LOCAL_API_PORT}/v1")
+            'local': openai.OpenAI(api_key=self.local_key, base_url=f"http://{variables.Variables.LOCAL_API_HOST}:{variables.Variables.LOCAL_API_PORT}/v1")
         }
 
         self.assistant = assistant.Assistant(self.clients, self.bus, self.ref, self.start_datetime)
