@@ -40,7 +40,7 @@ class Reference:
             if hasattr(self, 'ASSISTANT_PROPERTIES') and attribute_name in self.ASSISTANT_PROPERTIES:
                 # k: prompt_enum.PromptEnum class
                 # v: PromptReference
-                serialized_data[attribute_name] = {k.get_id(): v.id for k, v in attribute_value.items()}
+                serialized_data[attribute_name] = {k.get_id(): v for k, v in attribute_value.items()}
             else:
                 serialized_data[attribute_name] = attribute_value
         
