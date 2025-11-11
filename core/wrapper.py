@@ -205,7 +205,8 @@ class ChatWrapper():
         self.id: str = str(id)
         self.chat_id = self.id
 
-        self.chat_name: str = kwargs.get('chat_name', '')
+        self.chat_name: str = kwargs.get('name', '')
+        self.chat_name = kwargs.get('chat_name', '')
 
         self.chance: int = kwargs.get('chance', 5)
 

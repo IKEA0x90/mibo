@@ -133,7 +133,7 @@ class Database:
                 rows = await cursor.fetchall()
 
             for row in rows:
-                chat_wrapper = wrapper.ChatWrapper(id=row['chat_id'], name=row['chat_name'],
+                chat_wrapper = wrapper.ChatWrapper(id=row['chat_id'], chat_name=row['chat_name'],
                                                   chance=row['chance'], assistant_id=row['assistant_id'], ai_model_id=row['ai_model_id'])
                 chats.append(chat_wrapper)
 
