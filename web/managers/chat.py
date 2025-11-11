@@ -196,6 +196,9 @@ def create_chat_manager_router(webapp) -> APIRouter:
                     reply_id=msg.reply_id if hasattr(msg, 'reply_id') else None
                 ))
             
+            # Sort messages by ID in descending order (highest to lowest)
+            messages.sort(key=lambda x: int(x.id), reverse=True)
+            
             return messages
             
         except Exception as e:

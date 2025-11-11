@@ -267,7 +267,7 @@ class Conductor:
         
         chat_id: str = str(chat.id)
         message_id: str = str(message.message_id)
-        chat_name: str = chat.effective_name or user.username or user.first_name or 'No chat name'
+        chat_name: str = chat.title or user.username or user.first_name or 'No chat name'
 
         if not chat_id or not message_id:
             return None
