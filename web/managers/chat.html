@@ -67,12 +67,13 @@
                                 <th style="width: 80px;">ID</th>
                                 <th style="width: 120px;">User</th>
                                 <th>Content</th>
+                                <th style="width: 40px;">Tokens</th>
                                 <th style="width: 150px;">Datetime</th>
                             </tr>
                         </thead>
                         <tbody id="messages-table-body">
                             <tr>
-                                <td colspan="7" class="text-center text-secondary">No messages in window</td>
+                                <td colspan="6" class="text-center text-secondary">No messages in window</td>
                             </tr>
                         </tbody>
                     </table>
@@ -211,7 +212,7 @@ window.initChatManager = (function() {
         await loadChatDetails(chatId);
         // Clear the messages table but don't load window messages automatically
         const tbody = document.getElementById('messages-table-body');
-        tbody.innerHTML = '<tr><td colspan="7" class="text-center text-secondary">Click "Load Window" to view messages</td></tr>';
+        tbody.innerHTML = '<tr><td colspan="6" class="text-center text-secondary">Click "Load Window" to view messages</td></tr>';
         selectedMessages.clear();
         document.getElementById('select-all-messages').checked = false;
         updateRemoveButton();
@@ -256,7 +257,7 @@ window.initChatManager = (function() {
             const tbody = document.getElementById('messages-table-body');
             
             if (messages.length === 0) {
-                tbody.innerHTML = '<tr><td colspan="7" class="text-center text-secondary">No messages in window</td></tr>';
+                tbody.innerHTML = '<tr><td colspan="6" class="text-center text-secondary">No messages in window</td></tr>';
                 return;
             }
             
@@ -266,10 +267,9 @@ window.initChatManager = (function() {
                 tr.innerHTML = `
                     <td><input type="checkbox" class="message-checkbox" data-id="${msg.id}"></td>
                     <td>${msg.id}</td>
-                    <td>${msg.type}</td>
-                    <td>${msg.role}</td>
                     <td>${msg.user}</td>
                     <td style="max-width: 400px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;">${msg.content}</td>
+                    <td>${msg.tokens || 0}</td>
                     <td>${new Date(msg.datetime).toLocaleString()}</td>
                 `;
                 tbody.appendChild(tr);

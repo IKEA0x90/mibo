@@ -33,6 +33,7 @@ class ChatWindowMessage(BaseModel):
     user: str
     datetime: str
     content: str
+    tokens: int
     reply_id: Optional[str] = None
 
 class ClearWindowRequest(BaseModel):
@@ -193,6 +194,7 @@ def create_chat_manager_router(webapp) -> APIRouter:
                     user=msg.user,
                     datetime=msg.datetime.isoformat() if hasattr(msg, 'datetime') else "",
                     content=content,
+                    tokens=getattr(msg, 'tokens', 0),
                     reply_id=msg.reply_id if hasattr(msg, 'reply_id') else None
                 ))
             
