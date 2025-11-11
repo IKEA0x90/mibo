@@ -6,7 +6,7 @@ This webapp integrates with the existing mibo bot infrastructure.
 
 import asyncio
 from datetime import datetime, timedelta, timezone
-from typing import Dict, List, Optional
+from typing import Dict, List, Optional, Tuple
 import uvicorn
 from pathlib import Path
 import os
@@ -144,17 +144,17 @@ class WebApp:
         encoded_jwt = jwt.encode(to_encode, self.JWT_SECRET, algorithm=self.JWT_ALGORITHM)
         return encoded_jwt
     
-    def verify_token(self, token: str) -> Optional[dict]:
-        """Verify and decode a JWT token."""
+    def verify_token(self, token: str) -> Tuple[Optional[dict], str]:
+        """Verify and decode a JWT token. Returns (payload, error_type)."""
         try:
             payload = jwt.decode(token, self.JWT_SECRET, algorithms=[self.JWT_ALGORITHM])
-            return payload
+            return payload, "valid"
         except jwt.ExpiredSignatureError:
             print(f"JWT token expired: {token[:20]}...")
-            return None
+            return None, "expired"
         except jwt.JWTError as e:
             print(f"JWT decode error: {e}, token: {token[:20]}...")
-            return None
+            return None, "invalid"
     
     async def get_current_user(self, credentials: HTTPAuthorizationCredentials = Depends(HTTPBearer(auto_error=False))):
         """Dependency to get current authenticated user."""
@@ -166,14 +166,25 @@ class WebApp:
             )
         
         token = credentials.credentials
-        payload = self.verify_token(token)
+        payload, error_type = self.verify_token(token)
         
         if payload is None:
-            raise HTTPException(
-                status_code=status.HTTP_401_UNAUTHORIZED,
-                detail="Invalid token",
-                headers={"WWW-Authenticate": "Bearer"},
-            )
+            if error_type == "expired":
+                # Special response for expired tokens that triggers client-side cleanup
+                raise HTTPException(
+                    status_code=status.HTTP_401_UNAUTHORIZED,
+                    detail="Token expired",
+                    headers={
+                        "WWW-Authenticate": "Bearer",
+                        "X-Token-Expired": "true"
+                    },
+                )
+            else:
+                raise HTTPException(
+                    status_code=status.HTTP_401_UNAUTHORIZED,
+                    detail="Invalid token",
+                    headers={"WWW-Authenticate": "Bearer"},
+                )
         
         user_id = payload.get("user_id")
         if user_id is None:

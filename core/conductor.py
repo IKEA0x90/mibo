@@ -345,7 +345,7 @@ class Conductor:
 
                 if entity.type == 'mention':
                     if value.startswith('@') and value[1:] == variables.Variables.USERNAME:
-                        ping = True
+                        return True
 
                 elif entity.type == 'url':
                     # special url processing

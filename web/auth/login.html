@@ -181,7 +181,19 @@
                 }).then(response => {
                     if (response.ok) {
                         window.location.href = '/dashboard';
+                    } else if (response.status === 401) {
+                        // Check if token expired and should be cleared
+                        const tokenExpired = response.headers.get('X-Token-Expired');
+                        if (tokenExpired === 'true') {
+                            // Clear expired token from storage
+                            localStorage.removeItem('access_token');
+                            localStorage.removeItem('user_id');
+                            localStorage.removeItem('username');
+                            console.log('Expired token automatically cleared from storage');
+                        }
                     }
+                }).catch(error => {
+                    console.error('Token verification failed:', error);
                 });
             }
 
@@ -227,6 +239,17 @@
                         // Redirect to dashboard
                         window.location.href = '/dashboard';
                     } else {
+                        // Check if this is an expired token error (might happen during concurrent requests)
+                        if (response.status === 401) {
+                            const tokenExpired = response.headers.get('X-Token-Expired');
+                            if (tokenExpired === 'true') {
+                                localStorage.removeItem('access_token');
+                                localStorage.removeItem('user_id');
+                                localStorage.removeItem('username');
+                                console.log('Expired token automatically cleared from storage during login');
+                            }
+                        }
+                        
                         const error = await response.json();
                         showError(error.detail || 'Login failed. Please check your credentials.');
                     }
