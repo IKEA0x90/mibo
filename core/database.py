@@ -122,6 +122,28 @@ class Database:
             await self.bus.emit(system_events.ErrorEvent(error="Hmm.. Can't read your group chats from the database.", e=e, tb=tb))
             return None
 
+    async def get_chats(self) -> List[wrapper.ChatWrapper]:
+        '''
+        Get all chats without loading their context windows.
+        '''
+        chats: List[wrapper.ChatWrapper] = []
+        try:
+            async with self.conn.cursor() as cursor:
+                await cursor.execute('SELECT * FROM chats')
+                rows = await cursor.fetchall()
+
+            for row in rows:
+                chat_wrapper = wrapper.ChatWrapper(id=row['chat_id'], name=row['chat_name'],
+                                                  chance=row['chance'], assistant_id=row['assistant_id'], ai_model_id=row['ai_model_id'])
+                chats.append(chat_wrapper)
+
+            return chats
+
+        except Exception as e:
+            _, _, tb = sys.exc_info()
+            await self.bus.emit(system_events.ErrorEvent(error="Hmm.. Can't read group chats from the database.", e=e, tb=tb))
+            return []
+
     async def get_user(self, user_id: str) -> wrapper.UserWrapper:
         '''
         Get a user by their ID.
@@ -187,16 +209,18 @@ class Database:
             chat.ai_model_id = variables.Variables.DEFAULT_MODEL
 
         effective_chat_id = chat.chat_id
-        chat_name = chat.chat_name
+        chat_name = getattr(chat, 'chat_name', str(effective_chat_id))
         chance = chat.chance
         assistant_id = chat.assistant_id
         ai_model_id = chat.ai_model_id
 
+        update: bool = getattr(event, 'update', False)
+
         async with self._lock:
             async with self.conn.cursor() as cursor:
                 await cursor.execute(
-                    """
-                    INSERT OR IGNORE INTO chats
+                    f"""
+                    INSERT OR {'IGNORE' if not update else 'REPLACE'} INTO chats
                     (chat_id, chat_name, chance, assistant_id, ai_model_id)
                     VALUES (?, ?, ?, ?, ?)
                     """,

@@ -53,6 +53,7 @@
                         <label for="select-all-messages" style="cursor: pointer;">Select All</label>
                     </div>
                     <div>
+                        <button id="load-window-btn" class="btn btn-danger">Load Window</button>
                         <button id="remove-selected-btn" class="btn btn-danger" disabled>Remove Selected</button>
                         <button id="clear-window-btn" class="btn btn-danger">Clear All</button>
                     </div>
@@ -105,6 +106,13 @@ window.initChatManager = (function() {
         document.getElementById('chat-selector').addEventListener('change', handleChatSelect);
         document.getElementById('update-chat-btn').addEventListener('click', handleUpdateChat);
         document.getElementById('select-all-messages').addEventListener('change', handleSelectAll);
+        document.getElementById('load-window-btn').addEventListener('click', () => {
+            if (currentChatId) {
+                loadWindowMessages(currentChatId);
+            } else {
+                showMessage('error', 'Please select a chat first');
+            }
+        });
         document.getElementById('remove-selected-btn').addEventListener('click', handleRemoveSelected);
         document.getElementById('clear-window-btn').addEventListener('click', handleClearWindow);
         
@@ -203,7 +211,12 @@ window.initChatManager = (function() {
         
         currentChatId = chatId;
         await loadChatDetails(chatId);
-        await loadWindowMessages(chatId);
+        // Clear the messages table but don't load window messages automatically
+        const tbody = document.getElementById('messages-table-body');
+        tbody.innerHTML = '<tr><td colspan="7" class="text-center text-secondary">Click "Load Window" to view messages</td></tr>';
+        selectedMessages.clear();
+        document.getElementById('select-all-messages').checked = false;
+        updateRemoveButton();
         document.getElementById('chat-config').style.display = 'block';
     }
     
@@ -239,7 +252,7 @@ window.initChatManager = (function() {
                 }
             });
             
-            if (!response.ok) throw new Error('Failed to load window messages');
+            if (!response.ok) throw new Error('Failed to load window');
             
             const messages = await response.json();
             const tbody = document.getElementById('messages-table-body');
@@ -341,7 +354,7 @@ window.initChatManager = (function() {
         const btn = document.getElementById('remove-selected-btn');
         btn.disabled = selectedMessages.size === 0;
     }
-    
+
     // Handle remove selected
     async function handleRemoveSelected() {
         if (!currentChatId || selectedMessages.size === 0) return;

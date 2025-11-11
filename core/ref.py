@@ -271,7 +271,7 @@ class Ref:
         chat = self.chats.get(chat_id)
         if not chat:
             # from database
-            chat = await self.db.get_chat(chat_id)
+            chat = await self.db.get_chat(chat_id, **kwargs)
             if not chat:
                 # create it
                 chat = wrapper.ChatWrapper(chat_id, **kwargs)
@@ -284,6 +284,18 @@ class Ref:
         chat.in_use = True
         
         return chat
+
+    async def get_chats(self, **kwargs) -> List[wrapper.ChatWrapper]:
+        '''
+        Get all chats without loading their context windows.
+        '''
+        chats: List[wrapper.ChatWrapper] = []
+        chats = await self.db.get_chats(**kwargs)
+
+        for chat in chats:
+            self.chats[chat.id] = chat
+
+        return chats
 
     async def get_user(self, user_id: str, **kwargs) -> wrapper.UserWrapper:
         '''
@@ -444,6 +456,8 @@ class Ref:
         '''
         await self.db.initialize()
         self._load()
+
+        await self.get_chats()
         
         self._cleanup_task = asyncio.create_task(self._cleanup())
 

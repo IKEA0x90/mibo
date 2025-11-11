@@ -10,7 +10,7 @@ from fastapi.responses import JSONResponse
 from pydantic import BaseModel
 
 from core import wrapper, window
-from events import system_events
+from events import system_events, ref_events
 
 class ChatInfo(BaseModel):
     chat_id: str
@@ -57,7 +57,7 @@ def create_chat_manager_router(webapp) -> APIRouter:
             for chat_id, chat in webapp.ref.chats.items():
                 chats.append(ChatInfo(
                     chat_id=chat.id,
-                    chat_name=chat.chat_name or f"Chat {chat.id}",
+                    chat_name=getattr(chat, 'chat_name', f"Chat {chat.id}"),
                     chance=chat.chance,
                     assistant_id=chat.assistant_id,
                     ai_model_id=chat.ai_model_id
@@ -127,8 +127,7 @@ def create_chat_manager_router(webapp) -> APIRouter:
             # Save to database through ref
             webapp.ref.chats[chat.id] = chat
             # Emit event to save to database
-            from events import ref_events
-            await webapp.bus.emit(ref_events.NewChat(chat))
+            await webapp.bus.emit(ref_events.NewChat(chat, update=True))
             
             return {
                 "success": True,
@@ -162,6 +161,19 @@ def create_chat_manager_router(webapp) -> APIRouter:
         Returns messages in order with content formatted.
         """
         try:
+            # Add some basic validation for chat_id
+            if not chat_id or chat_id.strip() == "":
+                raise HTTPException(
+                    status_code=status.HTTP_400_BAD_REQUEST,
+                    detail="Chat ID cannot be empty"
+                )
+            
+            if chat_id == "[object PointerEvent]":
+                raise HTTPException(
+                    status_code=status.HTTP_400_BAD_REQUEST,
+                    detail="Invalid chat_id: received JavaScript event object instead of chat ID"
+                )
+            
             wdw = await webapp.ref.get_window(chat_id)
             
             messages = []
@@ -196,7 +208,7 @@ def create_chat_manager_router(webapp) -> APIRouter:
                 status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
                 detail="Failed to retrieve chat window"
             )
-    
+
     @router.post("/window/clear")
     async def clear_window(request: ClearWindowRequest, user: dict = Depends(webapp.get_current_user)):
         """
