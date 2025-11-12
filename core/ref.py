@@ -134,6 +134,7 @@ class ModelReference(Reference):
     def get_special_fields(self) -> Dict:
         special_fields = {}
 
+        special_fields['model'] = self.id
         special_fields['model_provider'] = self.model_provider
 
         if self.think_token:
@@ -289,6 +290,21 @@ class Ref:
         chat.last_active = time.time()
         chat.in_use = True
         
+        return chat
+
+    async def update_chat(self, chat: wrapper.ChatWrapper):
+        '''
+        Update a chat in the database and memory.
+        '''
+        if not isinstance(chat, wrapper.ChatWrapper):
+            return None
+        
+        self.chats[chat.id] = chat
+        await self.bus.emit(ref_events.NewChat(chat, update=True))
+
+        self.windows.pop(chat.id, None)
+        await self.get_window(chat.id)
+
         return chat
 
     async def get_chats(self, **kwargs) -> List[wrapper.ChatWrapper]:

@@ -126,9 +126,7 @@ def create_chat_manager_router(webapp) -> APIRouter:
                 chat.ai_model_id = request.ai_model_id
             
             # Save to database through ref
-            webapp.ref.chats[chat.id] = chat
-            # Emit event to save to database
-            await webapp.bus.emit(ref_events.NewChat(chat, update=True))
+            webapp.ref.update_chat(chat)
             
             return {
                 "success": True,

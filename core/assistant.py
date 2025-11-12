@@ -49,7 +49,9 @@ class Assistant:
         image_support: bool = special_fields.get('image_support', False)
 
         chat_id: str = wdw.chat_id
+
         model_provider = special_fields.get('model_provider', 'openai')
+        model = special_fields.get('model', 'gpt-4')
 
         user: wrapper.UserWrapper = getattr(event, 'user', None)
 
@@ -79,7 +81,6 @@ class Assistant:
         for msg in user_messages:
             messages.append(msg)
 
-        model = special_fields.get('model', 'gpt-4.1')
         request['safety_identifier'] = str(hash(chat_id))
 
         try:
@@ -110,10 +111,19 @@ class Assistant:
             # replace random stuff that I don't like and is easier to change here rather than in the prompt
             message_text = variables.Variables.replacers(message_text)
             
+            '''
             if think_token := special_fields.get('think_token', ''):
                 message_text = message_text.split(f'{think_token}', 1)[1]
                 message_text = message_text.strip()
+            '''
 
+            if not special_fields.get('disable_thinking', False):
+                think_text = getattr(response_message, 'model_extra')
+                if think_text and isinstance(think_text, dict):
+                    think_text = think_text.get('reasoning_content', '')
+            else:
+                think_text = ''
+                
             wrapper_list = []
 
             message_list = await self.parse_text(message_text, chat_id)
