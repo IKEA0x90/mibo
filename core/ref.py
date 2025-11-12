@@ -254,7 +254,7 @@ class Ref:
             if not wdw:
                 # create a new window
                 wdw = window.Window(chat_id, self.start_datetime)
-                self.windows[chat_id] = wdw
+            self.windows[chat_id] = wdw
 
         wdw.set_max_tokens(max_tokens)
         return wdw

@@ -126,7 +126,7 @@ def create_chat_manager_router(webapp) -> APIRouter:
                 chat.ai_model_id = request.ai_model_id
             
             # Save to database through ref
-            webapp.ref.update_chat(chat)
+            await webapp.ref.update_chat(chat)
             
             return {
                 "success": True,
