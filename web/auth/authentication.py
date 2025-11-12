@@ -6,7 +6,7 @@ Handles login, logout, and token verification.
 import hashlib
 import secrets
 from typing import Optional
-from fastapi import APIRouter, HTTPException, status, Form, Depends
+from fastapi import APIRouter, HTTPException, status, Form, Depends, Request
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel
 
@@ -29,14 +29,18 @@ def create_auth_router(webapp) -> APIRouter:
     router = APIRouter()
     
     @router.post("/login", response_model=LoginResponse)
-    async def login(request: LoginRequest):
+    async def login(request: LoginRequest, http_request: Request):
         """
         Authenticate user and return JWT token.
         """
+        client_ip = http_request.client.host if http_request.client else "unknown"
         try:
             # Find user by username in ref.users
             user_found = None
             user: wrapper.UserWrapper
+            
+            # Enhanced logging: Log login attempt
+            print(f"LOGIN ATTEMPT: Username='{request.username}', IP={client_ip}")
 
             for user_id, user in webapp.ref.users.items():
                 if user.username == request.username:
@@ -44,24 +48,40 @@ def create_auth_router(webapp) -> APIRouter:
                     break
             
             if not user_found:
+                print(f"LOGIN FAILED: Username '{request.username}' not found in system (IP: {client_ip})")
+                print(f"  Available users: {list(webapp.ref.users.keys())} with usernames: {[u.username for u in webapp.ref.users.values()]}")
                 return JSONResponse(
                     status_code=status.HTTP_401_UNAUTHORIZED,
                     content={"detail": "Invalid username or token"}
                 )
+            
             # Check if user is registered (has token)
             if not user_found.token:
+                print(f"LOGIN FAILED: User '{request.username}' (ID: {user_found.id}) has no token set - not registered (IP: {client_ip})")
                 return JSONResponse(
                     status_code=status.HTTP_401_UNAUTHORIZED,
                     content={"detail": "User not registered"}
                 )
 
             # Verify token
-            if user_found.token != request.token:
+            stored_token = user_found.token
+            if not stored_token:
+                print(f"LOGIN FAILED: User '{request.username}' (ID: {user_found.id}) token already consumed or cleared (IP: {client_ip})")
+                return JSONResponse(
+                    status_code=status.HTTP_401_UNAUTHORIZED,
+                    content={"detail": "Token already used or expired. Please request a new token."}
+                )
+                
+            if stored_token != request.token:
+                print(f"LOGIN FAILED: Invalid token for user '{request.username}' (ID: {user_found.id}) - stored token length: {len(stored_token)}, provided token length: {len(request.token)} (IP: {client_ip})")
                 return JSONResponse(
                     status_code=status.HTTP_401_UNAUTHORIZED,
                     content={"detail": "Invalid username or token"}
                 )
 
+            # Clear the one-time token immediately after successful verification to prevent reuse
+            # This is atomic and prevents race conditions from multiple login attempts
+            print(f"LOGIN SUCCESS: Clearing one-time token for user '{request.username}' (ID: {user_found.id}) (IP: {client_ip})")
             webapp.ref.users[user_found.id].token = ''
 
             # Create JWT token
@@ -72,6 +92,8 @@ def create_auth_router(webapp) -> APIRouter:
             
             access_token = webapp.create_access_token(token_data)
             
+            print(f"LOGIN SUCCESS: JWT token created for user '{request.username}' (ID: {user_found.id}), expires in {webapp.JWT_EXPIRE_MINUTES} minutes (IP: {client_ip})")
+            
             return LoginResponse(
                 access_token=access_token,
                 expires_in=webapp.JWT_EXPIRE_MINUTES * 60,  # Convert to seconds
@@ -80,14 +102,15 @@ def create_auth_router(webapp) -> APIRouter:
             )
             
         except Exception as e:
+            print(f"LOGIN ERROR: Internal server error during login for username '{request.username}' (IP: {client_ip}): {e}")
             webapp.bus.emit_sync(system_events.ErrorEvent(
-                error="Login failed due to internal error",
+                error=f"Login failed due to internal error for user '{request.username}'",
                 e=e,
                 tb=None
             ))
             raise HTTPException(
                 status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-                detail=f"{e}"
+                detail="Internal server error during login"
             )
     
     @router.post("/logout")

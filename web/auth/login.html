@@ -173,6 +173,7 @@
             // Check if already logged in
             const token = localStorage.getItem('access_token');
             if (token) {
+                console.log('Existing token found, verifying...');
                 // Verify token is still valid
                 fetch('/api/auth/verify', {
                     headers: {
@@ -180,6 +181,7 @@
                     }
                 }).then(response => {
                     if (response.ok) {
+                        console.log('Token still valid, redirecting to dashboard');
                         window.location.href = '/dashboard';
                     } else if (response.status === 401) {
                         // Check if token expired and should be cleared
@@ -190,11 +192,31 @@
                             localStorage.removeItem('user_id');
                             localStorage.removeItem('username');
                             console.log('Expired token automatically cleared from storage');
+                        } else {
+                            // Invalid token (not just expired)
+                            localStorage.removeItem('access_token');
+                            localStorage.removeItem('user_id');
+                            localStorage.removeItem('username');
+                            console.log('Invalid token cleared from storage');
                         }
+                    } else {
+                        console.log('Token verification returned status:', response.status);
+                        // For other errors, clear the token as well to be safe
+                        localStorage.removeItem('access_token');
+                        localStorage.removeItem('user_id');
+                        localStorage.removeItem('username');
+                        console.log('Token cleared due to verification error');
                     }
                 }).catch(error => {
-                    console.error('Token verification failed:', error);
+                    console.error('Token verification failed with error:', error);
+                    // Clear token on network errors too, to prevent infinite loops
+                    localStorage.removeItem('access_token');
+                    localStorage.removeItem('user_id');
+                    localStorage.removeItem('username');
+                    console.log('Token cleared due to verification network error');
                 });
+            } else {
+                console.log('No existing token found');
             }
 
             function showError(message) {
@@ -250,12 +272,43 @@
                             }
                         }
                         
-                        const error = await response.json();
-                        showError(error.detail || 'Login failed. Please check your credentials.');
+                        // Try to parse response as JSON, fallback to text
+                        let errorMessage = 'Login failed. Please check your credentials.';
+                        try {
+                            const contentType = response.headers.get('content-type');
+                            if (contentType && contentType.includes('application/json')) {
+                                const error = await response.json();
+                                errorMessage = error.detail || errorMessage;
+                            } else {
+                                // If we get HTML instead of JSON, it's likely a server error
+                                const htmlText = await response.text();
+                                if (htmlText.includes('<!DOCTYPE')) {
+                                    console.error('Received HTML response instead of JSON:', htmlText.substring(0, 200) + '...');
+                                    errorMessage = 'Server error occurred. Please try again later.';
+                                } else {
+                                    errorMessage = htmlText || errorMessage;
+                                }
+                            }
+                        } catch (parseError) {
+                            console.error('Error parsing server response:', parseError);
+                            errorMessage = 'Server communication error. Please try again.';
+                        }
+                        
+                        showError(errorMessage);
                     }
                 } catch (error) {
                     console.error('Login error:', error);
-                    showError('Connection error. Please try again.');
+                    
+                    // Enhanced error handling
+                    let errorMessage = 'Connection error. Please try again.';
+                    if (error instanceof SyntaxError && error.message.includes('Unexpected token')) {
+                        errorMessage = 'Server returned an unexpected response. Please try again or contact support.';
+                        console.error('SyntaxError suggests server returned HTML instead of JSON');
+                    } else if (error.name === 'TypeError') {
+                        errorMessage = 'Network error. Please check your connection and try again.';
+                    }
+                    
+                    showError(errorMessage);
                 } finally {
                     setLoading(false);
                 }

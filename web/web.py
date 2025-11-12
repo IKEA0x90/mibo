@@ -144,21 +144,31 @@ class WebApp:
         encoded_jwt = jwt.encode(to_encode, self.JWT_SECRET, algorithm=self.JWT_ALGORITHM)
         return encoded_jwt
     
-    def verify_token(self, token: str) -> Tuple[Optional[dict], str]:
+    def verify_token(self, token: str, client_ip: str = "unknown") -> Tuple[Optional[dict], str]:
         """Verify and decode a JWT token. Returns (payload, error_type)."""
         try:
             payload = jwt.decode(token, self.JWT_SECRET, algorithms=[self.JWT_ALGORITHM])
+            # Log successful token verification
+            user_id = payload.get("user_id", "unknown")
+            username = payload.get("username", "unknown")
+            print(f"JWT VERIFY SUCCESS: Token valid for user '{username}' (ID: {user_id}) (IP: {client_ip})")
             return payload, "valid"
         except jwt.ExpiredSignatureError:
-            print(f"JWT token expired: {token[:20]}...")
+            print(f"JWT VERIFY FAILED: Token expired for token {token[:20]}... (IP: {client_ip})")
             return None, "expired"
+        except jwt.InvalidTokenError as e:
+            print(f"JWT VERIFY FAILED: Invalid token format {token[:20]}... - {e} (IP: {client_ip})")
+            return None, "invalid"
         except jwt.JWTError as e:
-            print(f"JWT decode error: {e}, token: {token[:20]}...")
+            print(f"JWT VERIFY FAILED: General JWT error {token[:20]}... - {e} (IP: {client_ip})")
             return None, "invalid"
     
     async def get_current_user(self, credentials: HTTPAuthorizationCredentials = Depends(HTTPBearer(auto_error=False))):
         """Dependency to get current authenticated user."""
+        client_ip = "unknown"  # We'll pass this separately in logging functions
+        
         if not credentials:
+            print(f"AUTH FAILED: No credentials provided (IP: {client_ip})")
             raise HTTPException(
                 status_code=status.HTTP_401_UNAUTHORIZED,
                 detail="Not authenticated",
@@ -166,10 +176,11 @@ class WebApp:
             )
         
         token = credentials.credentials
-        payload, error_type = self.verify_token(token)
+        payload, error_type = self.verify_token(token, client_ip)
         
         if payload is None:
             if error_type == "expired":
+                print(f"AUTH FAILED: Expired token rejected (IP: {client_ip})")
                 # Special response for expired tokens that triggers client-side cleanup
                 raise HTTPException(
                     status_code=status.HTTP_401_UNAUTHORIZED,
@@ -180,6 +191,7 @@ class WebApp:
                     },
                 )
             else:
+                print(f"AUTH FAILED: Invalid token rejected (IP: {client_ip})")
                 raise HTTPException(
                     status_code=status.HTTP_401_UNAUTHORIZED,
                     detail="Invalid token",
@@ -188,6 +200,7 @@ class WebApp:
         
         user_id = payload.get("user_id")
         if user_id is None:
+            print(f"AUTH FAILED: Token missing user_id in payload (IP: {client_ip})")
             raise HTTPException(
                 status_code=status.HTTP_401_UNAUTHORIZED,
                 detail="Invalid token payload",
@@ -197,17 +210,22 @@ class WebApp:
         try:
             user = await self.ref.get_user(user_id)
             if not user:
+                print(f"AUTH FAILED: User ID '{user_id}' not found in system (IP: {client_ip})")
                 raise HTTPException(
                     status_code=status.HTTP_401_UNAUTHORIZED,
                     detail="Please chat with Mibo first",
                 )
             
+            print(f"AUTH SUCCESS: User '{user.username}' (ID: {user_id}) authenticated (IP: {client_ip})")
             return {
                 "user_id": user.id,
                 "username": user.username,
                 "admin_chats": getattr(user, 'admin_chats', [])
             }
-        except Exception:
+        except HTTPException:
+            raise  # Re-raise HTTP exceptions as-is
+        except Exception as e:
+            print(f"AUTH FAILED: User verification error for user_id '{user_id}' - {e} (IP: {client_ip})")
             raise HTTPException(
                 status_code=status.HTTP_401_UNAUTHORIZED,
                 detail="User verification failed",
