@@ -57,7 +57,7 @@ class Assistant:
 
         user_messages: List[Dict]
         idx: Dict[str, int]
-        user_messages, idx = await wdw.transform_messages(user=user, image_support=False)
+        user_messages, idx = await wdw.transform_messages(user=user, image_support=image_support)
         messages: List[Dict] = []
 
         base_prompt = prompts.get(prompt_enum.BasePrompt, '')
