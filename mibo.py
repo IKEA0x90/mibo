@@ -190,7 +190,7 @@ class Mibo:
         chat = Chat(id=chat_id, type=Chat.PRIVATE, title=chat_name)
 
         message = Message(
-            message_id=uuid.uuid4().int,
+            message_id=uuid.uuid4().int, # TODO: Use proper message IDs
             date=dt.datetime.now(dt.timezone.utc),
             chat=chat,
             from_user=user,

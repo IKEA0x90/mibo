@@ -268,7 +268,7 @@ window.initChatManager = (function() {
                     <td><input type="checkbox" class="message-checkbox" data-id="${msg.id}"></td>
                     <td>${msg.id}</td>
                     <td>${msg.user}</td>
-                    <td style="max-width: 400px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;">${msg.content}</td>
+                    <td style="max-width: 400px; white-space: normal; word-wrap: break-word;">${msg.content}</td>
                     <td>${msg.tokens || 0}</td>
                     <td>${new Date(msg.datetime).toLocaleString()}</td>
                 `;
