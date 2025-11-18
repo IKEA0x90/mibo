@@ -411,6 +411,12 @@ class Mibo:
         e = event.e
         tb = event.tb
 
+        chat_id = getattr(event, 'chat_id', None)
+        typing = getattr(event, 'typing', None)
+
+        if chat_id and typing:
+            await self._pop_typing(chat_id)
+
         print(f"{error}")
 
         if tb:

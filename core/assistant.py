@@ -152,7 +152,7 @@ class Assistant:
 
         except Exception as e:
             _, _, tb = sys.exc_info()
-            issue = system_events.ErrorEvent(error='Whoops! An unexpected error occurred.', e=e, tb=tb, event_id=event.event_id, chat_id=chat_id)
+            issue = system_events.ErrorEvent(error='Whoops! An unexpected error occurred.', e=e, tb=tb, event_id=event.event_id, chat_id=chat_id, typing=typing)
             await self.bus.emit(issue)
 
     async def parse_text(self, text: str, chat_id: str) -> List[str]:
