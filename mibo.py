@@ -50,7 +50,8 @@ class Mibo:
         '''
         self.clients: Dict[str, openai.OpenAI] = {
             'openai': openai.OpenAI(api_key=self.key),
-            'local': openai.OpenAI(api_key=self.local_key, base_url=f"http://{variables.Variables.LOCAL_API_HOST}:{variables.Variables.LOCAL_API_PORT}/v1")
+            'local': openai.OpenAI(api_key=self.local_key, base_url=f"http://{variables.Variables.LOCAL_API_HOST}:{variables.Variables.LOCAL_API_PORT}/v1"),
+            'xai': openai.OpenAI(api_key=variables.Variables.XAI_KEY, base_url="https://api.x.ai/v1")
         }
 
         self.assistant = assistant.Assistant(self.clients, self.bus, self.ref, self.start_datetime)
