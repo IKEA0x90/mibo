@@ -38,10 +38,6 @@ class EventBus:
     async def emit(self, event: ev.Event) -> ev.Event:
         """
         Fire-and-forget emit.
-        Any coroutine handlers are scheduled as tasks and NOT awaited here.
-        Synchronous handlers run inline.
-        Callers may still `await bus.emit(...)` for API compatibility; the await
-        will resolve immediately after scheduling tasks.
         """
         for handler in self._listeners.get(type(event), []):
             if asyncio.iscoroutinefunction(handler):
@@ -52,7 +48,6 @@ class EventBus:
                     handler(event)
                 except Exception:
                     # swallow exceptions in sync handlers to avoid breaking emitter
-                    # (consider emitting an ErrorEvent here if desired)
                     pass
         return event
     
