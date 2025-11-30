@@ -189,13 +189,13 @@ window.initReferenceManager = (function() {
             }
             
             const result = await response.json();
-            showMessage('success', result.message);
+            showMessage('success', result.message, document.getElementById('save-reference-btn'));
             originalData = data;
         } catch (error) {
             if (error instanceof SyntaxError) {
-                showMessage('error', 'Invalid JSON: ' + error.message);
+                showMessage('error', 'Invalid JSON: ' + error.message, document.getElementById('save-reference-btn'));
             } else {
-                showMessage('error', 'Failed to save reference: ' + error.message);
+                showMessage('error', 'Failed to save reference: ' + error.message, document.getElementById('save-reference-btn'));
             }
         }
     }
@@ -205,9 +205,9 @@ window.initReferenceManager = (function() {
         try {
             const data = JSON.parse(document.getElementById('reference-data').value);
             document.getElementById('reference-data').value = JSON.stringify(data, null, 2);
-            showMessage('success', 'JSON formatted successfully');
+            showMessage('success', 'JSON formatted successfully', document.getElementById('format-json-btn'));
         } catch (error) {
-            showMessage('error', 'Invalid JSON: ' + error.message);
+            showMessage('error', 'Invalid JSON: ' + error.message, document.getElementById('format-json-btn'));
         }
     }
     
@@ -227,7 +227,7 @@ window.initReferenceManager = (function() {
             if (!response.ok) throw new Error('Failed to reload references');
             
             const result = await response.json();
-            showMessage('success', result.message);
+            showMessage('success', result.message, document.getElementById('reload-references-btn'));
             
             // Reload current view
             if (currentType) {
@@ -238,16 +238,26 @@ window.initReferenceManager = (function() {
             document.getElementById('reference-editor-container').style.display = 'none';
             currentRefId = null;
         } catch (error) {
-            showMessage('error', 'Failed to reload references: ' + error.message);
+            showMessage('error', 'Failed to reload references: ' + error.message, document.getElementById('reload-references-btn'));
         }
     }
     
     // Show message
-    function showMessage(type, text) {
+    function showMessage(type, text, targetElement = null) {
         const messageDiv = document.getElementById('reference-message');
         messageDiv.className = `alert alert-${type === 'error' ? 'danger' : 'success'}`;
         messageDiv.textContent = text;
         messageDiv.style.display = 'block';
+        
+        // Position the message near the triggering element if provided
+        if (targetElement) {
+            // Find the closest card container or use the element's parent
+            const container = targetElement.closest('.card') || targetElement.closest('.card-body') || targetElement.parentElement;
+            if (container && container.parentElement) {
+                // Insert the message after the container
+                container.parentElement.insertBefore(messageDiv, container.nextSibling);
+            }
+        }
         
         setTimeout(() => {
             messageDiv.style.display = 'none';

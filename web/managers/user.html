@@ -237,19 +237,29 @@ window.initUserManager = (function() {
             if (!response.ok) throw new Error('Failed to update user');
             
             const result = await response.json();
-            showMessage('success', result.message);
+            showMessage('success', result.message, document.getElementById('update-user-btn'));
             await loadUsers(); // Refresh user list
         } catch (error) {
-            showMessage('error', 'Failed to update user: ' + error.message);
+            showMessage('error', 'Failed to update user: ' + error.message, document.getElementById('update-user-btn'));
         }
     }
     
     // Show message
-    function showMessage(type, text) {
+    function showMessage(type, text, targetElement = null) {
         const messageDiv = document.getElementById('user-message');
         messageDiv.className = `alert alert-${type === 'error' ? 'danger' : 'success'}`;
         messageDiv.textContent = text;
         messageDiv.style.display = 'block';
+        
+        // Position the message near the triggering element if provided
+        if (targetElement) {
+            // Find the closest card container or use the element's parent
+            const container = targetElement.closest('.card') || targetElement.closest('.card-body') || targetElement.parentElement;
+            if (container && container.parentElement) {
+                // Insert the message after the container
+                container.parentElement.insertBefore(messageDiv, container.nextSibling);
+            }
+        }
         
         setTimeout(() => {
             messageDiv.style.display = 'none';

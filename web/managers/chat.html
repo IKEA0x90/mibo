@@ -314,10 +314,10 @@ window.initChatManager = (function() {
             if (!response.ok) throw new Error('Failed to update chat');
             
             const result = await response.json();
-            showMessage('success', result.message);
+            showMessage('success', result.message, document.getElementById('update-chat-btn'));
             await loadChats(); // Refresh chat list
         } catch (error) {
-            showMessage('error', 'Failed to update chat: ' + error.message);
+            showMessage('error', 'Failed to update chat: ' + error.message, document.getElementById('update-chat-btn'));
         }
     }
     
@@ -376,10 +376,10 @@ window.initChatManager = (function() {
             if (!response.ok) throw new Error('Failed to remove messages');
             
             const result = await response.json();
-            showMessage('success', result.message);
+            showMessage('success', result.message, document.getElementById('remove-selected-btn'));
             await loadWindowMessages(currentChatId);
         } catch (error) {
-            showMessage('error', 'Failed to remove messages: ' + error.message);
+            showMessage('error', 'Failed to remove messages: ' + error.message, document.getElementById('remove-selected-btn'));
         }
     }
     
@@ -405,19 +405,29 @@ window.initChatManager = (function() {
             if (!response.ok) throw new Error('Failed to clear window');
             
             const result = await response.json();
-            showMessage('success', result.message);
+            showMessage('success', result.message, document.getElementById('clear-window-btn'));
             await loadWindowMessages(currentChatId);
         } catch (error) {
-            showMessage('error', 'Failed to clear window: ' + error.message);
+            showMessage('error', 'Failed to clear window: ' + error.message, document.getElementById('clear-window-btn'));
         }
     }
     
     // Show message
-    function showMessage(type, text) {
+    function showMessage(type, text, targetElement = null) {
         const messageDiv = document.getElementById('chat-message');
         messageDiv.className = `alert alert-${type === 'error' ? 'danger' : 'success'}`;
         messageDiv.textContent = text;
         messageDiv.style.display = 'block';
+        
+        // Position the message near the triggering element if provided
+        if (targetElement) {
+            // Find the closest card container or use the element's parent
+            const container = targetElement.closest('.card') || targetElement.closest('.card-body') || targetElement.parentElement;
+            if (container && container.parentElement) {
+                // Insert the message after the container
+                container.parentElement.insertBefore(messageDiv, container.nextSibling);
+            }
+        }
         
         setTimeout(() => {
             messageDiv.style.display = 'none';
