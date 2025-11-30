@@ -4,7 +4,7 @@
     
     <!-- Chat Selector -->
     <div class="form-group">
-        <label for="chat-selector" class="form-label">Select Chat</label>
+        <!--<label for="chat-selector" class="form-label">Select Chat</label>-->
         <select id="chat-selector" class="form-control">
             <option value="">-- Select a chat --</option>
         </select>
@@ -53,9 +53,9 @@
                         <label for="select-all-messages" style="cursor: pointer;">Select All</label>
                     </div>
                     <div>
-                        <button id="load-window-btn" class="btn btn-danger">Load Window</button>
-                        <button id="remove-selected-btn" class="btn btn-danger" disabled>Remove Selected</button>
-                        <button id="clear-window-btn" class="btn btn-danger">Clear All</button>
+                        <button id="load-window-btn" class="btn btn-primary">Load Window</button>
+                        <button id="remove-selected-btn" class="btn btn-primary" disabled>Remove Selected</button>
+                        <button id="clear-window-btn" class="btn btn-primary">Clear All</button>
                     </div>
                 </div>
                 
@@ -437,7 +437,6 @@ window.initChatManager = (function() {
 .section-title {
     color: var(--primary-red);
     margin-bottom: 1.5rem;
-    font-size: 1.75rem;
 }
 
 #messages-table-container {

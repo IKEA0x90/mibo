@@ -42,13 +42,12 @@
         }
         
         .logout-btn {
-            background: var(--secondary-red);
+            background: var(--primary-red);
             color: white;
             border: none;
             padding: 0.5rem 1rem;
             border-radius: 5px;
             cursor: pointer;
-            transition: background-color 0.3s ease;
         }
         
         .logout-btn:hover {
@@ -67,8 +66,6 @@
         .nav-btn {
             flex: 1;
             padding: 1rem 2rem;
-            font-size: 1rem;
-            font-weight: 500;
             background: white;
             color: var(--primary-red);
             border: 2px solid var(--primary-red);
@@ -105,7 +102,6 @@
         .section-title {
             color: var(--primary-red);
             margin: 0 0 1.5rem 0;
-            font-size: 1.75rem;
             border-bottom: 2px solid var(--border-color);
             padding-bottom: 0.5rem;
         }
@@ -118,7 +114,7 @@
             <h1>Mibo Admin</h1>
             <div class="user-info">
                 <span id="username-display">Loading...</span>
-                <button class="logout-btn" onclick="logout()">Logout</button>
+                <button class="logout-btn btn btn-primary" onclick="logout()">Logout</button>
             </div>
         </div>
         
