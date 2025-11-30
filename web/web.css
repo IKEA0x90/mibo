@@ -2,11 +2,11 @@
 
 :root {
     /* Primary Red Palette */
-    --primary-red: #c53030;      /* Main brand red */
-    --dark-red: #9b2c2c;         /* Darker red for hovers */
-    --light-red: #feb2b2;        /* Light red for highlights */
-    --secondary-red: #e53e3e;    /* Secondary red */
-    --error-red: #f56565;        /* Error states */
+    --primary-red: #dd0000;      /* Main brand red */
+    --dark-red: #800000;         /* Darker red for hovers */
+    --light-red: #ff5050;        /* Light red for highlights */
+    --secondary-red: #c42626;    /* Secondary red */
+    --error-red: #ff0000;        /* Error states */
     
     /* Supporting Colors */
     --success-color: #38a169;    /* Success green */
