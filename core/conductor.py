@@ -381,12 +381,13 @@ class Conductor:
         special_fields['current_date_utc'] = dt.datetime.now(tz=dt.timezone.utc).strftime('%Y/%m/%d, %A')
 
         chance: int = await self.ref.get_chance(chat_id)
+        disabled: bool = await self.ref.get_disabled(chat_id)
         random_chance = random.randint(1, 100)
 
         # Determine if any wrapper has ping=True
         has_ping = any(getattr(w, 'ping', False) for w in wrappers)
         
-        respond = wdw.ready and ((random_chance <= chance) or has_ping)
+        respond = wdw.ready and ((random_chance <= chance) or has_ping) and not disabled
 
         if respond:
             new_message_event = conductor_events.CompletionRequest(

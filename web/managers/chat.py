@@ -18,6 +18,7 @@ class ChatInfo(BaseModel):
     chance: int
     assistant_id: str
     ai_model_id: str
+    disabled: bool
 
 class UpdateChatRequest(BaseModel):
     chat_id: str
@@ -25,6 +26,7 @@ class UpdateChatRequest(BaseModel):
     chance: Optional[int] = None
     assistant_id: Optional[str] = None
     ai_model_id: Optional[str] = None
+    disabled: Optional[bool] = None
 
 class ChatWindowMessage(BaseModel):
     id: str
@@ -61,7 +63,8 @@ def create_chat_manager_router(webapp) -> APIRouter:
                     chat_name=getattr(chat, 'chat_name', f"Chat {chat.id}"),
                     chance=chat.chance,
                     assistant_id=chat.assistant_id,
-                    ai_model_id=chat.ai_model_id
+                    ai_model_id=chat.ai_model_id,
+                    disabled=chat.disabled
                 ))
             
             # Sort by chat name for better UX
@@ -92,7 +95,8 @@ def create_chat_manager_router(webapp) -> APIRouter:
                 chat_name=chat.chat_name or f"Chat {chat.id}",
                 chance=chat.chance,
                 assistant_id=chat.assistant_id,
-                ai_model_id=chat.ai_model_id
+                ai_model_id=chat.ai_model_id,
+                disabled=chat.disabled
             )
             
         except Exception as e:
@@ -124,6 +128,8 @@ def create_chat_manager_router(webapp) -> APIRouter:
                 chat.assistant_id = request.assistant_id
             if request.ai_model_id is not None:
                 chat.ai_model_id = request.ai_model_id
+            if request.disabled is not None:
+                chat.disabled = request.disabled
             
             # Save to database through ref
             await webapp.ref.update_chat(chat)
@@ -136,7 +142,8 @@ def create_chat_manager_router(webapp) -> APIRouter:
                     chat_name=chat.chat_name,
                     chance=chat.chance,
                     assistant_id=chat.assistant_id,
-                    ai_model_id=chat.ai_model_id
+                    ai_model_id=chat.ai_model_id,
+                    disabled=chat.disabled
                 )
             }
             

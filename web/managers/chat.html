@@ -39,6 +39,14 @@
                     </select>
                 </div>
                 
+                <div class="form-group">
+                    <label for="chat-disabled-toggle" class="form-label">Enable Chat</label>
+                    <label class="switch">
+                        <input type="checkbox" id="chat-disabled-toggle">
+                        <span class="slider"></span>
+                    </label>
+                </div>
+                
                 <button id="update-chat-btn" class="btn btn-primary">Update Chat</button>
             </div>
         </div>
@@ -236,6 +244,7 @@ window.initChatManager = (function() {
             document.getElementById('chat-chance').value = chat.chance;
             document.getElementById('chat-assistant').value = chat.assistant_id;
             document.getElementById('chat-model').value = chat.ai_model_id;
+            document.getElementById('chat-disabled-toggle').checked = !chat.disabled;
         } catch (error) {
             showMessage('error', 'Failed to load chat details: ' + error.message);
         }
@@ -297,7 +306,8 @@ window.initChatManager = (function() {
             chat_name: document.getElementById('chat-name').value,
             chance: parseInt(document.getElementById('chat-chance').value),
             assistant_id: document.getElementById('chat-assistant').value,
-            ai_model_id: document.getElementById('chat-model').value
+            ai_model_id: document.getElementById('chat-model').value,
+            disabled: !document.getElementById('chat-disabled-toggle').checked
         };
         
         try {

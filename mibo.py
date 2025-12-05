@@ -422,7 +422,7 @@ class Mibo:
         if tb:
             traceback.print_exception(type(e), e, tb)
 
-    ging.basicConfig(
+logging.basicConfig(
     format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
     level=logging.CRITICAL
 )
