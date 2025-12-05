@@ -70,6 +70,7 @@ class WebApp:
             allow_credentials=True,
             allow_methods=["GET", "POST", "PUT", "DELETE", "OPTIONS"],
             allow_headers=["Authorization", "Content-Type", "X-Requested-With", "Accept"],
+            expose_headers=["X-Token-Expired"],
         )
         
         @self.app.middleware("http")
