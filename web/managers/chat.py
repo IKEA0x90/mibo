@@ -4,13 +4,12 @@ Allows management of chat configuration and window messages.
 All operations go through ref.py.
 """
 
-from typing import List, Dict, Optional
+from typing import List, Optional
 from fastapi import APIRouter, HTTPException, status, Depends
-from fastapi.responses import JSONResponse
 from pydantic import BaseModel
 
-from core import wrapper, window
-from events import system_events, ref_events
+from core import wrapper
+from events import system_events
 
 class ChatInfo(BaseModel):
     chat_id: str
@@ -251,33 +250,17 @@ def create_chat_manager_router(webapp) -> APIRouter:
         """
         Remove specific messages from a chat window.
         Does not delete from database, only from window.
+        Uses ref.remove_messages method.
         """
         try:
-            wdw = await webapp.ref.get_window(request.chat_id)
-            
-            # Remove messages with matching IDs
-            removed_count = 0
-            messages_to_keep = []
-            
-            for msg in wdw.messages:
-                if msg.id not in request.message_ids:
-                    messages_to_keep.append(msg)
-                else:
-                    removed_count += 1
-            
-            # Clear window and re-add kept messages
-            async with wdw._lock:
-                wdw.messages.clear()
-                wdw.tokens = 0
-                
-                for msg in messages_to_keep:
-                    await wdw._insert_live_message(msg)
+            # Use ref.remove_messages to properly handle removal
+            await webapp.ref.remove_messages(request.chat_id, request.message_ids)
             
             return {
                 "success": True,
-                "message": f"Removed {removed_count} message(s) from window",
+                "message": f"Removed {len(request.message_ids)} message(s) from window",
                 "chat_id": request.chat_id,
-                "removed_count": removed_count
+                "removed_count": len(request.message_ids)
             }
             
         except Exception as e:

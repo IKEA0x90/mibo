@@ -3,7 +3,7 @@ All the API needed for all auth logic.
 Handles login, logout, and token verification.
 """
 
-from fastapi import APIRouter, HTTPException, status, Form, Depends, Request
+from fastapi import APIRouter, HTTPException, status, Depends, Request
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel
 

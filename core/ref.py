@@ -259,17 +259,25 @@ class Ref:
         wdw.set_max_tokens(max_tokens)
         return wdw
     
+    async def remove_messages(self, chat_id: str, message_ids: List[str]) -> window.Window:
+        '''
+        Remove messages from a chat window by their IDs.
+        '''
+        wdw: window.Window = self.windows.get(chat_id)
+
+        if wdw:
+            await wdw.remove_messages(message_ids)
+            
+        return wdw
+
     async def clear(self, chat_id: str) -> window.Window:
         '''
         Clear the chat window for a chat.
         '''
-        chat: wrapper.ChatWrapper = await self.get_chat(chat_id)
-        wdw = self.windows.get(chat_id)
+        wdw: window.Window = self.windows.get(chat_id)
 
         if wdw:
             wdw = await wdw.clear()
-
-        self.windows[chat_id] = wdw
 
         return wdw
 

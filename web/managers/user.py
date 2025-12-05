@@ -5,12 +5,10 @@ Cannot edit telegram-defined fields (username, user_id).
 All operations go through ref.py.
 """
 
-from typing import List, Dict, Optional
+from typing import List, Optional
 from fastapi import APIRouter, HTTPException, status, Depends
-from fastapi.responses import JSONResponse
 from pydantic import BaseModel
 
-from core import wrapper
 from events import system_events
 
 class UserInfo(BaseModel):

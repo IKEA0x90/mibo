@@ -4,11 +4,9 @@ Allows management of references (assistants, models, prompts).
 All operations go through ref.py.
 """
 
-from typing import List, Dict, Optional
+from typing import Dict
 from fastapi import APIRouter, HTTPException, status, Depends
-from fastapi.responses import JSONResponse
 from pydantic import BaseModel
-import json
 
 from core import ref
 from events import system_events

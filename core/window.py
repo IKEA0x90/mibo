@@ -202,6 +202,25 @@ class Window():
             oldest_tokens = oldest_msg.tokens
             self.tokens -= oldest_tokens
 
+    async def remove_messages(self, message_ids: List[str]):
+        '''
+        Removes messages with the given IDs from the window.
+        '''
+        async with self._lock:
+            messages_to_keep = deque()
+            tokens_to_deduct = 0
+
+            for msg in self.messages:
+                if msg.id in message_ids:
+                    tokens_to_deduct += msg.tokens
+                else:
+                    messages_to_keep.append(msg)
+
+            self.messages = messages_to_keep
+            self.tokens -= tokens_to_deduct
+
+        return self
+
     async def clear(self):
         '''
         Clears the window.
