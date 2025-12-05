@@ -194,7 +194,7 @@ def create_chat_manager_router(webapp) -> APIRouter:
                 
                 messages.append(ChatWindowMessage(
                     id=msg.id,
-                        type=msg.type,
+                    type=msg.type,
                     role=msg.role,
                     user=msg.user,
                     datetime=msg.datetime.isoformat() if hasattr(msg, 'datetime') else "",

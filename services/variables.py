@@ -17,6 +17,9 @@ class Variables:
     LOCAL_KEY = os.environ.get('LOCAL_KEY', '') # Local API key
     XAI_KEY = os.environ.get('XAI_KEY', '') # XAI API key
 
+    if not TELEGRAM_KEY:
+        raise ValueError("TELEGRAM_KEY environment variable not set")
+
     DB_PATH = os.environ.get('DB_PATH', 'memory') # relative path to the database file
 
     LOCAL_API_HOST = os.environ.get('LOCAL_API_HOST', '127.0.0.1') # ip of the local ollama host
@@ -29,6 +32,10 @@ class Variables:
 
     JWT_SECRET_KEY = os.environ.get('JWT_SECRET_KEY', '') # secret key for JWT tokens
     MIBO_DOMAIN = os.environ.get('MIBO_DOMAIN', 'admin.miibo.ru') # domain where the admin panel is hosted
+
+    if not JWT_SECRET_KEY:
+        raise ValueError("JWT_SECRET_KEY environment variable not set")
+        exit(1)
 
     ADMIN_ID = os.environ.get('ADMIN_ID', '') # id of the admin user
 

@@ -25,7 +25,8 @@ class Mibo:
         # load the environment first to catch early errors
         try:
             _ = variables.Variables()
-        except TypeError:
+        except (TypeError, ValueError) as e:
+            print(e)
             exit(1)
 
         self.clients: List[openai.OpenAI] = []
