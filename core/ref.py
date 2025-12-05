@@ -492,7 +492,7 @@ class Ref:
 
         await self.get_chats()
         
-        self._cleanup_task = asyncio.create_task(self._cleanup())
+        #self._cleanup_task = asyncio.create_task(self._cleanup())
 
     async def _cleanup(self):
         while True:
