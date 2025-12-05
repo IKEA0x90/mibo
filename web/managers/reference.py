@@ -158,7 +158,7 @@ def create_reference_manager_router(webapp) -> APIRouter:
                 )
             
             # Create new reference object from data
-            updated_reference = reference_class.from_dict(data)
+            updated_reference = reference_class.from_dict(ref_id, data, ref_type)
             
             # Update in memory
             collection[ref_id] = updated_reference

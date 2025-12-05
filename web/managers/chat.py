@@ -227,7 +227,7 @@ def create_chat_manager_router(webapp) -> APIRouter:
         """
         try:
             # Clear the chat window using ref.clear
-            cleared_window = await webapp.ref.clear(request.chat_id)
+            await webapp.ref.clear(request.chat_id)
             
             return {
                 "success": True,

@@ -1,0 +1,352 @@
+// Chat Manager - Exposed globally for dashboard integration
+window.initChatManager = (function() {
+    const API_BASE = '/api/managers/chat';
+    let currentChatId = null;
+    let selectedMessages = new Set();
+    let initialized = false;
+    
+    // Initialize
+    async function init() {
+        if (initialized) return; // Prevent double initialization
+        
+        await loadChats();
+        await loadAssistants();
+        await loadModels();
+        
+        document.getElementById('chat-selector').addEventListener('change', handleChatSelect);
+        document.getElementById('update-chat-btn').addEventListener('click', handleUpdateChat);
+        document.getElementById('select-all-messages').addEventListener('change', handleSelectAll);
+        document.getElementById('load-window-btn').addEventListener('click', () => {
+            if (currentChatId) {
+                loadWindowMessages(currentChatId);
+            } else {
+                showMessage('error', 'Please select a chat first');
+            }
+        });
+        document.getElementById('remove-selected-btn').addEventListener('click', handleRemoveSelected);
+        document.getElementById('clear-window-btn').addEventListener('click', handleClearWindow);
+        
+        initialized = true;
+    }
+    
+    // Load all chats
+    async function loadChats() {
+        try {
+            const token = localStorage.getItem('access_token');
+            const response = await fetch(`${API_BASE}/chats`, {
+                headers: {
+                    'Authorization': `Bearer ${token}`
+                }
+            });
+            
+            if (!response.ok) throw new Error('Failed to load chats');
+            
+            const chats = await response.json();
+            const selector = document.getElementById('chat-selector');
+            selector.innerHTML = '<option value="">-- Select a chat --</option>';
+            
+            chats.forEach(chat => {
+                const option = document.createElement('option');
+                option.value = chat.chat_id;
+                option.textContent = `${chat.chat_name} (${chat.chat_id})`;
+                selector.appendChild(option);
+            });
+        } catch (error) {
+            showMessage('error', 'Failed to load chats: ' + error.message);
+        }
+    }
+    
+    // Load assistants
+    async function loadAssistants() {
+        try {
+            const token = localStorage.getItem('access_token');
+            const response = await fetch(`${API_BASE}/assistants`, {
+                headers: {
+                    'Authorization': `Bearer ${token}`
+                }
+            });
+            
+            if (!response.ok) throw new Error('Failed to load assistants');
+            
+            const assistants = await response.json();
+            const selector = document.getElementById('chat-assistant');
+            selector.innerHTML = '<option value="">-- Select assistant --</option>';
+            
+            assistants.forEach(assistant => {
+                const option = document.createElement('option');
+                option.value = assistant.id;
+                option.textContent = assistant.name;
+                selector.appendChild(option);
+            });
+        } catch (error) {
+            showMessage('error', 'Failed to load assistants: ' + error.message);
+        }
+    }
+    
+    // Load models
+    async function loadModels() {
+        try {
+            const token = localStorage.getItem('access_token');
+            const response = await fetch(`${API_BASE}/models`, {
+                headers: {
+                    'Authorization': `Bearer ${token}`
+                }
+            });
+            
+            if (!response.ok) throw new Error('Failed to load models');
+            
+            const models = await response.json();
+            const selector = document.getElementById('chat-model');
+            selector.innerHTML = '<option value="">-- Select model --</option>';
+            
+            models.forEach(model => {
+                const option = document.createElement('option');
+                option.value = model.id;
+                option.textContent = model.name;
+                selector.appendChild(option);
+            });
+        } catch (error) {
+            showMessage('error', 'Failed to load models: ' + error.message);
+        }
+    }
+    
+    // Handle chat selection
+    async function handleChatSelect(event) {
+        const chatId = event.target.value;
+        
+        if (!chatId) {
+            document.getElementById('chat-config').style.display = 'none';
+            return;
+        }
+        
+        currentChatId = chatId;
+        await loadChatDetails(chatId);
+        // Clear the messages table but don't load window messages automatically
+        const tbody = document.getElementById('messages-table-body');
+        tbody.innerHTML = '<tr><td colspan="6" class="text-center text-secondary">Click "Load Window" to view messages</td></tr>';
+        selectedMessages.clear();
+        document.getElementById('select-all-messages').checked = false;
+        updateRemoveButton();
+        document.getElementById('chat-config').style.display = 'block';
+    }
+    
+    // Load chat details
+    async function loadChatDetails(chatId) {
+        try {
+            const token = localStorage.getItem('access_token');
+            const response = await fetch(`${API_BASE}/chat/${chatId}`, {
+                headers: {
+                    'Authorization': `Bearer ${token}`
+                }
+            });
+            
+            if (!response.ok) throw new Error('Failed to load chat details');
+            
+            const chat = await response.json();
+            document.getElementById('chat-name').value = chat.chat_name;
+            document.getElementById('chat-chance').value = chat.chance;
+            document.getElementById('chat-assistant').value = chat.assistant_id;
+            document.getElementById('chat-model').value = chat.ai_model_id;
+            document.getElementById('chat-disabled-toggle').checked = !chat.disabled;
+        } catch (error) {
+            showMessage('error', 'Failed to load chat details: ' + error.message);
+        }
+    }
+    
+    // Load window messages
+    async function loadWindowMessages(chatId) {
+        try {
+            const token = localStorage.getItem('access_token');
+            const response = await fetch(`${API_BASE}/window/${chatId}`, {
+                headers: {
+                    'Authorization': `Bearer ${token}`
+                }
+            });
+            
+            if (!response.ok) throw new Error('Failed to load window');
+            
+            const messages = await response.json();
+            const tbody = document.getElementById('messages-table-body');
+            
+            if (messages.length === 0) {
+                tbody.innerHTML = '<tr><td colspan="6" class="text-center text-secondary">No messages in window</td></tr>';
+                return;
+            }
+            
+            tbody.innerHTML = '';
+            messages.forEach(msg => {
+                const tr = document.createElement('tr');
+                tr.innerHTML = `
+                    <td><input type="checkbox" class="message-checkbox" data-id="${msg.id}"></td>
+                    <td>${msg.id}</td>
+                    <td>${msg.user}</td>
+                    <td style="max-width: 400px; white-space: normal; word-wrap: break-word;">${msg.content}</td>
+                    <td>${msg.tokens || 0}</td>
+                    <td>${new Date(msg.datetime).toLocaleString()}</td>
+                `;
+                tbody.appendChild(tr);
+            });
+            
+            // Add event listeners to checkboxes
+            document.querySelectorAll('.message-checkbox').forEach(checkbox => {
+                checkbox.addEventListener('change', handleMessageSelect);
+            });
+            
+            selectedMessages.clear();
+            document.getElementById('select-all-messages').checked = false;
+            updateRemoveButton();
+        } catch (error) {
+            showMessage('error', 'Failed to load window messages: ' + error.message);
+        }
+    }
+    
+    // Handle update chat
+    async function handleUpdateChat() {
+        if (!currentChatId) return;
+        
+        const data = {
+            chat_id: currentChatId,
+            chat_name: document.getElementById('chat-name').value,
+            chance: parseInt(document.getElementById('chat-chance').value),
+            assistant_id: document.getElementById('chat-assistant').value,
+            ai_model_id: document.getElementById('chat-model').value,
+            disabled: !document.getElementById('chat-disabled-toggle').checked
+        };
+        
+        try {
+            const token = localStorage.getItem('access_token');
+            const response = await fetch(`${API_BASE}/chat`, {
+                method: 'PUT',
+                headers: {
+                    'Authorization': `Bearer ${token}`,
+                    'Content-Type': 'application/json'
+                },
+                body: JSON.stringify(data)
+            });
+            
+            if (!response.ok) throw new Error('Failed to update chat');
+            
+            const result = await response.json();
+            showMessage('success', result.message, document.getElementById('update-chat-btn'));
+            await loadChats(); // Refresh chat list
+        } catch (error) {
+            showMessage('error', 'Failed to update chat: ' + error.message, document.getElementById('update-chat-btn'));
+        }
+    }
+    
+    // Handle select all
+    function handleSelectAll(event) {
+        const checked = event.target.checked;
+        document.querySelectorAll('.message-checkbox').forEach(checkbox => {
+            checkbox.checked = checked;
+            if (checked) {
+                selectedMessages.add(checkbox.dataset.id);
+            } else {
+                selectedMessages.delete(checkbox.dataset.id);
+            }
+        });
+        updateRemoveButton();
+    }
+    
+    // Handle message select
+    function handleMessageSelect(event) {
+        const id = event.target.dataset.id;
+        if (event.target.checked) {
+            selectedMessages.add(id);
+        } else {
+            selectedMessages.delete(id);
+            document.getElementById('select-all-messages').checked = false;
+        }
+        updateRemoveButton();
+    }
+    
+    // Update remove button state
+    function updateRemoveButton() {
+        const btn = document.getElementById('remove-selected-btn');
+        btn.disabled = selectedMessages.size === 0;
+    }
+
+    // Handle remove selected
+    async function handleRemoveSelected() {
+        if (!currentChatId || selectedMessages.size === 0) return;
+        
+        if (!confirm(`Remove ${selectedMessages.size} message(s) from window?`)) return;
+        
+        try {
+            const token = localStorage.getItem('access_token');
+            const response = await fetch(`${API_BASE}/window/remove`, {
+                method: 'POST',
+                headers: {
+                    'Authorization': `Bearer ${token}`,
+                    'Content-Type': 'application/json'
+                },
+                body: JSON.stringify({
+                    chat_id: currentChatId,
+                    message_ids: Array.from(selectedMessages)
+                })
+            });
+            
+            if (!response.ok) throw new Error('Failed to remove messages');
+            
+            const result = await response.json();
+            showMessage('success', result.message, document.getElementById('remove-selected-btn'));
+            await loadWindowMessages(currentChatId);
+        } catch (error) {
+            showMessage('error', 'Failed to remove messages: ' + error.message, document.getElementById('remove-selected-btn'));
+        }
+    }
+    
+    // Handle clear window
+    async function handleClearWindow() {
+        if (!currentChatId) return;
+        
+        if (!confirm('Clear all messages from window?')) return;
+        
+        try {
+            const token = localStorage.getItem('access_token');
+            const response = await fetch(`${API_BASE}/window/clear`, {
+                method: 'POST',
+                headers: {
+                    'Authorization': `Bearer ${token}`,
+                    'Content-Type': 'application/json'
+                },
+                body: JSON.stringify({
+                    chat_id: currentChatId
+                })
+            });
+            
+            if (!response.ok) throw new Error('Failed to clear window');
+            
+            const result = await response.json();
+            showMessage('success', result.message, document.getElementById('clear-window-btn'));
+            await loadWindowMessages(currentChatId);
+        } catch (error) {
+            showMessage('error', 'Failed to clear window: ' + error.message, document.getElementById('clear-window-btn'));
+        }
+    }
+    
+    // Show message
+    function showMessage(type, text, targetElement = null) {
+        const messageDiv = document.getElementById('chat-message');
+        messageDiv.className = `alert alert-${type === 'error' ? 'danger' : 'success'}`;
+        messageDiv.textContent = text;
+        messageDiv.style.display = 'block';
+        
+        // Position the message near the triggering element if provided
+        if (targetElement) {
+            // Find the closest card container or use the element's parent
+            const container = targetElement.closest('.card') || targetElement.closest('.card-body') || targetElement.parentElement;
+            if (container && container.parentElement) {
+                // Insert the message after the container
+                container.parentElement.insertBefore(messageDiv, container.nextSibling);
+            }
+        }
+        
+        setTimeout(() => {
+            messageDiv.style.display = 'none';
+        }, 5000);
+    }
+    
+    // Return the init function for external initialization
+    return init;
+})();

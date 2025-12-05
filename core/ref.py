@@ -249,7 +249,7 @@ class Ref:
 
         # same loading as chat
         wdw = self.windows.get(chat_id)
-        if wdw == None:
+        if wdw is None:
             wdw = await self.db.get_window(chat_id, max_tokens)
             if not wdw:
                 # create a new window
