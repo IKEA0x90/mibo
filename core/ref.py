@@ -276,6 +276,11 @@ class Ref:
     async def get_chat(self, chat_id: str, **kwargs) -> wrapper.ChatWrapper:
         # from memory
         chat = self.chats.get(chat_id)
+
+        if kwargs.get('chat_name') and chat and chat.chat_name != kwargs.get('chat_name'):
+            chat.chat_name = kwargs.get('chat_name')
+            await self.update_chat(chat)
+
         if not chat:
             # from database
             chat = await self.db.get_chat(chat_id, **kwargs)

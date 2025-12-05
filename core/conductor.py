@@ -302,7 +302,7 @@ class Conductor:
         entities = message.parse_entities()
         caption_entities = message.parse_caption_entities()
 
-        return {
+        chat_information = {
             'chat_id': chat_id,
             'message_id': message_id,
             'chat_name': chat_name,
@@ -321,6 +321,8 @@ class Conductor:
             'caption_entities': caption_entities,
             'system_message': system_message
         }
+
+        return chat_information
 
     async def _determine_ping_status(self, message_info: Dict, message_text: str, context: CallbackContext, event: mibo_events.NewMessageArrived):
         '''

@@ -243,7 +243,7 @@ async def start_webapp(ref_instance: ref.Ref, bus_instance: event_bus.EventBus, 
         app=webapp.app,
         host="0.0.0.0",
         port=port,
-        log_level="info",
+        log_level="critical",
         access_log=True
     )
     
