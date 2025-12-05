@@ -115,7 +115,9 @@ class Database:
 
             if row:
                 return wrapper.ChatWrapper(id=row['chat_id'], chat_name=row['chat_name'],
-                                            chance=row['chance'], assistant_id=row['assistant_id'], ai_model_id=row['ai_model_id'])
+                                            chance=row['chance'], 
+                                            assistant_id=row['assistant_id'], ai_model_id=row['ai_model_id'],
+                                            turned_on=row['turned_on'])
 
         except Exception as e:
             _, _, tb = sys.exc_info()
@@ -213,6 +215,7 @@ class Database:
         chance = chat.chance
         assistant_id = chat.assistant_id
         ai_model_id = chat.ai_model_id
+        turned_on = getattr(chat, 'turned_on', True)
 
         update: bool = getattr(event, 'update', False)
 
@@ -223,22 +226,22 @@ class Database:
                     await cursor.execute(
                         """
                         UPDATE chats 
-                        SET chat_name = ?, chance = ?, assistant_id = ?, ai_model_id = ?
+                        SET chat_name = ?, chance = ?, assistant_id = ?, ai_model_id = ?, turned_on = ?
                         WHERE chat_id = ?
                         """,
-                        (chat_name, chance, assistant_id, ai_model_id, str(effective_chat_id))
+                        (chat_name, chance, assistant_id, ai_model_id, turned_on, str(effective_chat_id))
                     )
                 else:
                     # Insert new chat
                     await cursor.execute(
                         """
                         INSERT OR IGNORE INTO chats
-                        (chat_id, chat_name, chance, assistant_id, ai_model_id)
-                        VALUES (?, ?, ?, ?, ?)
+                        (chat_id, chat_name, chance, assistant_id, ai_model_id, turned_on)
+                        VALUES (?, ?, ?, ?, ?, ?)
                         """,
                         (
                             str(effective_chat_id), chat_name,
-                            chance, assistant_id, ai_model_id
+                            chance, assistant_id, ai_model_id, turned_on
                         ),
                     )
                 await self.conn.commit()
@@ -512,6 +515,7 @@ class Database:
                 chance               INTEGER NOT NULL DEFAULT 5,
                 assistant_id         TEXT NOT NULL DEFAULT '{variables.Variables.DEFAULT_ASSISTANT}',
                 ai_model_id          TEXT NOT NULL DEFAULT '{variables.Variables.DEFAULT_MODEL}',
+                turned_on            BOOLEAN NOT NULL DEFAULT 1,
                 timestamp            TIMESTAMP DEFAULT CURRENT_TIMESTAMP
             );
             ''',

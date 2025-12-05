@@ -273,6 +273,17 @@ class Ref:
 
         return wdw
 
+    async def disable(self, chat_id: str) -> wrapper.ChatWrapper:
+        '''
+        Disable a chat.
+        '''
+        chat: wrapper.ChatWrapper = await self.get_chat(chat_id)
+        if chat:
+            chat.turned_on = False
+            await self.update_chat(chat)
+        
+        return chat
+
     async def get_chat(self, chat_id: str, **kwargs) -> wrapper.ChatWrapper:
         # from memory
         chat = self.chats.get(chat_id)

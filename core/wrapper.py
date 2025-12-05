@@ -213,6 +213,8 @@ class ChatWrapper():
         self.assistant_id: str = kwargs.get('assistant_id', variables.Variables.DEFAULT_ASSISTANT)
         self.ai_model_id: str = kwargs.get('ai_model_id', variables.Variables.DEFAULT_MODEL)
 
+        self.turned_on: bool = kwargs.get('turned_on', True)
+
         self.last_active: float = 0
         self.in_use: bool = False
 
