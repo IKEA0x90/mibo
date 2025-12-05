@@ -1,0 +1,116 @@
+<!-- Chat Manager Section -->
+<div id="chat-manager-section">
+    <h2 class="section-title">Chat Manager</h2>
+    
+    <!-- Chat Selector -->
+    <div class="form-group">
+        <!--<label for="chat-selector" class="form-label">Select Chat</label>-->
+        <select id="chat-selector" class="form-control">
+            <option value="">-- Select a chat --</option>
+        </select>
+    </div>
+    
+    <!-- Chat Configuration -->
+    <div id="chat-config" style="display: none;">
+        <h3 class="text-primary">Chat Configuration</h3>
+        <div class="card">
+            <div class="card-body">
+                <div class="form-group">
+                    <label for="chat-name" class="form-label">Chat Name</label>
+                    <input type="text" id="chat-name" class="form-control" placeholder="Chat name">
+                </div>
+                
+                <div class="form-group">
+                    <label for="chat-chance" class="form-label">Chance (%)</label>
+                    <input type="number" id="chat-chance" class="form-control" min="0" max="100" placeholder="5">
+                </div>
+                
+                <div class="form-group">
+                    <label for="chat-assistant" class="form-label">Assistant</label>
+                    <select id="chat-assistant" class="form-control">
+                        <option value="">-- Select assistant --</option>
+                    </select>
+                </div>
+                
+                <div class="form-group">
+                    <label for="chat-model" class="form-label">AI Model</label>
+                    <select id="chat-model" class="form-control">
+                        <option value="">-- Select model --</option>
+                    </select>
+                </div>
+                
+                <div class="form-group">
+                    <label for="chat-disabled-toggle" class="form-label">Enable Chat</label>
+                    <label class="switch">
+                        <input type="checkbox" id="chat-disabled-toggle">
+                        <span class="slider"></span>
+                    </label>
+                </div>
+                
+                <button id="update-chat-btn" class="btn btn-primary">Update Chat</button>
+            </div>
+        </div>
+        
+        <!-- Window Messages -->
+        <h3 class="text-primary" style="margin-top: 2rem;">Window Messages</h3>
+        <div class="card">
+            <div class="card-body">
+                <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 1rem;">
+                    <div>
+                        <input type="checkbox" id="select-all-messages" style="margin-right: 0.5rem;">
+                        <label for="select-all-messages" style="cursor: pointer;">Select All</label>
+                    </div>
+                    <div>
+                        <button id="load-window-btn" class="btn btn-primary">Load Window</button>
+                        <button id="remove-selected-btn" class="btn btn-primary" disabled>Remove Selected</button>
+                        <button id="clear-window-btn" class="btn btn-primary">Clear All</button>
+                    </div>
+                </div>
+                
+                <div id="messages-table-container">
+                    <table class="table">
+                        <thead>
+                            <tr>
+                                <th style="width: 40px;"></th>
+                                <th style="width: 80px;">ID</th>
+                                <th style="width: 120px;">User</th>
+                                <th>Content</th>
+                                <th style="width: 40px;">Tokens</th>
+                                <th style="width: 150px;">Datetime</th>
+                            </tr>
+                        </thead>
+                        <tbody id="messages-table-body">
+                            <tr>
+                                <td colspan="6" class="text-center text-secondary">No messages in window</td>
+                            </tr>
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+    </div>
+    
+    <!-- Messages -->
+    <div id="chat-message" class="alert" style="display: none; margin-top: 1rem;"></div>
+</div>
+
+<script src="/static/managers/chat.js"></script>
+
+<style>
+.manager-section {
+    max-width: 100%;
+}
+
+.section-title {
+    color: var(--primary-red);
+    margin-bottom: 1.5rem;
+}
+
+#messages-table-container {
+    overflow-x: auto;
+}
+
+.message-checkbox {
+    cursor: pointer;
+}
+</style>

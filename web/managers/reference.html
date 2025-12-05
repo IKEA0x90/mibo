@@ -1,0 +1,67 @@
+<!-- Reference Manager Section -->
+<div id="reference-manager-section">
+    <h2 class="section-title">Reference Manager</h2>
+    
+    <!-- Reference Type Selector -->
+    <div class="form-group">
+        <!--<label class="form-label">Reference Type</label>-->
+        <div style="display: flex; gap: 1rem;">
+            <button id="ref-type-assistants" class="btn btn-outline ref-type-btn">Assistants</button>
+            <button id="ref-type-models" class="btn btn-outline ref-type-btn">Models</button>
+            <button id="ref-type-prompts" class="btn btn-outline ref-type-btn">Prompts</button>
+        </div>
+    </div>
+    
+    <!-- Reference List -->
+    <div id="reference-list-container" style="display: none; margin-top: 2rem;">
+        <h3 class="text-primary">Available References</h3>
+        <div id="reference-list" class="card">
+            <div class="card-body">
+                <div id="reference-buttons" style="display: flex; flex-wrap: wrap; gap: 0.5rem;">
+                    <!-- Reference buttons will be inserted here -->
+                </div>
+            </div>
+        </div>
+    </div>
+    
+    <!-- Reference Editor -->
+    <div id="reference-editor-container" style="display: none; margin-top: 2rem;">
+        <h3 class="text-primary">Edit Reference: <span id="current-reference-name"></span></h3>
+        <div class="card">
+            <div class="card-body">
+                <div class="form-group">
+                    <label for="reference-data" class="form-label">Reference Data (JSON)</label>
+                    <textarea id="reference-data" class="form-control" rows="20"></textarea>
+                </div>
+                
+                <div style="display: flex; gap: 1rem;">
+                    <button id="save-reference-btn" class="btn btn-primary">Save Changes</button>
+                    <button id="format-json-btn" class="btn btn-primary">Format JSON</button>
+                    <button id="reload-references-btn" class="btn btn-primary">Reload All</button>
+                </div>
+            </div>
+        </div>
+    </div>
+    
+    <!-- Messages -->
+    <div id="reference-message" class="alert" style="display: none; margin-top: 1rem;"></div>
+</div>
+
+<script src="/static/managers/reference.js"></script>
+
+<style>
+.ref-type-btn {
+    flex: 1;
+    min-width: 120px;
+}
+
+#reference-data {
+    white-space: pre;
+    overflow-wrap: normal;
+    overflow-x: auto;
+}
+
+#reference-buttons .btn {
+    min-width: 100px;
+}
+</style>

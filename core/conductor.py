@@ -5,7 +5,7 @@ import datetime as dt
 
 from io import BytesIO
 from PIL import Image
-from typing import Dict, cast
+from typing import Dict, List, cast
 from telegram import Chat, Update, Message, MessageEntity, User
 from telegram.ext import CallbackContext
 
@@ -21,6 +21,11 @@ class Conductor:
     def __init__(self, bus, referrer: ref.Ref):
         self.bus: event_bus.EventBus = bus
         self.ref: ref.Ref = referrer
+        
+        # Media group buffering
+        self._media_group_buffers: Dict[str, List[Update]] = {}
+        self._media_group_tasks: Dict[str, asyncio.Task] = {}
+        self._media_group_timeout = 1.0  # 1 second timeout for album completion
 
         self._register()
 
@@ -30,99 +35,203 @@ class Conductor:
     async def _capture_message(self, event: mibo_events.NewMessageArrived):
         '''
         Listens to new messages sent to chats and processes them into Wrappers.
-        Then, calls Mibo.
         ''' 
         update: Update = event.update
         context: CallbackContext = event.context
 
+        message: Message = update.effective_message
+        if message and hasattr(message, 'media_group_id') and message.media_group_id:
+            media_group_id = message.media_group_id
+            
+            # Add to buffer
+            if media_group_id not in self._media_group_buffers:
+                self._media_group_buffers[media_group_id] = []
+            self._media_group_buffers[media_group_id].append(update)
+            
+            # If no task is running for this media group, start one
+            if media_group_id not in self._media_group_tasks:
+                self._media_group_tasks[media_group_id] = asyncio.create_task(
+                    self._process_media_group(media_group_id, event)
+                )
+            return  # Don't process yet, wait for the complete album
+        
+        # Process single message immediately
+        await self._process_single_message(update, context, event)
+
+    async def _process_media_group(self, media_group_id: str, original_event: mibo_events.NewMessageArrived):
+        '''
+        Wait for media group completion, then process all messages in the group together.
+        '''
         try:
-            chat: Chat = update.effective_chat
-            message: Message = update.effective_message
-
-            if not chat or not message:
-                return {}
-
-            user: User = message.from_user
-            if not user:
-                return {}
+            await asyncio.sleep(self._media_group_timeout)
             
-            chat_id: str = chat.id
-            message_id: str = message.message_id
-            chat_name: str = chat.effective_name or ''
-
-            if not chat_id or not message_id:
-                return {}
-
-            chat_id = message.chat.id
-            chat_type = message.chat.type
-            chat_name = message.chat.effective_name or ''
-
-            message_id = message.message_id
-            message_text = message.text
-            message_caption = message.caption
-
-            user = message.from_user
-            user_id = user.id
-            username = user.username or user.first_name
-
-            entities = message.parse_entities()
-            caption_entities = message.parse_caption_entities()
-
-            ping = False
-            system_message = hasattr(event, 'system')
-
-            if system_message:
-                role = 'system'
-            else:
-                role = 'assistant' if user == variables.Variables.USERNAME else 'user'
-
-            message_text = message_text or message_caption or ''
-
-            if chat_type == Chat.PRIVATE or system_message:
-                ping = True 
-
-            if entities or caption_entities:
-                for entity, value in {**entities, **caption_entities}.items():
-                    entity = cast(MessageEntity, entity) # for type hinting
-
-                    if entity.type == 'mention':
-                        if value.startswith('@') and value[1:] == variables.Variables.USERNAME:
-                            ping = True
-
-                    elif entity.type == 'url':
-                        # special url processing
-                        pass
+            # Get all buffered messages for this media group
+            album_updates = self._media_group_buffers.pop(media_group_id, [])
+            self._media_group_tasks.pop(media_group_id, None)
             
-            reply_message = message.reply_to_message
-            reply_id = reply_message.message_id if reply_message else None
-
-            quote = reply_message.quote if reply_message else None
-            quote_text = quote.text if quote else None
-
-            if reply_id and (reply_message.from_user.id == context.bot.id):
-                ping = True
-
-            # if any of string names is in the text
-            names = await self.ref.get_assistant_names(chat_id)
-            if any(name.lower() in message_text.lower() for name in names):
-                ping = True
+            if not album_updates:
+                return
                 
-            datetime: dt.datetime = message.date.astimezone(dt.timezone.utc)
+            await self._process_album_messages(album_updates, original_event)
+            
+        except Exception as e:
+            # Clean up on error
+            self._media_group_buffers.pop(media_group_id, None)
+            self._media_group_tasks.pop(media_group_id, None)
+            _, _, tb = sys.exc_info()
+            chat_id = album_updates[0].effective_chat.id if album_updates else None
+            await self.bus.emit(system_events.ErrorEvent(
+                error="Error processing media group", e=e, tb=tb, 
+                event_id=original_event.event_id, chat_id=chat_id
+            ))
 
-            message_wrapper = wrapper.MessageWrapper(id=message_id, chat_id=chat_id, message=message_text, ping=ping, 
-                                                     reply_id=reply_id, quote=quote_text,
-                                                     datetime=datetime, role=role, user=username)
+    async def _process_album_messages(self, album_updates: List[Update], original_event: mibo_events.NewMessageArrived):
+        '''
+        Process all messages in an album together, handling shared and individual captions properly.
+        '''
+        if not album_updates:
+            return
+            
+        primary_update = album_updates[0]
+        context = original_event.context
+        
+        try:
+            message_info = await self._extract_message_info(primary_update, original_event)
+            if not message_info:
+                return
+
+            shared_texts = []
+            individual_captions = []
+            
+            message_texts = []
+            for update in album_updates:
+                msg = update.effective_message
+                text = msg.text or msg.caption or ''
+                message_texts.append(text.strip() if text else '')
+            
+            text_counts = {}
+            for text in message_texts:
+                if text:
+                    text_counts[text] = text_counts.get(text, 0) + 1
+            
+            # Separate shared vs individual content
+            for i, text in enumerate(message_texts):
+                if text:
+                    if text_counts[text] > 1:
+                        if text not in shared_texts:
+                            shared_texts.append(text)
+                    else:
+                        individual_captions.append((i, text))
+
+            album_group_id = album_updates[0].effective_message.media_group_id
+
+            all_text = ' '.join(shared_texts + [caption for _, caption in individual_captions])
+            ping = await self._determine_ping_status(
+                message_info, all_text, context, original_event
+            )
+
+            # Create shared message wrapper for shared album caption
+            wrappers = []
+            if shared_texts:
+                combined_shared_text = ' '.join(shared_texts)
+                shared_message_wrapper = wrapper.MessageWrapper(
+                    id=message_info['message_id'], 
+                    chat_id=message_info['chat_id'], 
+                    message=combined_shared_text, 
+                    ping=ping, 
+                    reply_id=message_info['reply_id'], 
+                    quote=message_info['quote_text'],
+                    datetime=message_info['datetime'], 
+                    role=message_info['role'], 
+                    user=message_info['username'],
+                    group_id=album_group_id
+                )
+                wrappers.append(shared_message_wrapper)
+
+            # Create individual caption wrappers for each unique image caption
+            for img_index, caption in individual_captions:
+                update = album_updates[img_index]
+                caption_id = f"{update.effective_message.message_id}_caption"
+                
+                caption_wrapper = wrapper.MessageWrapper(
+                    id=caption_id,
+                    chat_id=message_info['chat_id'],
+                    message=caption,
+                    ping=ping,
+                    reply_id=message_info['reply_id'],
+                    quote=message_info['quote_text'],
+                    datetime=message_info['datetime'],
+                    role=message_info['role'],
+                    user=message_info['username'],
+                    group_id=album_group_id
+                )
+                wrappers.append(caption_wrapper)
+            
+            # Collect all images from all messages in the album
+            all_content = []
+            if context:
+                for update in album_updates:
+                    content = await self._look_for_content(update, context, original_event)
+                    if content:
+                        # Set the group_id for all images to link them to this album
+                        for c in content:
+                            c.group_id = album_group_id
+                        all_content.extend(content)
+
+                for c in all_content:
+                    c.role = message_info['role']
+                    c.user = message_info['username']
+                    c.ping = ping
+                    c.datetime = message_info['datetime']
+
+            wrappers.extend(all_content)
+
+            if not wrappers:
+                raise ValueError("Wrapper list is somehow empty. This probably shouldn't happen.")
+            
+            await self._process_wrappers(
+                wrappers, message_info, original_event.typing, original_event
+            )
+
+        except Exception as e:
+            _, _, tb = sys.exc_info()
+            chat_id = album_updates[0].effective_chat.id if album_updates else None
+            await self.bus.emit(system_events.ErrorEvent(
+                error="Something's wrong with processing album messages.", 
+                e=e, tb=tb, event_id=original_event.event_id, chat_id=chat_id
+            ))
+
+    async def _process_single_message(self, update: Update, context: CallbackContext, event: mibo_events.NewMessageArrived):
+        try:
+            message_info = await self._extract_message_info(update, event)
+            if not message_info:
+                return
+
+            message_text = message_info['message_text']
+
+            ping = await self._determine_ping_status(message_info, message_text, context, event)
+
+            message_wrapper = wrapper.MessageWrapper(
+                id=message_info['message_id'], 
+                chat_id=message_info['chat_id'], 
+                message=message_text, 
+                ping=ping, 
+                reply_id=message_info['reply_id'], 
+                quote=message_info['quote_text'],
+                datetime=message_info['datetime'], 
+                role=message_info['role'], 
+                user=message_info['username']
+            )
             
             content = []
             if context:
                 content = await self._look_for_content(update, context, event)
 
-                c: wrapper.Wrapper
                 for c in content:
-                    c.role = role
-                    c.user = username
+                    c.role = message_info['role']
+                    c.user = message_info['username']
                     c.ping = ping
-                    c.datetime = datetime
+                    c.datetime = message_info['datetime']
 
             wrappers = ([message_wrapper] if message_wrapper.message else [])
             wrappers += content
@@ -130,25 +239,163 @@ class Conductor:
             if not wrappers:
                 raise ValueError("Wrapper list is somehow empty. This probably shouldn't happen.")
             
-            wdw: window.Window = await self.ref.add_messages(chat_id, wrappers, chat_name=chat_name)
-            request: Dict = await self.ref.get_request(chat_id)
-            prompts: Dict[prompt_enum.PromptEnum, str] = await self.ref.get_prompts(chat_id)
-            special_fields: Dict = await self.ref.get_special_fields(chat_id)
-
-            special_fields['current_date_utc'] = dt.datetime.now(tz=dt.timezone.utc).strftime('%Y/%m/%d, %A')
-
-            chance: int = await self.ref.get_chance(chat_id)
-            random_chance = random.randint(1, 100)
-
-            respond = wdw.ready and ((random_chance <= chance) or ping)
-
-            if respond:
-                new_message_event = conductor_events.CompletionRequest(wdw=wdw, request=request, prompts=prompts, special_fields=special_fields, typing=event.typing)
-                await self.bus.emit(new_message_event)
+            # Process the message through the system
+            await self._process_wrappers(wrappers, message_info, event.typing, event)
 
         except Exception as e:
             _, _, tb = sys.exc_info()
-            await self.bus.emit(system_events.ErrorEvent(error="Something's wrong with passing the messages from telegram to you.", e=e, tb=tb, event_id=event.event_id, chat_id=chat_id))
+            chat_id = str(update.effective_chat.id) if update.effective_chat else None
+            await self.bus.emit(system_events.ErrorEvent(
+                error="Something's wrong with passing the messages from telegram to you.", 
+                e=e, tb=tb, event_id=event.event_id, chat_id=chat_id
+            ))
+
+    async def _extract_message_info(self, update: Update, event: mibo_events.NewMessageArrived):
+        '''
+        Extract basic information from a message update.
+        Returns a dictionary with message metadata or None if invalid.
+        '''
+        chat: Chat = update.effective_chat
+        message: Message = update.effective_message
+
+        if not chat or not message:
+            return None
+
+        user: User = message.from_user
+        if not user:
+            return None
+        
+        chat_id: str = str(chat.id)
+        message_id: str = str(message.message_id)
+        chat_name: str = chat.title or user.username or user.first_name or 'No chat name'
+
+        if not chat_id or not message_id:
+            return None
+
+        chat_type = chat.type
+        user_id = user.id
+        username = user.username or user.first_name
+
+        user_wrapper: wrapper.UserWrapper = await self.ref.get_user(user_id, username=username)
+
+        system_message = hasattr(event, 'system')
+
+        if system_message:
+            role = 'system'
+        else:
+            role = 'assistant' if user.username == variables.Variables.USERNAME else 'user'
+
+        message_text = message.text or message.caption or ''
+
+        # Process reply information
+        reply_message = message.reply_to_message
+        reply_id = reply_message.message_id if reply_message else None
+
+        quote = reply_message.quote if reply_message else None
+        quote_text = quote.text if quote else None
+
+        forward_origin = message.forward_origin
+
+        datetime: dt.datetime = message.date.astimezone(dt.timezone.utc)
+
+        # Process entities
+        entities = message.parse_entities()
+        caption_entities = message.parse_caption_entities()
+
+        chat_information = {
+            'chat_id': chat_id,
+            'message_id': message_id,
+            'chat_name': chat_name,
+            'chat_type': chat_type,
+            'user_id': user_id,
+            'username': username,
+            'user_wrapper': user_wrapper,
+            'role': role,
+            'message_text': message_text,
+            'reply_id': reply_id,
+            'reply_message': reply_message,
+            'quote_text': quote_text,
+            'forward_origin': forward_origin,
+            'datetime': datetime,
+            'entities': entities,
+            'caption_entities': caption_entities,
+            'system_message': system_message
+        }
+
+        return chat_information
+
+    async def _determine_ping_status(self, message_info: Dict, message_text: str, context: CallbackContext, event: mibo_events.NewMessageArrived):
+        '''
+        Determine if the bot should respond to this message (ping status).
+        '''
+
+        # Never ping on forwarded messages
+        if message_info['forward_origin']:
+            return False
+
+        # Always ping in private chats or system messages
+        if message_info['chat_type'] == Chat.PRIVATE or message_info['system_message']:
+            return True
+
+        # Check for mentions in entities
+        entities = message_info['entities']
+        caption_entities = message_info['caption_entities']
+        
+        if entities or caption_entities:
+            for entity, value in {**entities, **caption_entities}.items():
+                entity = cast(MessageEntity, entity)
+
+                if entity.type == 'mention':
+                    if value.startswith('@') and value[1:] == variables.Variables.USERNAME:
+                        return True
+
+                elif entity.type == 'url':
+                    # special url processing
+                    pass
+
+        # Check if replying to bot
+        reply_message = message_info['reply_message']
+        if reply_message and context and (reply_message.from_user.id == context.bot.id):
+            return True
+
+        # Check if any assistant names are mentioned in text
+        names = await self.ref.get_assistant_names(message_info['chat_id'])
+        if any(name.lower() in message_text.lower() for name in names):
+            return True
+
+        return False
+
+    async def _process_wrappers(self, wrappers: List[wrapper.Wrapper], message_info: Dict, typing_func, event: mibo_events.NewMessageArrived):
+        '''
+        Process wrappers through the system (add to database, check response conditions, emit events).
+        '''
+        chat_id = message_info['chat_id']
+        chat_name = message_info['chat_name']
+        user_wrapper = message_info['user_wrapper']
+
+        wdw: window.Window = await self.ref.add_messages(chat_id, wrappers, chat_name=chat_name)
+        request: Dict = await self.ref.get_request(chat_id)
+        prompts: Dict[prompt_enum.PromptEnum, str] = await self.ref.get_prompts(chat_id)
+        special_fields: Dict = await self.ref.get_special_fields(chat_id)
+
+        special_fields['current_date_utc'] = dt.datetime.now(tz=dt.timezone.utc).strftime('%Y/%m/%d, %A')
+
+        chance: int = await self.ref.get_chance(chat_id)
+        disabled: bool = await self.ref.get_disabled(chat_id)
+        random_chance = random.randint(1, 100)
+
+        # Determine if any wrapper has ping=True
+        has_ping = any(getattr(w, 'ping', False) for w in wrappers)
+        
+        respond = wdw.ready and ((random_chance <= chance) or has_ping) and not disabled
+
+        if respond:
+            new_message_event = conductor_events.CompletionRequest(
+                wdw=wdw, request=request, prompts=prompts, 
+                special_fields=special_fields, typing=typing_func, 
+                user=user_wrapper
+            )
+            await self.bus.emit(new_message_event)
 
     # ---------------------------------- #
 

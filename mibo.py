@@ -15,6 +15,7 @@ from telegram.constants import ChatAction
 from events import event_bus, mibo_events, system_events, assistant_events
 from core import assistant, conductor, wrapper, ref
 from services import prompt_enum, variables
+from web import web
 
 class Mibo:
     def __init__(self, token: str, db_path: str = 'memory'):
@@ -24,7 +25,8 @@ class Mibo:
         # load the environment first to catch early errors
         try:
             _ = variables.Variables()
-        except TypeError:
+        except (TypeError, ValueError) as e:
+            print(e)
             exit(1)
 
         self.clients: List[openai.OpenAI] = []
@@ -35,6 +37,7 @@ class Mibo:
         self.conductor: conductor.Conductor = conductor.Conductor(self.bus, self.ref)
 
         self.key: str = variables.Variables.OPENAI_KEY
+        self.local_key : str = variables.Variables.LOCAL_KEY
 
         self.app: Application = None
         self.typing_tasks: Dict[str, asyncio.Task] = {}
@@ -48,7 +51,8 @@ class Mibo:
         '''
         self.clients: Dict[str, openai.OpenAI] = {
             'openai': openai.OpenAI(api_key=self.key),
-            'local': openai.OpenAI(api_key=self.key, base_url=f"http://{variables.Variables.LOCAL_API_HOST}:{variables.Variables.LOCAL_API_PORT}/v1")
+            'local': openai.OpenAI(api_key=self.local_key, base_url=f"http://{variables.Variables.LOCAL_API_HOST}:{variables.Variables.LOCAL_API_PORT}/v1"),
+            'xai': openai.OpenAI(api_key=variables.Variables.XAI_KEY, base_url="https://api.x.ai/v1")
         }
 
         self.assistant = assistant.Assistant(self.clients, self.bus, self.ref, self.start_datetime)
@@ -82,9 +86,17 @@ class Mibo:
         await self.app.start()
         await self.app.updater.start_polling()
 
+        self.webapp_task = asyncio.create_task(web.start_webapp(self.ref, self.bus, 6426))
+
         try:
             await self.stop_event.wait()
         finally:
+            self.webapp_task.cancel()
+            try:    
+                await self.webapp_task
+            except:
+                pass
+
             # kill Mibo (oh no!)
             await self._shutdown(None)
 
@@ -97,6 +109,7 @@ class Mibo:
 
         self.app.add_handler(CommandHandler('debug', self._debug))
         self.app.add_handler(CommandHandler('start', self._start))
+        self.app.add_handler(CommandHandler('token', self._token))
 
     def _system_signals(self):
         '''
@@ -179,7 +192,7 @@ class Mibo:
         chat = Chat(id=chat_id, type=Chat.PRIVATE, title=chat_name)
 
         message = Message(
-            message_id=uuid.uuid4().int,
+            message_id=uuid.uuid4().int, # TODO: Use proper message IDs
             date=dt.datetime.now(dt.timezone.utc),
             chat=chat,
             from_user=user,
@@ -303,31 +316,17 @@ class Mibo:
         finally:
             await self._pop_typing(chat_id)
 
-    async def _handle_exception(self, event: system_events.ErrorEvent) -> None:
-        '''
-        Print exception logs.
-        '''
-        error = event.error
-        e = event.e
-        tb = event.tb
+    async def _generate_image(self, update: Update, context: CallbackContext):
+        pass
 
-        print(f"{error}")
-
-        if tb:
-            traceback.print_exception(type(e), e, tb)
-
-    async def _debug(self, update: Update, context: CallbackContext):
-        '''
-        Sends a debug message.
-        '''
-        await context.bot.send_message(update.effective_chat.id, 'Debug OK')
-
+    """
     async def _fake_completion(self, chat_id: str, message: str):
         '''
         Sends a fake completion.
         '''
         typing = self._get_typing(chat_id=chat_id)
         await self.assistant.fake_completion(message, chat_id=chat_id, typing=typing)
+    """
 
     async def _start(self, update: Update, context: CallbackContext):
         '''
@@ -375,6 +374,54 @@ class Mibo:
 
             elif old_status in [ChatMember.MEMBER, ChatMember.ADMINISTRATOR] and new_status in [ChatMember.LEFT, ChatMember.BANNED]:
                 pass    
+
+    async def _debug(self, update: Update, context: CallbackContext):
+        '''
+        Sends a debug message.
+        '''
+        await context.bot.send_message(update.effective_chat.id, 'Debug OK')
+
+    async def _token(self, update: Update, context: CallbackContext):
+        chat: Chat = update.effective_chat
+        user: User = update.effective_user
+
+        if not user or not chat:
+            return
+        
+        if str(user.id) != variables.Variables.ADMIN_ID:
+            return
+
+        if chat.type == Chat.PRIVATE:
+            token = await self.ref.generate_token(str(user.id), str(user.username or user.id))
+
+            await context.bot.send_message(chat.id, f'Your token is: `{token}`', parse_mode='MarkdownV2')
+
+            # await self._event_message(chat_id=str(chat.id), event_prompt=prompt_enum.TokenPrompt, replacers={})
+
+    async def _clear(self, chat_id: str):
+        '''
+        Clears the window.
+        '''
+        await self.ref.clear(chat_id)
+
+    async def _handle_exception(self, event: system_events.ErrorEvent) -> None:
+        '''
+        Print exception logs.
+        '''
+        error = event.error
+        e = event.e
+        tb = event.tb
+
+        chat_id = getattr(event, 'chat_id', None)
+        typing = getattr(event, 'typing', None)
+
+        if chat_id and typing:
+            await self._pop_typing(chat_id)
+
+        print(f"{error}")
+
+        if tb:
+            traceback.print_exception(type(e), e, tb)
 
 logging.basicConfig(
     format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",

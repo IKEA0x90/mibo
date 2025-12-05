@@ -53,6 +53,7 @@ class Window():
             self.messages.clear()
             self.tokens = 0
             self.ready = True
+            print(f'Window {message.chat_id} is ready, starting live processing.')
 
             await self._insert_live_message(message, True)
 
@@ -201,12 +202,46 @@ class Window():
             oldest_tokens = oldest_msg.tokens
             self.tokens -= oldest_tokens
 
-    def _prepare_text(self, message: wrapper.MessageWrapper, message_id: int, reply_message_id: int) -> str:
+    async def remove_messages(self, message_ids: List[str]):
+        '''
+        Removes messages with the given IDs from the window.
+        '''
+        async with self._lock:
+            messages_to_keep = deque()
+            tokens_to_deduct = 0
+
+            for msg in self.messages:
+                if msg.id in message_ids:
+                    tokens_to_deduct += msg.tokens
+                else:
+                    messages_to_keep.append(msg)
+
+            self.messages = messages_to_keep
+            self.tokens -= tokens_to_deduct
+
+        return self
+
+    async def clear(self):
+        '''
+        Clears the window.
+        '''
+        async with self._lock:
+            self.messages.clear()
+            self.tokens = 0
+            self.ready = True
+
+        return self
+
+    def _prepare_text(self, message: wrapper.MessageWrapper, message_id: int, reply_message_id: int, **kwargs) -> str:
         text = message.message if message.role == 'assistant' else str(message)
 
         id = message_id
         by = message.user
         quote = message.quote
+
+        user: wrapper.UserWrapper = kwargs.get('user')
+        if user and user.preferred_name:
+            by = user.preferred_name
         
         meta_text = f'<id:{id}><by:{by}>'
 
@@ -221,7 +256,7 @@ class Window():
 
         return text
 
-    async def transform_messages(self) -> List[Dict[str, object]]:
+    async def transform_messages(self, **kwargs) -> List[Dict[str, object]]:
         '''
         Transforms the context messages into a json compatible with OpenAI chat completions API.
         Preserves both text and images as content blocks.
@@ -230,11 +265,13 @@ class Window():
         sorted_messages: List[wrapper.Wrapper] = sorted(self.messages, key=lambda m: m.id)
         telegram_id_to_message_id: Dict[str, int] = {str(msg.id): idx + 1 for idx, msg in enumerate(sorted_messages)}
 
+        image_support: bool = kwargs.get('image_support', False)
+
         grouped_content = {}
         messages = []
 
         for message_id, message in enumerate(sorted_messages, start=1):
-            group_id = message.id
+            group_id = getattr(message, 'group_id', message.id)
 
             if group_id not in grouped_content:
                 grouped_content[group_id] = {
@@ -250,11 +287,11 @@ class Window():
                     if message.reply_id:
                         reply_message_id = telegram_id_to_message_id.get(str(message.reply_id))
 
-                    text = self._prepare_text(message, message_id, reply_message_id)
+                    text = self._prepare_text(message, message_id, reply_message_id, **kwargs)
                     if text:
                         grouped_content[group_id]["content"].append({"type": "text", "text": text})
 
-            elif isinstance(message, wrapper.ImageWrapper):
+            elif isinstance(message, wrapper.ImageWrapper) and image_support:
                 base64 = message.get_base64()
                 detail = message.detail
 
@@ -268,9 +305,16 @@ class Window():
                     )
 
         # Now, sort groups by their first appearance in sorted_messages
-        sorted_groups = [grouped_content[k] for k in [msg.id for msg in sorted_messages] if k in grouped_content]
+        # We need to find the first message in each group to maintain order
+        group_order = {}
+        for msg in sorted_messages:
+            group_id = getattr(msg, 'group_id', msg.id)
+            if group_id not in group_order:
+                group_order[group_id] = msg.id
 
-        for group in sorted_groups:
+        sorted_groups = sorted(grouped_content.items(), key=lambda x: group_order[x[0]])
+
+        for group_id, group in sorted_groups:
             if group["content"]:
                 messages.append({
                     "role": group["role"],

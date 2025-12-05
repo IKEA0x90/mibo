@@ -45,3 +45,8 @@ class WelcomePrompt(PromptEnum):
 class StartPrompt(PromptEnum):
     def __init__(self):
         super().__init__('start')
+
+@PromptEnum.register('token')
+class TokenPrompt(PromptEnum):
+    def __init__(self):
+        super().__init__('token')

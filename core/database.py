@@ -99,11 +99,12 @@ class Database:
             
         self.bus.register(ref_events.NewChat, self._insert_chat)
         self.bus.register(ref_events.NewMessage, self._add_message)
+        self.bus.register(ref_events.NewUser, self._insert_user)
         self.bus.register(mibo_events.TelegramIDUpdateRequest, self._update_telegram_id)
 
         self._handlers_registered = True
     
-    async def get_chat(self, chat_id: str) -> wrapper.ChatWrapper:
+    async def get_chat(self, chat_id: str, **kwargs) -> wrapper.ChatWrapper:
         '''
         Get a chat by its ID.
         '''
@@ -113,13 +114,87 @@ class Database:
                 row = await cursor.fetchone()
 
             if row:
-                return wrapper.ChatWrapper(id=row['chat_id'], name=row['chat_name'],
-                                            chance=row['chance'], assistant_id=row['assistant_id'], model_id=row['model_id'])
+                return wrapper.ChatWrapper(id=row['chat_id'], chat_name=row['chat_name'],
+                                            chance=row['chance'], 
+                                            assistant_id=row['assistant_id'], ai_model_id=row['ai_model_id'],
+                                            disabled=row['disabled'])
 
         except Exception as e:
             _, _, tb = sys.exc_info()
             await self.bus.emit(system_events.ErrorEvent(error="Hmm.. Can't read your group chats from the database.", e=e, tb=tb))
             return None
+
+    async def get_chats(self) -> List[wrapper.ChatWrapper]:
+        '''
+        Get all chats without loading their context windows.
+        '''
+        chats: List[wrapper.ChatWrapper] = []
+        try:
+            async with self.conn.cursor() as cursor:
+                await cursor.execute('SELECT * FROM chats')
+                rows = await cursor.fetchall()
+
+            for row in rows:
+                chat_wrapper = wrapper.ChatWrapper(id=row['chat_id'], chat_name=row['chat_name'],
+                                                  chance=row['chance'], assistant_id=row['assistant_id'], ai_model_id=row['ai_model_id'])
+                chats.append(chat_wrapper)
+
+            return chats
+
+        except Exception as e:
+            _, _, tb = sys.exc_info()
+            await self.bus.emit(system_events.ErrorEvent(error="Hmm.. Can't read group chats from the database.", e=e, tb=tb))
+            return []
+
+    async def get_user(self, user_id: str) -> wrapper.UserWrapper:
+        '''
+        Get a user by their ID.
+        '''
+        try:
+            async with self.conn.cursor() as cursor:
+                await cursor.execute('SELECT * FROM users WHERE user_id = ?', (user_id,))
+                row = await cursor.fetchone()
+
+            if row:
+                admin_chats = row['admin_chats'].split(',') if row['admin_chats'] else []
+                return wrapper.UserWrapper(id=row['user_id'], username=row['username'], 
+                                            preferred_name=row['preferred_name'],
+                                            image_generation_limit=row['image_generation_limit'],
+                                            deep_research_limit=row['deep_research_limit'],
+                                            utc_offset=row['utc_offset'], admin_chats=admin_chats)
+
+        except Exception as e:
+            _, _, tb = sys.exc_info()
+            await self.bus.emit(system_events.ErrorEvent(error="Hmm.. Can't read user from the database.", e=e, tb=tb))
+            return None
+        
+    def get_all_users(self) -> Dict[str, wrapper.UserWrapper]:
+        '''
+        Get all users
+        '''
+        users: Dict[str, wrapper.UserWrapper] = {}
+        try:
+            conn = sqlite3.connect(self.db_path)
+            conn.row_factory = sqlite3.Row
+            cursor = conn.cursor()
+            
+            cursor.execute('SELECT * FROM users')
+            rows = cursor.fetchall()
+
+            for row in rows:
+                user_wrapper = wrapper.UserWrapper(id=row['user_id'], username=row['username'], 
+                                                preferred_name=row['preferred_name'],
+                                                image_generation_limit=row['image_generation_limit'],
+                                                deep_research_limit=row['deep_research_limit'],
+                                                utc_offset=row['utc_offset'], admin_chats=row['admin_chats'].split(','))
+                users[row['user_id']] = user_wrapper
+
+            return users
+
+        except Exception as e:
+            _, _, tb = sys.exc_info()
+            self.bus.emit_sync(system_events.ErrorEvent(error="Hmm.. Can't read users from the database.", e=e, tb=tb))
+            return {}
 
     async def _insert_chat(self, event: ref_events.NewChat):
         '''
@@ -132,26 +207,72 @@ class Database:
 
         if chat.assistant_id is None:
             chat.assistant_id = variables.Variables.DEFAULT_ASSISTANT
-        if chat.model_id is None:
-            chat.model_id = variables.Variables.DEFAULT_MODEL
+        if chat.ai_model_id is None:
+            chat.ai_model_id = variables.Variables.DEFAULT_MODEL
 
-        effective_chat_id = chat.chat_id or str(uuid4())
-        chat_name = chat.chat_name
+        effective_chat_id = chat.chat_id
+        chat_name = getattr(chat, 'chat_name', str(effective_chat_id))
         chance = chat.chance
         assistant_id = chat.assistant_id
-        model_id = chat.model_id
+        ai_model_id = chat.ai_model_id
+        disabled = getattr(chat, 'disabled', False)
+
+        update: bool = getattr(event, 'update', False)
+
+        async with self._lock:
+            async with self.conn.cursor() as cursor:
+                if update:
+                    # Use UPDATE instead of REPLACE to avoid CASCADE deletion
+                    await cursor.execute(
+                        """
+                        UPDATE chats 
+                        SET chat_name = ?, chance = ?, assistant_id = ?, ai_model_id = ?, disabled = ?
+                        WHERE chat_id = ?
+                        """,
+                        (chat_name, chance, assistant_id, ai_model_id, disabled, str(effective_chat_id))
+                    )
+                else:
+                    # Insert new chat
+                    await cursor.execute(
+                        """
+                        INSERT OR IGNORE INTO chats
+                        (chat_id, chat_name, chance, assistant_id, ai_model_id, disabled)
+                        VALUES (?, ?, ?, ?, ?, ?)
+                        """,
+                        (
+                            str(effective_chat_id), chat_name,
+                            chance, assistant_id, ai_model_id, disabled
+                        ),
+                    )
+                await self.conn.commit()
+
+    async def _insert_user(self, event: ref_events.NewUser):
+        '''
+        Inserts a new user and returns the user_id.
+        '''
+        user: wrapper.UserWrapper = event.user
+        if user is None or not isinstance(user, wrapper.UserWrapper):
+            return
+
+        user_id = user.id
+        username = user.username
+        preferred_name = user.preferred_name
+        image_generation_limit = user.image_generation_limit
+        deep_research_limit = user.deep_research_limit
+        utc_offset = user.utc_offset
+        admin_chats = ','.join(user.admin_chats)
 
         async with self._lock:
             async with self.conn.cursor() as cursor:
                 await cursor.execute(
                     """
-                    INSERT OR IGNORE INTO chats
-                    (chat_id, chat_name, chance, assistant_id, model_id)
-                    VALUES (?, ?, ?, ?, ?)
+                    INSERT OR REPLACE INTO users
+                    (user_id, username, preferred_name, image_generation_limit, deep_research_limit, utc_offset, admin_chats)
+                    VALUES (?, ?, ?, ?, ?, ?, ?)
                     """,
                     (
-                        str(effective_chat_id), chat_name,
-                        chance, assistant_id, model_id
+                        user_id, username,
+                        preferred_name, image_generation_limit, deep_research_limit, utc_offset, admin_chats
                     ),
                 )
                 await self.conn.commit()
@@ -393,8 +514,21 @@ class Database:
                 chat_name            TEXT NOT NULL DEFAULT '',
                 chance               INTEGER NOT NULL DEFAULT 5,
                 assistant_id         TEXT NOT NULL DEFAULT '{variables.Variables.DEFAULT_ASSISTANT}',
-                model_id             TEXT NOT NULL DEFAULT '{variables.Variables.DEFAULT_MODEL}',
+                ai_model_id          TEXT NOT NULL DEFAULT '{variables.Variables.DEFAULT_MODEL}',
+                disabled            BOOLEAN NOT NULL DEFAULT 0,
                 timestamp            TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+            );
+            ''',
+
+            f'''
+            CREATE TABLE IF NOT EXISTS users (
+                user_id      TEXT PRIMARY KEY,
+                username     TEXT NOT NULL DEFAULT '',
+                preferred_name         TEXT,
+                image_generation_limit INTEGER NOT NULL DEFAULT 5,
+                deep_research_limit    INTEGER NOT NULL DEFAULT 3,
+                utc_offset   INTEGER NOT NULL DEFAULT 3,
+                admin_chats  TEXT NOT NULL DEFAULT ''
             );
             ''',
 

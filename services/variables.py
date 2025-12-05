@@ -14,23 +14,44 @@ class Variables:
 
     TELEGRAM_KEY = os.environ.get('TELEGRAM_KEY', '') # Telegram bot key
     OPENAI_KEY = os.environ.get('OPENAI_KEY', '') # OpenAI API key
+    LOCAL_KEY = os.environ.get('LOCAL_KEY', '') # Local API key
+    XAI_KEY = os.environ.get('XAI_KEY', '') # XAI API key
+
+    if not TELEGRAM_KEY:
+        raise ValueError("TELEGRAM_KEY environment variable not set")
 
     DB_PATH = os.environ.get('DB_PATH', 'memory') # relative path to the database file
-
-    USERNAME = os.environ.get('USERNAME', '') # telegram USERNAME of the bot
-    SYSTEM_CHAT = os.environ.get('SYSTEM_CHAT', '') # id of the system chat where all possible notifications are sent to #TODO change to system_user
 
     LOCAL_API_HOST = os.environ.get('LOCAL_API_HOST', '127.0.0.1') # ip of the local ollama host
     LOCAL_API_PORT = os.environ.get('LOCAL_API_PORT', '8888') # port of the local ollama host
 
+    USERNAME = os.environ.get('USERNAME', 'itsmiibot') # username of the bot 
+
     DEFAULT_ASSISTANT = os.environ.get('DEFAULT_ASSISTANT', 'default') # id of the default assistant, assumed to exist in assistant references
     DEFAULT_MODEL = os.environ.get('DEFAULT_MODEL', 'gpt-4.1') # id (name) of the default model. assumed to exist in model references
+
+    JWT_SECRET_KEY = os.environ.get('JWT_SECRET_KEY', '') # secret key for JWT tokens
+    MIBO_DOMAIN = os.environ.get('MIBO_DOMAIN', 'admin.miibo.ru') # domain where the admin panel is hosted
+
+    if not JWT_SECRET_KEY:
+        raise ValueError("JWT_SECRET_KEY environment variable not set")
+        exit(1)
+
+    ADMIN_ID = os.environ.get('ADMIN_ID', '') # id of the admin user
 
     try:
         CHAT_TTL = os.environ.get('CHAT_TTL', 3600) # time it takes for a chat to unload from memory, in minutes
         CHAT_TTL = int(CHAT_TTL)
+
+        MFA_TOKEN_EXPIRY = os.environ.get('MFA_TOKEN_EXPIRY', 2) # how long the admin panel token expires, in minutes
+        MFA_TOKEN_EXPIRY = int(MFA_TOKEN_EXPIRY)
+
+        JWT_EXPIRE_MINUTES = os.environ.get('JWT_EXPIRE_MINUTES', 180) # how long JWT tokens last, in minutes
+        JWT_EXPIRE_MINUTES = int(JWT_EXPIRE_MINUTES)
     except ValueError:
         CHAT_TTL = 3600
+        MFA_TOKEN_EXPIRY = 2
+        JWT_EXPIRE_MINUTES = 180
 
     @staticmethod
     def replacers(original: str) -> str:
@@ -63,16 +84,3 @@ class Variables:
             return Locale.parse(language_code).get_display_name(language_code).capitalize()
         except:
             return language_code
-        
-    @staticmethod
-    def parse_text(text: str) -> List[str]:
-        '''
-        Parse the text for custom delimiters.
-        '''
-        text = text.strip()
-        text_list = text.split('|n|')
-
-        # remove empty strings and whitespace-only strings
-        filtered_list = [s for s in text_list if s.strip()]
-
-        return filtered_list

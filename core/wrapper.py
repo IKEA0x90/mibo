@@ -89,6 +89,8 @@ class MessageWrapper(Wrapper):
         self.quote: str = kwargs.get('quote', None)
 
         self.think = kwargs.get('think', '')
+        
+        self.group_id: str = kwargs.get('group_id', id)
 
     def to_child_dict(self):
         return {
@@ -143,6 +145,9 @@ class ImageWrapper(Wrapper):
         self.summary_tokens: int = kwargs.get('summary_tokens', 0)
 
         self.detail: str = kwargs.get('detail', 'low')
+        
+        # For linking to parent message/album
+        self.group_id: str = kwargs.get('group_id', id)
 
     def calculate_tokens(self):
         if self.detail == 'low':
@@ -179,58 +184,36 @@ class ImageWrapper(Wrapper):
     @classmethod
     def get_child_fields(cls):
         return ['x', 'y', 'image_path', 'image_summary']
+ 
+class UserWrapper():
+    def __init__(self, id: str, **kwargs):
+        self.id: str = str(id)
 
-@register_wrapper  
-class PollWrapper(Wrapper):
-    def __init__(self, id: str, chat_id: str, question: str, options: List[str], multiple_choice: bool, correct_option_idx: int = 0, explanation: str = '', **kwargs):
-        super().__init__(id, chat_id, **kwargs)
+        self.username: str = kwargs.get('username', '')
+        self.preferred_name: str = kwargs.get('preferred_name', '')
 
-        self.question: str = question or ''
-        self.options: List[str] = options or []
-        self.multiple_choice: bool = multiple_choice or False
-        self.correct_option_idx: int = correct_option_idx or -1
-        self.explanation: str = explanation or ''
+        self.image_generation_limit: int = kwargs.get('image_generation_limit', 5)
+        self.deep_research_limit: int = kwargs.get('deep_research_limit', 3)
 
-        if correct_option_idx != -1:
-            self.multiple_choice = False
+        self.utc_offset: int = kwargs.get('utc_offset', 3)
+        self.admin_chats: List[str] = kwargs.get('admin_chats', [])
 
-    def calculate_tokens(self, model='gpt-4o'):
-        encoding = tiktoken.encoding_for_model(model)
-        tokens = len(encoding.encode(str(self)))
-        return tokens
-    
-    def to_child_dict(self):
-        return {
-            'question': self.question,
-            'options': self.options,
-            'multiple_choice': self.multiple_choice,
-            'correct_option_idx': self.correct_option_idx,
-            'explanation': self.explanation,
-        }
-    
-    @classmethod
-    def get_child_fields(cls):
-        return ['question', 'options', 'multiple_choice', 'correct_option_idx', 'explanation']
+        self.token: str = kwargs.get('token', '')
 
-    def __str__(self):
-        rstr = []
-        rstr.append(f'|POLL|{self.question}\n')
-        rstr.append(f'Options {"(multiple choice)|" if self.multiple_choice else "|"}:\n')
-        for i, option in enumerate(self.options):
-            rstr.append(f"{i+1}. {option}")
-        return rstr
-    
 class ChatWrapper():
     def __init__(self, id: str, **kwargs):
         self.id: str = str(id)
         self.chat_id = self.id
 
-        self.chat_name: str = kwargs.get('chat_name', '')
+        self.chat_name: str = kwargs.get('name', '')
+        self.chat_name = kwargs.get('chat_name', '')
 
         self.chance: int = kwargs.get('chance', 5)
 
         self.assistant_id: str = kwargs.get('assistant_id', variables.Variables.DEFAULT_ASSISTANT)
-        self.model_id: str = kwargs.get('model_id', variables.Variables.DEFAULT_MODEL)
+        self.ai_model_id: str = kwargs.get('ai_model_id', variables.Variables.DEFAULT_MODEL)
+
+        self.disabled: bool = kwargs.get('disabled', False)
 
         self.last_active: float = 0
         self.in_use: bool = False
@@ -241,5 +224,5 @@ class ChatWrapper():
             'chat_name': self.chat_name,
             'chance': self.chance,
             'assistant_id': self.assistant_id,
-            'model_id': self.model_id,
+            'ai_model_id': self.ai_model_id,
         }

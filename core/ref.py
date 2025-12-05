@@ -1,3 +1,5 @@
+import secrets
+import string
 from typing import Dict, List, Callable, Tuple
 import asyncio
 import time
@@ -38,7 +40,7 @@ class Reference:
             if hasattr(self, 'ASSISTANT_PROPERTIES') and attribute_name in self.ASSISTANT_PROPERTIES:
                 # k: prompt_enum.PromptEnum class
                 # v: PromptReference
-                serialized_data[attribute_name] = {k.get_id(): v.id for k, v in attribute_value.items()}
+                serialized_data[attribute_name] = {k.get_id(): v for k, v in attribute_value.items()}
             else:
                 serialized_data[attribute_name] = attribute_value
         
@@ -89,7 +91,8 @@ class ModelReference(Reference):
         self.model_provider: str = kwargs.get('model_provider', 'openai')
         self.temperature: float = kwargs.get('temperature', 1)
         self.max_tokens: int = kwargs.get('max_tokens', 700)
-        self.max_completion_tokens: int = kwargs.get('max_completion_tokens', 100)
+        self.max_completion_tokens: int = kwargs.get('max_completion_tokens', 700)
+        self.image_support: bool = kwargs.get('image_support', False)
 
         self.penalty_supported: bool = kwargs.get('penalty_supported', True)
         self.frequency_penalty: float = kwargs.get('frequency_penalty', 0.1)
@@ -131,6 +134,7 @@ class ModelReference(Reference):
     def get_special_fields(self) -> Dict:
         special_fields = {}
 
+        special_fields['model'] = self.id
         special_fields['model_provider'] = self.model_provider
 
         if self.think_token:
@@ -139,6 +143,11 @@ class ModelReference(Reference):
             if self.disable_thinking:
                 special_fields['disable_thinking_token'] = self.disable_thinking_token
                 special_fields['disable_thinking'] = self.disable_thinking
+
+        if self.image_support:
+            special_fields['image_support'] = True
+        else:
+            special_fields['image_support'] = False
 
         return special_fields
     
@@ -192,6 +201,7 @@ class Ref:
 
         self.chats: Dict[str, wrapper.ChatWrapper] = {}
         self.windows: Dict[str, window.Window] = {}
+        self.users: Dict[str, wrapper.UserWrapper] = {}
 
         self.assistants: Dict[str, AssistantReference] = {}
         self.models: Dict[str, ModelReference] = {}
@@ -230,7 +240,7 @@ class Ref:
         # we don't want to load a window without loading the chat
         chat: wrapper.ChatWrapper = await self.get_chat(chat_id, **kwargs)
 
-        chat_model: str = chat.model_id or variables.Variables.DEFAULT_MODEL
+        chat_model: str = chat.ai_model_id or variables.Variables.DEFAULT_MODEL
         model: ModelReference = self.models.get(chat_model)
         if not model:
             raise ValueError(f"Default model doesn't exist")
@@ -239,22 +249,49 @@ class Ref:
 
         # same loading as chat
         wdw = self.windows.get(chat_id)
-        if not wdw:
+        if wdw is None:
             wdw = await self.db.get_window(chat_id, max_tokens)
             if not wdw:
                 # create a new window
                 wdw = window.Window(chat_id, self.start_datetime)
-                self.windows[chat_id] = wdw
+            self.windows[chat_id] = wdw
 
         wdw.set_max_tokens(max_tokens)
+        return wdw
+    
+    async def remove_messages(self, chat_id: str, message_ids: List[str]) -> window.Window:
+        '''
+        Remove messages from a chat window by their IDs.
+        '''
+        wdw: window.Window = self.windows.get(chat_id)
+
+        if wdw:
+            await wdw.remove_messages(message_ids)
+            
+        return wdw
+
+    async def clear(self, chat_id: str) -> window.Window:
+        '''
+        Clear the chat window for a chat.
+        '''
+        wdw: window.Window = self.windows.get(chat_id)
+
+        if wdw:
+            wdw = await wdw.clear()
+
         return wdw
 
     async def get_chat(self, chat_id: str, **kwargs) -> wrapper.ChatWrapper:
         # from memory
         chat = self.chats.get(chat_id)
+
+        if kwargs.get('chat_name') and chat and chat.chat_name != kwargs.get('chat_name'):
+            chat.chat_name = kwargs.get('chat_name')
+            await self.update_chat(chat)
+
         if not chat:
             # from database
-            chat = await self.db.get_chat(chat_id)
+            chat = await self.db.get_chat(chat_id, **kwargs)
             if not chat:
                 # create it
                 chat = wrapper.ChatWrapper(chat_id, **kwargs)
@@ -267,6 +304,56 @@ class Ref:
         chat.in_use = True
         
         return chat
+
+    async def update_chat(self, chat: wrapper.ChatWrapper):
+        '''
+        Update a chat in the database and memory.
+        '''
+        if not isinstance(chat, wrapper.ChatWrapper):
+            return None
+        
+        self.chats[chat.id] = chat
+        await self.bus.emit(ref_events.NewChat(chat, update=True))
+
+        self.windows.pop(chat.id, None)
+        await self.get_window(chat.id)
+
+        return chat
+
+    async def get_chats(self, **kwargs) -> List[wrapper.ChatWrapper]:
+        '''
+        Get all chats without loading their context windows.
+        '''
+        chats: List[wrapper.ChatWrapper] = []
+        chats = await self.db.get_chats(**kwargs)
+
+        for chat in chats:
+            self.chats[chat.id] = chat
+
+        return chats
+
+    async def get_user(self, user_id: str, **kwargs) -> wrapper.UserWrapper:
+        '''
+        Gets a user by user_id.
+        '''
+        user = self.users.get(user_id)
+        if not user:
+            user = await self.db.get_user(user_id)
+            if not user:
+                user = wrapper.UserWrapper(user_id, **kwargs)
+                await self.bus.emit(ref_events.NewUser(user))
+
+            self.users[user_id] = user
+
+        return user
+    
+    async def update_user(self, user: wrapper.UserWrapper):
+        '''
+        Update a user in the database and memory.
+        '''
+        self.users[user.id] = user
+        await self.bus.emit(ref_events.NewUser(user))
+        return user
 
     async def _get_assistant(self, chat_id: str) -> AssistantReference:
         '''
@@ -318,6 +405,12 @@ class Ref:
             return chat.chance
         return 0
     
+    async def get_disabled(self, chat_id: str) -> bool:
+        chat = await self.get_chat(chat_id)
+        if chat:
+            return chat.disabled
+        return False
+    
     async def get_request(self, chat_id: str) -> Dict:
         '''
         Gets the main and extra request bodies for the assistant.
@@ -326,7 +419,7 @@ class Ref:
         if not chat:
             return {}
 
-        model: ModelReference = self.models.get(chat.model_id or variables.Variables.DEFAULT_MODEL)
+        model: ModelReference = self.models.get(chat.ai_model_id or variables.Variables.DEFAULT_MODEL)
         request = model.get_request()
 
         return request
@@ -336,10 +429,32 @@ class Ref:
         if not chat:
             return {}
         
-        model: ModelReference = self.models.get(chat.model_id or variables.Variables.DEFAULT_MODEL)
+        model: ModelReference = self.models.get(chat.ai_model_id or variables.Variables.DEFAULT_MODEL)
         special_fields = model.get_special_fields() if model else {}
 
         return special_fields
+    
+    async def generate_token(self, user_id: str, username: str) -> str:
+        '''
+        Generate an MFA token.
+        '''
+        user: wrapper.UserWrapper = await self.get_user(user_id, username=username)
+        
+        alphabet = string.ascii_uppercase + string.digits
+        token = ''.join(secrets.choice(alphabet) for _ in range(6))
+        user.token = token
+
+        asyncio.create_task(self._invalidate_token(user_id, username=username))
+
+        return token
+
+    async def _invalidate_token(self, user_id: str, username: str):
+        try:
+            await asyncio.sleep(variables.Variables.MFA_TOKEN_EXPIRY * 60)
+        finally:
+            user: wrapper.UserWrapper = await self.get_user(user_id, username=username)
+            if user and user.token:
+                user.token = ''
 
     def _load(self):
         '''
@@ -366,6 +481,9 @@ class Ref:
                     reference_object = PromptReference.from_dict(reference_id, reference_data, reference_type)
                     self.prompts[reference_id] = reference_object
 
+                #TODO probably don't want to load all users
+                self.users = self.db.get_all_users()
+
         except Exception as e:
             self.bus.emit_sync(system_events.ErrorEvent(
                 error='Failed to load references from database.',
@@ -379,15 +497,17 @@ class Ref:
         '''
         await self.db.initialize()
         self._load()
+
+        await self.get_chats()
         
-        self._cleanup_task = asyncio.create_task(self._cleanup())
+        #self._cleanup_task = asyncio.create_task(self._cleanup())
 
     async def _cleanup(self):
         while True:
             now = time.time()
             to_delete = []
 
-            for cid, chat in list(self.chats.items()):
+            for cid, chat in self.chats.items():
                 if (now - chat.last_active) > (variables.Variables.CHAT_TTL * 60 / 2):
 
                     if not chat.in_use:
@@ -396,7 +516,7 @@ class Ref:
                         chat.in_use = False
 
             for cid in to_delete:
-                del self.chats[cid]
+                del self.windows[cid]
 
             try:
                 await asyncio.sleep(30)

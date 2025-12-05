@@ -1,4 +1,3 @@
-import uuid
 import openai
 import datetime as dt
 import random
@@ -42,17 +41,23 @@ class Assistant:
         '''
         wdw: window.Window = event.wdw
         request: Dict = event.request
+        user: wrapper.UserWrapper = event.user
         prompts: Dict[prompt_enum.PromptEnum, str] = event.prompts
         special_fields: Dict = event.special_fields
 
         current_date_utc = special_fields.get('current_date_utc', None)
+        image_support: bool = special_fields.get('image_support', False)
 
         chat_id: str = wdw.chat_id
+
         model_provider = special_fields.get('model_provider', 'openai')
+        model = special_fields.get('model', 'gpt-4')
+
+        user: wrapper.UserWrapper = getattr(event, 'user', None)
 
         user_messages: List[Dict]
         idx: Dict[str, int]
-        user_messages, idx = await wdw.transform_messages()
+        user_messages, idx = await wdw.transform_messages(user=user, image_support=image_support)
         messages: List[Dict] = []
 
         base_prompt = prompts.get(prompt_enum.BasePrompt, '')
@@ -76,7 +81,6 @@ class Assistant:
         for msg in user_messages:
             messages.append(msg)
 
-        model = special_fields.get('model', 'gpt-4.1')
         request['safety_identifier'] = str(hash(chat_id))
 
         try:
@@ -107,13 +111,22 @@ class Assistant:
             # replace random stuff that I don't like and is easier to change here rather than in the prompt
             message_text = variables.Variables.replacers(message_text)
             
+            '''
             if think_token := special_fields.get('think_token', ''):
                 message_text = message_text.split(f'{think_token}', 1)[1]
                 message_text = message_text.strip()
+            '''
 
+            if not special_fields.get('disable_thinking', False):
+                think_text = getattr(response_message, 'model_extra')
+                if think_text and isinstance(think_text, dict):
+                    think_text = think_text.get('reasoning_content', '')
+            else:
+                think_text = ''
+                
             wrapper_list = []
 
-            message_list = variables.Variables.parse_text(message_text)
+            message_list = await self.parse_text(message_text, chat_id)
 
             for i, m in enumerate(message_list):  
                 assistant_message = wrapper.MessageWrapper(
@@ -139,41 +152,25 @@ class Assistant:
 
         except Exception as e:
             _, _, tb = sys.exc_info()
-            issue = system_events.ErrorEvent(error='Whoops! An unexpected error occurred.', e=e, tb=tb, event_id=event.event_id, chat_id=chat_id)
+            issue = system_events.ErrorEvent(error='Whoops! An unexpected error occurred.', e=e, tb=tb, event_id=event.event_id, chat_id=chat_id, typing=typing)
             await self.bus.emit(issue)
 
-    async def fake_completion(self, message: str, chat_id: str, typing):
+    async def parse_text(self, text: str, chat_id: str) -> List[str]:
         '''
-        Send a fake completion.
+        Parse the text for custom delimiters.
         '''
-        try:
-            # start typing simulation
-            typing()
-            content = message
+        text = text.strip()
 
-            wrapper_list = []
-            message_list = variables.Variables.parse_text(content)
+        if '|TOKEN|' in text:
+            user: wrapper.UserWrapper = await self.ref.get_user(chat_id)
+            if user.token:
+                text = text.replace('|TOKEN|', user.token)
 
-            for i, m in enumerate(message_list):  
-                assistant_message = wrapper.MessageWrapper(
-                    id=f'{uuid.uuid4().hex}',
-                    chat_id=chat_id, 
-                    role='assistant', user=variables.Variables.USERNAME,
-                    message=m, ping=False,
-                    datetime=dt.datetime.now(tz=dt.timezone.utc)
-                )
+        text_list = text.split('|n|')
+        # remove empty strings and whitespace-only strings
+        filtered_list = [s for s in text_list if s.strip()]
 
-                wrapper_list.append(assistant_message)
-
-            await self.ref.add_messages(chat_id, wrapper_list, False)
-
-            response_event = assistant_events.AssistantResponse(messages=wrapper_list, typing=typing)
-            await self.bus.emit(response_event)
-
-        except Exception as e:
-            _, _, tb = sys.exc_info()
-            issue = system_events.ErrorEvent(error='Whoops! An unexpected error occurred.', e=e, tb=tb, event_id=event.event_id, chat_id=chat_id)
-            await self.bus.emit(issue)
+        return filtered_list
 
     async def _download_image_url(self, image_url: str, incomplete_wrapper: wrapper.ImageWrapper, parent_event: event.Event) -> wrapper.ImageWrapper:
         '''
